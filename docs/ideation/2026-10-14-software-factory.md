@@ -131,10 +131,13 @@ model, given the definition of good and the diff, returning a rubric result).
 - The eval runs after landing and is informational. It never blocks a landing while the grader
   is young.
 - The name is Phactory, chosen 2026-10-14 before any code. It is a word a customer will hear.
-- Phactory starts as a fresh repository. Modules from the earlier runner that are generic and
-  already verified (tracker adapters, verify landed, the lease, the land path) are lifted as
-  files when a unit needs them, the way that runner was itself forked. No docs, issues,
-  sidecars or vocabulary come with them.
+- Phactory starts as a fresh repository. Modules from the two earlier systems that are generic
+  and already verified are lifted as files when a unit needs them, the way the runner was
+  itself forked. From the runner: the tracker adapters, verify landed, the lease. From the
+  lanes script: the land path (scratch join with its own environment, gate, fast forward to the
+  exact verified commit), the handoff shape, and the status read. The lanes script's board
+  specific parts, its hard coded paths, its session bring up and its one board's configuration,
+  do not come. No docs, issues, sidecars or vocabulary come with any of it.
 - Hosted agents are the default lane. Local is the exception, for tasks bound to the machine.
 - The tool is project agnostic and is a practice asset: it onboards customers' systems. Its
   repository is public; every project's configuration is private and lives outside it.
