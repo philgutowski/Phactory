@@ -1,0 +1,21 @@
+# Paths where a change waits for one review even with auto merge on (KTD25).
+# A change here either lands on the host holding every customer credential or
+# needs a live smoke only the operator can run. The ruleset on main requires
+# code owner review, so these lines are the review rule.
+
+/.github/                   @philgutowski
+/deploy/                    @philgutowski
+/src/phactory/config/       @philgutowski
+/src/phactory/auth.py       @philgutowski
+/src/phactory/redact.py     @philgutowski
+/src/phactory/mcp/          @philgutowski
+/src/phactory/hosts/        @philgutowski
+/src/phactory/builders/     @philgutowski
+/src/phactory/trace/        @philgutowski
+/src/phactory/evals/        @philgutowski
+/src/phactory/onboard/      @philgutowski
+/src/phactory/runner/       @philgutowski
+
+# Not in KTD25's list: this file itself. Without this line an auto merged
+# change could delete the rule above without anyone reading it.
+/CODEOWNERS                 @philgutowski
