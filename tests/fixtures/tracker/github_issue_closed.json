@@ -1,0 +1,9 @@
+{
+  "title": "Add the brief renderer",
+  "body": "Render the brief.",
+  "state": "CLOSED",
+  "comments": [
+    {"id": "IC_1", "body": "Starting now.", "createdAt": "2026-08-24T09:00:00Z"},
+    {"id": "IC_2", "body": "Landed at abc1234def on main.", "createdAt": "2026-08-25T11:00:00Z"}
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "data": {
+    "repository": {
+      "issue": {
+        "state": "OPEN",
+        "projectItems": {
+          "nodes": [
+            {"project": {"number": 3, "owner": {"login": "o"}}, "fieldValueByName": {"name": "Done"}},
+            {"project": {"number": 7, "owner": {"login": "o"}}, "fieldValueByName": {"name": "Ready"}}
+          ],
+          "pageInfo": {"hasNextPage": false, "endCursor": "Y3Vyc29yOjI="}
+        }
+      }
+    }
+  }
+}
