@@ -1,0 +1,6 @@
+{
+  "issues": [
+    {"key": "ABC-83", "fields": {"summary": "Add the brief renderer", "status": {"name": "Done"}}},
+    {"key": "ABC-84", "fields": {"summary": "Wire the run loop", "status": {"name": "Backlog"}}}
+  ]
+}

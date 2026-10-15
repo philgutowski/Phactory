@@ -1,0 +1,5 @@
+[
+  {"number": 12, "title": "Add the brief renderer", "body": "Render the brief.", "state": "OPEN", "labels": [{"name": "cloud"}]},
+  {"number": 13, "title": "Wire the run loop", "body": "Wire it.", "state": "OPEN", "labels": [{"name": "cloud"}, {"name": "operator"}]},
+  {"number": 14, "title": "Rename a field", "body": "Rename it.", "state": "OPEN", "labels": [{"name": "docs"}]}
+]

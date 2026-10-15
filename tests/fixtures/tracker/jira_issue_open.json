@@ -1,0 +1,9 @@
+{
+  "key": "ABC-84",
+  "fields": {
+    "summary": "Wire the run loop",
+    "description": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": "No closing comment yet."}]}]},
+    "status": {"name": "Backlog"},
+    "comment": {"comments": []}
+  }
+}

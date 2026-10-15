@@ -1,0 +1,25 @@
+{
+  "key": "ABC-83",
+  "fields": {
+    "summary": "Add the brief renderer",
+    "description": {
+      "type": "doc",
+      "version": 1,
+      "content": [
+        {"type": "paragraph", "content": [{"type": "text", "text": "Render the task brief from a template."}]},
+        {"type": "paragraph", "content": [{"type": "text", "text": "Second paragraph of the description."}]}
+      ]
+    },
+    "status": {"name": "Done"},
+    "comment": {
+      "comments": [
+        {"id": "10001", "created": "2026-08-24T09:00:00.000+0000",
+         "body": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Picked this up."}]}]}},
+        {"id": "10002", "created": "2026-08-25T11:00:00.000+0000",
+         "body": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Landed on main at abc1234."}]}]}},
+        {"id": "10003", "created": "2026-08-25T11:05:00.000+0000",
+         "body": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Follow up filed."}]}]}}
+      ]
+    }
+  }
+}
