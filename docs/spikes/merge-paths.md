@@ -71,7 +71,7 @@ Three pull requests, each carrying real spike content, merged through GitHub und
 |---|---|---|---|---|---|---|---|---|
 | merge commit | #29 | `98356e8` | `4a15e3e` | `0855ca3` | `4a15e3e` | `d22b491`, `98356e8` | yes | yes |
 | squash | #30 | `431936e` | `9901187` | `c5c264f` | `9901187` | `0855ca3` | yes | yes |
-| rebase | #31 | recorded in the pull request body | | filled after merge | | | | |
+| rebase | #31 | `08b4372` | `4d89003` | `8f36ec3` | `4d89003` | `c5c264f` | yes | yes |
 
 Two findings beyond the table:
 
