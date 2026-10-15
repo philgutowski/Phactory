@@ -1,6 +1,6 @@
 # U2 spike: merge paths and machine identities on both hosts
 
-Status: step 3 recorded, steps 4 to 6 open. Started 2026-10-15.
+Status: steps 1 and 3 recorded with the required check re probe, steps 4 to 6 open. Started 2026-10-15.
 Unit: U2 in `docs/plans/2026-10-14-1730-feat-phactory-first-version-plan.md`.
 Source of host facts: `docs/research/2026-10-14-plan/framework-docs-apis.md` Part C.
 Consumer: U9 (host adapters) reads this report for the landing path and merge method its probe must find, and U10 (verify landed) reads it for the commit relation.
@@ -77,6 +77,15 @@ Two findings beyond the table:
 
 1. Auto merge is not a waiting state until something blocks the pull request. With no required status check on the ruleset, `gh pr merge --auto` on #29 merged at once and left no auto merge event on the timeline, and on #30 GitHub refused `enablePullRequestAutoMerge` with "Pull request is in clean status", so #30 was merged through the host directly. "Require branches to be up to date" is likewise a property of the required status check rule, not a repository setting, so it is not enforced until `ci` becomes required after U5. Consequence for verify and for U9's probe: the landing path on this repository is `auto_merge_strict` only once a required check exists; before that it is a plain merge. U5's acceptance must re run one probe after the check is required.
 2. The code owner review rule is inert until a `CODEOWNERS` file exists (U5), so the KTD25 review gate is not yet live either.
+
+### Re probe after `ci` became the required check, 2026-10-15
+
+Once U5 landed, the `main` ruleset gained `required_status_checks` with context `ci` and the strict (up to date) policy. Observed on the next two cloud cards:
+
+- #35 (U7) and #34 (U6) were both green and both based on the same `main` tip. #35 merged first by squash. Within twenty seconds #34 reported `BEHIND`, so "require branches to be up to date" is now enforced. `gh pr update-branch 34` merged `main` into the branch and #34 moved to `BLOCKED` until `ci` ran again on the new head.
+- Auto merge could be enabled on #34 while `BLOCKED`, and it is now a waiting state: GitHub merges when `ci` passes, with no further click. Before the required check existed, enabling auto merge on a green pull request was refused as "clean status" (Step 3 results, finding 1).
+- U9's probe should therefore read `auto_merge_strict` from the live ruleset only when a `required_status_checks` rule with the strict policy is present; a repository with auto merge on but no required check is a plain merge path, and verify must say so rather than wait for a merge that will never be queued.
+- KTD25 on a solo repository: #34 touched `CODEOWNERS` paths, and GitHub still showed it `CLEAN` for the operator, because the operator is the ruleset's Admin bypass actor and a pull request author cannot approve their own pull request. The review is the operator's merge decision, taken after reading the diff, not a GitHub approval event. Record this where U9 and the status page describe "waits for review".
 
 ## Notes against the unit text
 
