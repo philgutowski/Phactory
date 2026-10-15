@@ -258,3 +258,15 @@ def test_unset_tracker_token_is_binding_invalid(isolated_home):
     with pytest.raises(BindingInvalid) as caught:
         resolve_tracker_credential(SLUG, environ={"EXAMPLE_JIRA_EMAIL": "ops@example.test"})
     assert caught.value.field == "tracker_credentials.example-jira.token_env"
+
+
+def test_env_name_refusal_does_not_echo_the_value(tmp_path):
+    """KTD24: a pasted credential in an env slot is reported by hash and length only."""
+    from phactory.config import ConfigError, Reader
+
+    secret = "hunter2-app-password-from-bitbucket"
+    reader = Reader(tmp_path / "operator.toml", {"token_env": secret}, "")
+    with pytest.raises(ConfigError) as info:
+        reader.env("token_env")
+    assert secret not in str(info.value)
+    assert "length 35" in str(info.value)

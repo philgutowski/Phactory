@@ -19,7 +19,7 @@ import tomllib
 from collections.abc import Mapping
 from pathlib import Path
 
-from phactory.redact import find_token
+from phactory.redact import find_token, refusal_record
 
 HOME_VARIABLE = "PHACTORY_HOME"
 
@@ -130,7 +130,13 @@ class Reader:
     def env(self, name: str, required: bool = True):
         value = self.text(name, required)
         if value is not None and not ENV_NAME.fullmatch(value):
-            self.fail(name, f"{value!r} is not an environment variable name")
+            # The value may be a pasted credential, so the message carries only
+            # its hash and length (KTD24), never the text itself.
+            record = refusal_record(value, "not an environment variable name")
+            self.fail(
+                name,
+                f"{record.reason} (sha256 {record.sha256[:12]}, length {record.length})",
+            )
         return value
 
     def choice(self, name: str, enum, required: bool = True):
