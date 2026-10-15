@@ -39,9 +39,12 @@ from dataclasses import dataclass
 FIELDS = ("good", "paths", "test")
 
 # A fenced block opened by three or more backticks with the info string
-# phactory, closed by a fence of the same length on its own line.
+# phactory, closed by a fence of the same length on its own line. Either
+# fence may sit behind up to three spaces, as CommonMark allows. Bodies are
+# normalised to LF before matching, because GitHub's web editor returns
+# CRLF and a closing fence followed by a carriage return is still a fence.
 BLOCK = re.compile(
-    r"^(?P<fence>`{3,})[ \t]*phactory[ \t]*\r?\n(?P<json>.*?)^(?P=fence)[ \t]*$",
+    r"^ {0,3}(?P<fence>`{3,})[ \t]*phactory[ \t]*\n(?P<json>.*?)^ {0,3}(?P=fence)[ \t]*$",
     re.MULTILINE | re.DOTALL,
 )
 
@@ -71,13 +74,18 @@ class Readiness:
     block: Block | None = None
 
 
+def _normalised(body: str) -> str:
+    """Return body with CRLF and lone CR endings turned into LF."""
+    return body.replace("\r\n", "\n").replace("\r", "\n")
+
+
 def _fail(message: str) -> Block:
     return Block(absent=(), error=message)
 
 
 def parse(body: str | None) -> Block:
     """Parse the phactory block out of a card body."""
-    found = list(BLOCK.finditer(body or ""))
+    found = list(BLOCK.finditer(_normalised(body or "")))
     if not found:
         return Block()
     if len(found) > 1:

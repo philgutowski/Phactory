@@ -154,3 +154,17 @@ def test_a_block_naming_another_lane_is_not_ready_with_the_reason():
     answer = ready(FakeCard(body=body), PROJECT)
     assert not answer.ready
     assert "names lane operator" in answer.reason
+
+
+def test_a_block_with_crlf_line_endings_parses():
+    """GitHub's web editor returns bodies with CRLF; the closing fence must still close."""
+    parsed = parse(COMPLETE.replace("\n", "\r\n"))
+    assert parsed.ok and parsed.absent == ()
+    assert parsed.paths == ("src/page.py", "tests/test_page.py")
+
+
+def test_a_fence_indented_up_to_three_spaces_parses():
+    """CommonMark allows a fence behind one to three spaces."""
+    indented = COMPLETE.replace("```phactory", "  ```phactory").replace("\n```\n", "\n  ```\n")
+    parsed = parse(indented)
+    assert parsed.ok and parsed.absent == ()
