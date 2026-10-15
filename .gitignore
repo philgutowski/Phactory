@@ -1,0 +1,13 @@
+# Raw idea capture, kept local by convention
+docs/backlog.md
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Local state
+.env

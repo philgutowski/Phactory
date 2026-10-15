@@ -1,0 +1,17 @@
+# Deepening review: data integrity (2026-10-14)
+
+Reviewer: data integrity pass over the first version plan, dispatched by the planning session after the initial write. Scope: KTD3, KTD4, KTD10, KTD11, KTD16, KTD17, the card state machine, U7, U14, U15, U22, U23. Disposition of every finding: accepted and integrated on 2026-10-14 (KTD3, KTD10, KTD16, KTD17, KTD20, U4, U7, U12, U14, U15, U22, U23).
+
+1. The state machine had no database level guard, and the ownership check leaned on an unverified engine primitive. Invariant: at most one non terminal build per card; every transition is an allowed edge; transitions on a build are strictly ordered. A replayed child task could write a duplicate or out of order transition. Protection: a partial unique index on builds for non terminal states; an allowed edges table referenced by transitions; transitions(build_id, seq) unique with seq assigned under a row lock; the build update as a compare and set on the expected from state so a stale replay updates zero rows; a per project advisory lock so transitions.id commits in order and cursor reads are stable under two workers.
+
+2. Six workflow steps act outside the engine with no claim recorded before the call. Invariant: an external side effect happens at most once per build. Protection: claim before act, with session_ref, pr_number, check_run_id, trace_id written in the same transaction as the following transition and read on entry; an attempts row before start, so a build with an attempt and no session reference is never started again automatically; the trace id derived from the build id; scores unique on (build, kind). U4's redeploy must also happen mid child task.
+
+3. There was no host event ledger, so a retried webhook and a poll result had no shared dedupe key. Protection: a host_events table unique on (host, delivery id) and on (project, pr number, kind, merge commit), with one ingest function for both the webhook and the poll path.
+
+4. The provider session was deleted before the export was confirmed, and no table had a retention or deletion rule. Protection: export, read the trace back, record the id, then delete; evidence json holds references and never raw payloads; audit keyed by slug text survives project deletion; cascade for every other table with refusal while any build is non terminal; retention per table; the operator deletes the Langfuse project by hand.
+
+5. The rollback decision read a previous gate result from rows that did not exist. Protection: a gate_runs table unique on host run id with the runner commit captured at run time; runner_builds with state active, previous, rejected and one active row per instance; the decision per (project, instance) at the previous commit; rollback as a compare and set; rejected commits skipped by the reconcile.
+
+6. "Applies twice without error" was the wrong migration test. Protection: a schema_migrations ledger with checksum; one transaction per file; refusal of a changed version; a short lock timeout; a no transaction marker for concurrent index builds; column adds nullable or with a constant default; the command targets the phactory database only.
+
+Checked and found sound: record_transition as the single writer in one transaction with actor; the closed terminal set and closed halt class set; a new branch name per re dispatch; re reading the card at every Phactory caused boundary; per project Langfuse projects and MCP tokens; the rule to keep the durable task small.
