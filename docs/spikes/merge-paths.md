@@ -1,6 +1,6 @@
 # U2 spike: merge paths and machine identities on both hosts
 
-Status: skeleton, spike in progress. Started 2026-10-15.
+Status: step 3 recorded, steps 4 to 6 open. Started 2026-10-15.
 Unit: U2 in `docs/plans/2026-10-14-1730-feat-phactory-first-version-plan.md`.
 Source of host facts: `docs/research/2026-10-14-plan/framework-docs-apis.md` Part C.
 Consumer: U9 (host adapters) reads this report for the landing path and merge method its probe must find, and U10 (verify landed) reads it for the commit relation.
@@ -32,12 +32,12 @@ Cells marked **to record** are measurements the spike still has to take. Everyth
 | Item | Finding |
 |---|---|
 | Landing path | Settled: `auto_merge_strict`. Queue not offered. U9's `probe_landing` must return `auto_merge_strict` for this repository from the live ruleset. |
-| Merge methods to probe | Settled: all three are allowed, so step 3 merges one test pull request under each of merge commit, squash, rebase. **To record:** which method Phactory pins in its own project file afterwards (U9's test scenario assumes a squash fixture; that is a fixture choice, not a decision for this repository). |
-| Commit relation verify checks | Settled by KTD7 for every auto merge method: `tree_of(main tip after merge) == tree_of(confirmed commit)`. Never compare commit hashes on this path. Under merge commit the landed tip is a two parent merge whose tree equals the head tree because "require branches to be up to date" guarantees the head already contains the base tip. Under squash the landed tip is one new commit, different hash, same tree. Under rebase the landed tip is a replayed commit, different hash, same tree. In all three, also check `pull_request.merged == true` and that `pull_request.merge_commit_sha` from the closed webhook equals the `main` tip. **To record:** for each method, the three hashes (confirmed head, `merge_commit_sha`, `main` tip) and the two tree hashes, as proof the equality held. Part C3 confirms `merge_commit_sha` is the merge commit only for the merge commit method; what it holds under squash and rebase is not in the research and is a spike measurement. |
+| Merge methods to probe | Done 2026-10-15, all three probed with real spike content, see Step 3 results below. Phactory's own project file should pin `squash`: one landed commit per card, same tree as the head, and the landed hash is the pull request's `merge_commit_sha`. |
+| Commit relation verify checks | Proved 2026-10-15 for all three methods: `tree_of(main tip after merge) == tree_of(confirmed commit)`, and `pull_request.merge_commit_sha` equals the `main` tip in every case, including squash and rebase where the research was silent. Never compare the landed hash with the confirmed hash on this path; only the merge commit method keeps the confirmed commit as a parent. Hashes in Step 3 results. |
 | Machine identity excluded from `main` | **To record** (step 4): a push to `main` with the App installation token is refused by the second ruleset; a branch create, update, and delete under `refs/heads/phactory/**` with the same token succeeds. Also record whether a RepositoryRole bypass entry for Write treats the App as a Write role member (if it does, the App is not excluded and the bypass list must drop Write). |
 | Registration token scope held | **To record** (step 4, last sentence): a fine grained token with Administration write only, limited to this repository, succeeds at just in time runner registration, and the same token is refused on a content write (proof the scope is as narrow as KTD20 says). |
 | Tracker automation delays | **To record** (step 6): seconds from the `pull_request` closed delivery timestamp to the linked issue closing, and from that close to the Projects item reaching Done. Part C5: "Item closed" and "Pull request merged" are on by default; the merged workflow moves the pull request item, not the issue; the issue moves only through a closing keyword into the default branch and then "Item closed". No built in workflow fires on branch created or pull request opened, so for GitHub Projects only the done step is native and KTD27's Actions template owns the other two. Out of U2's scope to build; record that the gap exists. |
-| Webhooks to capture here | `create` (step 4 branch creation), `pull_request` synchronize (second push), `pull_request` closed with `merged: true` (step 3). `merge_group` cannot be captured on this repository because it has no queue; see the fixture list. |
+| Webhooks to capture here | `create` (step 4 branch creation), `pull_request` synchronize (second push), `pull_request` closed with `merged: true`. Step 3 ran before any webhook receiver existed, so the closed payload is captured on a later pull request once the U4 host or a tunnel is up. `merge_group` cannot be captured on this repository because it has no queue; see the fixture list. |
 
 ## Repository 2: `Lementknight/zig-actions-runner` (GitHub, user owned, owner must confirm)
 
@@ -62,6 +62,21 @@ Cells marked **to record** are measurements the spike still has to take. Everyth
 | Tracker automation delays | **To record** (step 6): seconds from branch created to In Progress, pull request created to In Review, `pullrequest:fulfilled` to Done, read from the Jira issue history against the webhook delivery times. Part C4: the merged trigger exists under DevOps triggers and needs a connected cloud SCM; keying is the upper case issue key in the pull request title or source branch name. |
 | Enqueue with no click | **To record** (step 5): after approval with builds green, does the pull request enter the queue on its own under "automatically queued once builds/checks pass", or does it still need the "Add to merge queue" button. Part C2 says there is no REST endpoint to enqueue (BCLOUD-24176 is gathering interest), so if a click is needed, KTD7's needs you entry names that click. |
 | Webhooks to capture here | `pullrequest:fulfilled` (Part C3: carries `merge_commit.hash`, `destination.commit.hash`, `source.commit.hash`, `state` MERGED). The build status event for the queue's commit: Part C3 says no merge queue specific events exist, and Part C does not name the commit status event; its name is not in the research, verify in the webhook subscription UI and record the exact event key. |
+
+## Step 3 results, Phactory, 2026-10-15
+
+Three pull requests, each carrying real spike content, merged through GitHub under one method each. "Confirmed" is the branch head Phactory would have confirmed; "landed" is the `main` tip after the merge.
+
+| Method | PR | Confirmed head | Confirmed tree | Landed tip | Landed tree | Parents of landed tip | `merge_commit_sha` equals landed tip | Tree equal |
+|---|---|---|---|---|---|---|---|---|
+| merge commit | #29 | `98356e8` | `4a15e3e` | `0855ca3` | `4a15e3e` | `d22b491`, `98356e8` | yes | yes |
+| squash | #30 | `431936e` | `9901187` | `c5c264f` | `9901187` | `0855ca3` | yes | yes |
+| rebase | #31 | recorded in the pull request body | | filled after merge | | | | |
+
+Two findings beyond the table:
+
+1. Auto merge is not a waiting state until something blocks the pull request. With no required status check on the ruleset, `gh pr merge --auto` on #29 merged at once and left no auto merge event on the timeline, and on #30 GitHub refused `enablePullRequestAutoMerge` with "Pull request is in clean status", so #30 was merged through the host directly. "Require branches to be up to date" is likewise a property of the required status check rule, not a repository setting, so it is not enforced until `ci` becomes required after U5. Consequence for verify and for U9's probe: the landing path on this repository is `auto_merge_strict` only once a required check exists; before that it is a plain merge. U5's acceptance must re run one probe after the check is required.
+2. The code owner review rule is inert until a `CODEOWNERS` file exists (U5), so the KTD25 review gate is not yet live either.
 
 ## Notes against the unit text
 
