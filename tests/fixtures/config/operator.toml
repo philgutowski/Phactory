@@ -1,0 +1,61 @@
+# A complete operator file. Every value is invented for the tests; every
+# credential is named by the environment variable that would hold it.
+
+operator_subject = "user_operator_example"
+runner_read_api = "http://runner-api.internal:8080"
+
+[identity_provider]
+issuer = "https://auth.example.test"
+client_id = "client_example"
+client_secret_env = "PHACTORY_IDP_CLIENT_SECRET"
+
+[accounts.max-sub]
+kind = "subscription"
+env = "PHACTORY_ACCOUNT_MAX_SUB"
+
+[accounts.api-main]
+kind = "api_key"
+env = "PHACTORY_ACCOUNT_API_MAIN"
+
+[langfuse_projects.example-traces]
+public_key_env = "LANGFUSE_EXAMPLE_PUBLIC_KEY"
+secret_key_env = "LANGFUSE_EXAMPLE_SECRET_KEY"
+
+[tracker_credentials.example-jira]
+site = "example.atlassian.net"
+email_env = "EXAMPLE_JIRA_EMAIL"
+token_env = "EXAMPLE_JIRA_TOKEN"
+
+[tracker_credentials.example-github]
+site = "github.com"
+token_env = "EXAMPLE_GITHUB_TRACKER_TOKEN"
+
+[host_credentials.example-app]
+host = "github"
+kind = "github_app"
+env = "EXAMPLE_GITHUB_APP_KEY"
+
+[runner_repository]
+owner = "example-owner"
+name = "example-runner"
+default_branch = "main"
+version_file = "VERSION"
+
+[runner_instances.vps]
+prefix = "vps-runner"
+labels = ["self-hosted", "linux"]
+host = "vps"
+
+[[runner_instances.vps.repositories]]
+repository = "example-org/example-app"
+token_env = "EXAMPLE_RUNNER_REGISTRATION"
+previous_token_env = "EXAMPLE_RUNNER_REGISTRATION_PREVIOUS"
+
+[builder_workers.laptop]
+label = "laptop-builder"
+machine = "laptop"
+
+[[webhook_secrets]]
+repository = "example-org/example-app"
+env = "EXAMPLE_APP_WEBHOOK_SECRET"
+previous_env = "EXAMPLE_APP_WEBHOOK_SECRET_PREVIOUS"

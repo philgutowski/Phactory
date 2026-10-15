@@ -1,0 +1,42 @@
+# A complete project file. Every value is invented for the tests. Credentials
+# are named by their operator file entry, never by an environment variable.
+
+repository = "example-org/example-app"
+host = "github"
+tracker = "jira"
+tracker_site = "example.atlassian.net"
+board = "EX"
+lane_label = "cloud"
+ready_status = "Ready"
+in_progress_status = "In progress"
+in_review_status = "In review"
+landed_status = "Done"
+gate_command = "make check"
+allowed_builders = ["managed_agents", "cli"]
+auto_merge = true
+landing_path = "auto_merge_strict"
+merge_method = "squash"
+build_cap = 3
+daily_dispatch_cap = 12
+trivial_card_target = "docs/phactory-hello.md"
+trace_project = "example-traces"
+trace_detail = "summary"
+tracker_credential = "example-jira"
+host_credential = "example-app"
+allowed_subjects = ["user_operator_example", "agent_manager_example"]
+evals_path = "evals/"
+runner_labels = ["self-hosted", "linux"]
+machine_bound_tests = ["tests/test_usb_device.py"]
+builder_worker = "laptop"
+
+[roles.builder]
+account = "max-sub"
+model = "model-large"
+effort = "high"
+time_budget_minutes = 90
+
+[roles.judge]
+account = "api-main"
+model = "model-medium"
+effort = "medium"
+time_budget_minutes = 10
