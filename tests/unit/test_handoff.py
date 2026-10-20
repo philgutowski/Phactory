@@ -400,6 +400,10 @@ def test_a_rotating_credential_that_stops_expiring_must_still_change_value():
     mints = iter([("token-one-aaaa", expires), ("token-one-aaaa", None)])
     with pytest.raises(CredentialError):
         Credential("example-app", lambda: next(mints)).refresh()
+    # And the other direction: a static value that comes back with an expiry.
+    mints = iter([("token-one-aaaa", None), ("token-one-aaaa", expires)])
+    with pytest.raises(CredentialError):
+        Credential("example-app", lambda: next(mints)).refresh()
 
 
 def test_a_credential_is_due_within_the_margin_of_its_expiry():
