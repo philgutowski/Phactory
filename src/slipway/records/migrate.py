@@ -8,15 +8,26 @@ Rules, in the order apply() enforces them:
 
 1. Files are applied in version order, each at most once. A version already
    in the ledger is skipped, which makes a second run a no op.
-2. A version in the ledger whose file has changed since is refused with both
-   checksums named. Migrations are forward only: a fix is a new file.
-3. Each file runs in one transaction with a short lock_timeout, so a file
+2. Migrations are forward only. A file whose version is absent from the
+   ledger but below the highest version the ledger holds is refused with
+   both versions named, so a lower numbered file that merged after a higher
+   one was applied is never run out of order. Renumber it above the highest.
+3. A version in the ledger whose file has changed since is refused with both
+   checksums named. A fix is a new file.
+4. Each file runs in one transaction with a short lock_timeout, so a file
    that waits on a busy table fails fast instead of queueing every query
    behind it, and the ledger row commits with the file or not at all.
-4. A file whose first line is NO_TRANSACTION_MARKER runs statement by
+5. A file whose first line is NO_TRANSACTION_MARKER runs statement by
    statement outside a transaction, which CREATE INDEX CONCURRENTLY needs.
-   Its ledger row is written after its last statement.
-5. A session advisory lock serialises two migrators on one database.
+   Its ledger row is written after its last statement. Such a file is not
+   atomic: when its second statement fails, the first stays applied and no
+   ledger row is written, so the next run starts the file again from the
+   top. Every statement in it must therefore say IF NOT EXISTS, which
+   discover() checks, so the rerun skips what already landed. One caveat:
+   a CREATE INDEX CONCURRENTLY that fails leaves an invalid index behind
+   under its name, which IF NOT EXISTS would then skip; drop that index by
+   hand before the rerun.
+6. A session advisory lock serialises two migrators on one database.
 
 Slipway's records live in their own database beside the engine's. apply()
 takes the database name it is meant for and refuses any other, so a
@@ -37,6 +48,7 @@ LOCK_TIMEOUT = "5s"
 MIGRATE_LOCK_KEY = 0x70686163  # an arbitrary constant naming the migrator's advisory lock
 
 _NAME = re.compile(r"^(\d+)_[a-z0-9_]+\.sql$")
+_IF_NOT_EXISTS = re.compile(r"\bIF\s+NOT\s+EXISTS\b", re.IGNORECASE)
 
 LEDGER_DDL = """
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -54,6 +66,10 @@ class MigrationError(Exception):
 
 class ChecksumMismatch(MigrationError):
     """An applied migration's file no longer matches the checksum in the ledger."""
+
+
+class OutOfOrder(MigrationError):
+    """A pending migration is numbered below one the ledger already holds."""
 
 
 class WrongDatabase(MigrationError):
@@ -89,19 +105,37 @@ def discover(schema_dir: Path = SCHEMA_DIR) -> list[Migration]:
             raise MigrationError(f"version {version} is used by {found[version].name} "
                                  f"and {path.name}")
         data = path.read_bytes()
-        found[version] = Migration(version, path.name, data.decode(), checksum(data))
+        m = Migration(version, path.name, data.decode(), checksum(data))
+        if not m.transactional:
+            _require_if_not_exists(m)
+        found[version] = m
     return sorted(found.values(), key=lambda m: int(m.version))
+
+
+def _require_if_not_exists(m: Migration) -> None:
+    for statement in split_statements(m.sql):
+        if not _IF_NOT_EXISTS.search(statement):
+            first = statement.splitlines()[0]
+            raise MigrationError(f"{m.name} runs outside a transaction, so every statement "
+                                 f"must say IF NOT EXISTS; this one does not: {first}")
 
 
 def pending(migrations: list[Migration], ledger: dict[str, str]) -> list[Migration]:
     """The migrations still to apply, given the ledger as {version: checksum}.
 
-    Raises ChecksumMismatch for an applied version whose file has changed.
+    Raises ChecksumMismatch for an applied version whose file has changed,
+    and OutOfOrder for an unapplied version below the ledger's highest.
     """
+    highest = max(ledger, key=int, default=None)
     todo = []
     for m in migrations:
         recorded = ledger.get(m.version)
         if recorded is None:
+            if highest is not None and int(m.version) < int(highest):
+                raise OutOfOrder(
+                    f"migration {m.name} (version {m.version}) is not applied but the ledger "
+                    f"already holds version {highest}; migrations are forward only, so "
+                    f"renumber it above {highest}")
             todo.append(m)
         elif recorded != m.checksum:
             raise ChecksumMismatch(

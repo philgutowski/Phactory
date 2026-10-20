@@ -39,7 +39,9 @@ def status_buckets(conn, project_id: int | None = None) -> dict[str, dict[str, l
 
     With project_id, only that project; without, every project.
     """
-    where, params = ("WHERE b.project_id = %s", (project_id,)) if project_id else ("", ())
+    where, params = ("", ())
+    if project_id is not None:
+        where, params = "WHERE b.project_id = %s", (project_id,)
     out: dict[str, dict[str, list[dict]]] = {}
     for row in _all(conn, _LATEST_BUILDS.format(where=where), params):
         out.setdefault(row["project"], {}).setdefault(row["bucket"], []).append(row)
