@@ -206,6 +206,41 @@ def test_name_absent_from_operator_file_names_the_key(isolated_home):
     assert error.field == "host_credential"
 
 
+def test_tracker_credential_for_another_site_names_the_key(isolated_home):
+    # The same file halts binding_invalid at resolve, so check_names must refuse it too.
+    edit(project_file(isolated_home), 'tracker_site = "example.atlassian.net"',
+         'tracker_site = "other.atlassian.net"')
+    error = failure(lambda: check_names(load_project(SLUG), load_operator()))
+    assert error.field == "tracker_credential"
+    assert "other.atlassian.net" in error.message
+
+
+@pytest.mark.parametrize(
+    "old, new, field",
+    [
+        ('token_env = "EXAMPLE_JIRA_TOKEN"', 'tokn_env = "EXAMPLE_JIRA_TOKEN"',
+         "tracker_credentials.example-jira.tokn_env"),
+        ('client_id = "client_example"', 'client_id = "client_example"\nclient = "x"',
+         "identity_provider.client"),
+        ('kind = "subscription"', 'kind = "subscription"\nenvv = "X"',
+         "accounts.max-sub.envv"),
+        ('version_file = "VERSION"', 'version_file = "VERSION"\nbranch = "main"',
+         "runner_repository.branch"),
+        ('previous_token_env = "EXAMPLE_RUNNER_REGISTRATION_PREVIOUS"',
+         'previous_token_env = "EXAMPLE_RUNNER_REGISTRATION_PREVIOUS"\ntoken = "X"',
+         "runner_instances.vps.repositories[0].token"),
+        ('previous_env = "EXAMPLE_APP_WEBHOOK_SECRET_PREVIOUS"',
+         'previous_env = "EXAMPLE_APP_WEBHOOK_SECRET_PREVIOUS"\nrepo = "x"',
+         "webhook_secrets[0].repo"),
+    ],
+)
+def test_unknown_key_in_a_nested_operator_table_names_it(isolated_home, old, new, field):
+    edit(isolated_home / "operator.toml", old, new)
+    error = failure(load_operator)
+    assert error.field == field
+    assert "not a known key" in error.message
+
+
 def test_operator_file_refuses_a_secret_value(isolated_home):
     edit(isolated_home / "operator.toml", 'env = "SLIPWAY_ACCOUNT_MAX_SUB"',
          'env = "ghp_' + "Z" * 36 + '"')
