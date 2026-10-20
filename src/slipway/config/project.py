@@ -7,9 +7,12 @@ is the file name; the file does not repeat it.
 Validation runs in three passes, and each failure names the dotted key:
 
 1. Shape: every required key present with the right type, no unknown key.
-2. Secrets: no string looks like a token or key (redact.TOKEN_PATTERNS) or
-   like an environment variable name. A project file names credentials by
-   their operator file entry, never by the variable that holds them (R3).
+2. Secrets: no string looks like a token or key (redact.TOKEN_PATTERNS),
+   and no field that names an operator file entry (NAME_FIELDS and each
+   role's account) looks like an environment variable name. A project file
+   names credentials by their operator file entry, never by the variable
+   that holds them (R3). Any other string, such as a Jira status TO_DO, may
+   be written in capitals.
 3. Names: check_names(project, operator) refuses a name the operator file
    does not define. It is a separate call because resolve (bindings.py)
    reports a missing name as binding_invalid at dispatch instead.
@@ -27,7 +30,6 @@ from slipway.config import (
     home,
     read_toml,
     refuse_secrets,
-    strings,
 )
 from slipway.config.operator import Host, Operator
 
@@ -117,6 +119,10 @@ KNOWN = {
     "runner_labels", "machine_bound_tests", "builder_worker",
 }
 ROLE_KEYS = {"account", "model", "effort", "time_budget_minutes"}
+# Fields whose value is the name of an operator file entry. Only these, plus
+# roles.<role>.account, are checked for the shape of an environment variable
+# name; a status label or board key in capitals is a legitimate value.
+NAME_FIELDS = ("tracker_credential", "host_credential", "trace_project", "builder_worker")
 
 
 def project_path(slug: str, root: Path | None = None) -> Path:
@@ -131,8 +137,25 @@ def load_project(slug: str, root: Path | None = None) -> Project:
     return parse_project(path, read_toml(path))
 
 
+def name_fields(data: dict):
+    """Yield (dotted key, value) for each field that names an operator file entry.
+
+    This runs before the shape pass, so a value of the wrong type is skipped
+    here and reported there.
+    """
+    for key in NAME_FIELDS:
+        if isinstance(data.get(key), str):
+            yield key, data[key]
+    roles = data.get("roles")
+    if isinstance(roles, dict):
+        for role, table in roles.items():
+            if isinstance(table, dict) and isinstance(table.get("account"), str):
+                yield f"roles.{role}.account", table["account"]
+
+
 def refuse_env_names(path: Path, data: dict) -> None:
-    for key, value in strings(data):
+    """Refuse an environment variable name where an operator file entry belongs."""
+    for key, value in name_fields(data):
         if LOOKS_LIKE_ENV_NAME.fullmatch(value.strip()):
             raise ConfigError(
                 path, key,

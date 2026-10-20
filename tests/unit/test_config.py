@@ -149,6 +149,31 @@ def test_env_var_name_as_a_credential_names_the_key(isolated_home):
     assert "environment variable" in error.message
 
 
+def test_status_labels_in_capitals_are_accepted(isolated_home):
+    """Issue #37: a Jira workflow with TO_DO and IN_REVIEW statuses must validate."""
+    path = project_file(isolated_home)
+    edit(path, 'ready_status = "Ready"', 'ready_status = "TO_DO"')
+    edit(path, 'in_review_status = "In review"', 'in_review_status = "IN_REVIEW"')
+    project = load_project(SLUG)
+    assert project.ready_status == "TO_DO"
+    assert project.in_review_status == "IN_REVIEW"
+
+
+@pytest.mark.parametrize(("old", "new", "field"), [
+    ('host_credential = "example-app"', 'host_credential = "EXAMPLE_GH_TOKEN"',
+     "host_credential"),
+    ('trace_project = "example-traces"', 'trace_project = "LANGFUSE_SECRET_KEY"',
+     "trace_project"),
+    ('builder_worker = "laptop"', 'builder_worker = "LAPTOP_WORKER"', "builder_worker"),
+    ('account = "max-sub"', 'account = "ANTHROPIC_API_KEY"', "roles.builder.account"),
+])
+def test_env_var_name_in_any_name_field_is_refused(isolated_home, old, new, field):
+    edit(project_file(isolated_home), old, new)
+    error = failure(lambda: load_project(SLUG))
+    assert error.field == field
+    assert "environment variable" in error.message
+
+
 def test_unknown_key_names_the_key(isolated_home):
     edit(project_file(isolated_home), 'board = "EX"', 'board = "EX"\nboard_number = 7')
     assert failure(lambda: load_project(SLUG)).field == "board_number"
