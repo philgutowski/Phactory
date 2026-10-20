@@ -32,7 +32,10 @@ a small shell function that prints the contents of run/token, and the
 adapter rewrites that file when the Credential is due (ten minutes before a
 one hour token expires, so on a fifty minute cadence). A credential with no
 expiry, such as a static repository access token, is never refreshed
-(follow up #54).
+(follow up #54). A refresh that fails ends the build as a halt with the
+error as its reason, once: the laptop's refresh thread hands the error to
+start, and the container's poll records the halt before it raises, so a
+later poll answers from the record instead of raising again (follow up #67).
 
 Redaction (KTD24). Every string that leaves the session passes through
 redact.scrub with every value the adapter injected: the transcript when it
@@ -71,6 +74,7 @@ from slipway.builders.base import (
     BUILDER_FAILED,
     BuilderResult,
     Credential,
+    CredentialError,
     Schedule,
     SessionStatus,
 )
@@ -581,8 +585,15 @@ class _Sessions:
         top = self.dir(session_ref)
         return git_env(top / "run" / "token", self.git, top, self.environ)
 
-    def _finish(self, session_ref: str, exit_code: int, detail: str = "") -> BuilderResult:
-        """Copy the transcript out, read the pushed tip, and record the result."""
+    def _finish(self, session_ref: str, exit_code: int | None, detail: str = "",
+                halt: CredentialError | None = None) -> BuilderResult:
+        """Copy the transcript out, read the pushed tip, and record the result.
+
+        halt is a refresh that failed mid build. The result is then a halt
+        with the error as its reason whatever the branch holds, because a
+        session that lost its credential cannot be trusted to have finished.
+        exit_code is None when the session was still running.
+        """
         top = self.dir(session_ref)
         state = self._state(session_ref)
         found = sorted((top / "workspace" / "config" / "projects").glob(
@@ -599,18 +610,25 @@ class _Sessions:
                 stop = final.get("subtype")
         except (OSError, ValueError):
             pass
-        tip = remote_tip(self.run, self._git_env(session_ref), self.git.remote,
-                         f"refs/heads/{state['branch']}")
-        commit = tip if tip and tip != state["base"] else None
-        reason = f"session exited with code {exit_code}"
-        if stop:
-            reason += f", {stop}"
-        if detail:
-            reason += f", {detail}"
-        if commit is None:
-            reason += f"; nothing was pushed to {state['branch']}"
+        if halt is not None:
+            commit = None
+            reason = f"credential refresh failed: {halt}"
+            if exit_code is not None:
+                reason += f"; session exited with code {exit_code}"
+        else:
+            tip = remote_tip(self.run, self._git_env(session_ref), self.git.remote,
+                             f"refs/heads/{state['branch']}")
+            commit = tip if tip and tip != state["base"] else None
+            reason = f"session exited with code {exit_code}"
+            if stop:
+                reason += f", {stop}"
+            if detail:
+                reason += f", {detail}"
+            if commit is None:
+                reason += f"; nothing was pushed to {state['branch']}"
         result = BuilderResult(
-            branch=state["branch"], commit=commit, reason=scrub(reason), provider_ref=session_ref,
+            branch=state["branch"], commit=commit,
+            reason=scrub(reason, self.injected(session_ref)), provider_ref=session_ref,
             cost=cost, model=state["model"], account=state["account"],
             halt_class=None if commit else BUILDER_FAILED,
         )
@@ -719,7 +737,13 @@ class ContainerBuilder(_Sessions):
                              check=True)
         state = json.loads(inspected.stdout)
         if state.get("Running") or state.get("Status") in ("created", "running", "restarting"):
-            self.refresh_if_due(session_ref)
+            try:
+                self.refresh_if_due(session_ref)
+            except CredentialError as error:
+                # Record the halt first, so the next poll answers from it and
+                # the error is raised once, not on every tick (follow up #67).
+                self._finish(session_ref, None, halt=error)
+                raise
             return SessionStatus(False, detail=state.get("Status") or "running")
         detail = "out of memory" if state.get("OOMKilled") else (state.get("Error") or "")
         result = self._finish(session_ref, int(state.get("ExitCode") or 0), detail)
@@ -770,10 +794,17 @@ class LaptopBuilder(_Sessions):
         session_ref, top, session_id, value = self._prepare(handoff, binding, credential)
         env = self.environment(session_ref, handoff, binding, session_id, value)
         stop = threading.Event()
+        failed: list[CredentialError] = []
 
         def keep_fresh():
+            # A refresh that fails ends this thread, never silently: start
+            # reads the error and ends the build as a halt (follow up #67).
             while not stop.wait(self.refresh_seconds):
-                self.refresh_if_due(session_ref)
+                try:
+                    self.refresh_if_due(session_ref)
+                except CredentialError as error:
+                    failed.append(error)
+                    return
 
         keeper = threading.Thread(target=keep_fresh, daemon=True)
         keeper.start()
@@ -782,7 +813,7 @@ class LaptopBuilder(_Sessions):
         finally:
             stop.set()
             keeper.join()
-        self._finish(session_ref, done.returncode)
+        self._finish(session_ref, done.returncode, halt=failed[0] if failed else None)
         return session_ref
 
     def poll(self, session_ref: str) -> SessionStatus:

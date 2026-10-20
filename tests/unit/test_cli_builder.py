@@ -9,6 +9,7 @@ import json
 import os
 import plistlib
 import subprocess
+import threading
 import tomllib
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -24,6 +25,7 @@ from slipway.builders.base import (
     RETURNED_EMPTY,
     Builder,
     Credential,
+    CredentialError,
     Schedule,
 )
 from slipway.builders.cli import (
@@ -531,6 +533,67 @@ def test_static_credential_is_never_refreshed(tmp_path, project, binding):
         clock.at = T0 + timedelta(hours=hours)
         assert not builder.poll(ref).terminal
     assert (builder.dir(ref) / "run" / "token").read_text() == "ATCTT" + "s" * 30
+
+
+# A refresh that fails mid build (follow up #67). A rotating token minted
+# unchanged raises CredentialError; the build ends as a halt with that reason.
+
+def test_container_raises_a_failed_refresh_once_and_then_halts(tmp_path, project, binding):
+    clock = Clock()
+    builder, run, ref = started(tmp_path, project, binding, clock,
+                                tokens=[GIT_TOKENS[0], GIT_TOKENS[0]])
+    inspect_reply(run, ref, running=True)
+    clock.at = T0 + timedelta(minutes=55)
+    with pytest.raises(CredentialError, match="minted the value it replaces"):
+        builder.poll(ref)
+    # Every later tick answers from the record: no second raise, no docker call.
+    count = len(run.calls)
+    for minutes in (56, 57, 70):
+        clock.at = T0 + timedelta(minutes=minutes)
+        status = builder.poll(ref)
+        assert status.terminal and len(run.calls) == count
+    result = status.result
+    assert result.outcome == RETURNED_EMPTY and result.halt_class == BUILDER_FAILED
+    assert "credential refresh failed" in result.reason
+    assert "minted the value it replaces" in result.reason
+    assert GIT_TOKENS[0] not in result.reason
+
+
+def test_laptop_build_halts_when_the_refresh_thread_fails(tmp_path, project, binding):
+    run = Recorder()
+    builder = LaptopBuilder(tmp_path / "sessions", GitAccess(REMOTE, "x-access-token"),
+                            "slipway-session", "/opt/bin:/usr/bin:/bin", run=run,
+                            environ=ENVIRON, now=Clock(T0 + timedelta(minutes=55)),
+                            refresh_seconds=0.01)
+    minted = threading.Event()
+    calls = []
+
+    def mint():
+        # The first mint starts the session; the second is the refresh,
+        # which hands back the same rotating token.
+        calls.append(1)
+        if len(calls) > 1:
+            minted.set()
+        return GIT_TOKENS[0], T0 + timedelta(hours=1)
+
+    def session(argv, check=True, **kwargs):
+        if argv[0] == "sudo" and "/bin/sh" in argv:
+            # The session runs until the refresh thread has failed.
+            assert minted.wait(5)
+            return subprocess.CompletedProcess(argv, 0, "", "")
+        return Recorder.__call__(run, argv, check=check, **kwargs)
+
+    run.reply([*GIT, "ls-remote", REMOTE], f"{PUSHED}\trefs/heads/slipway/EX-12-hello-page\n")
+    run.reply(["sudo", "--non-interactive", "--user", "slipway-session", "--", "rm"])
+    builder.run = session
+    back = laptop_build(builder, handoff(project), binding, Credential("example-app", mint))
+    result = back.result
+    # A pushed branch does not count: the session lost its credential.
+    assert result.outcome == RETURNED_EMPTY and result.commit is None
+    assert result.halt_class == BUILDER_FAILED
+    assert "credential refresh failed" in result.reason
+    assert "minted the value it replaces" in result.reason and "code 0" in result.reason
+    assert GIT_TOKENS[0] not in result.reason
 
 
 # The laptop.
