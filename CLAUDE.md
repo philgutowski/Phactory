@@ -8,6 +8,8 @@ A Python service that hands cards to coding agent builders, lands their pull req
 
 ## Environment setup, run first
 
+In a Claude Code cloud session the SessionStart hook, `.claude/hooks/session-start.sh`, has already run every step in this section and set `SLIPWAY_TEST_DSN`, so the session can go straight to the gate. On a laptop, run the steps by hand.
+
 Python 3.12, a virtual environment (a private copy of Python and its packages inside `.venv`), and the package installed in editable mode (so edits under `src/` take effect without reinstalling):
 
 ```sh
