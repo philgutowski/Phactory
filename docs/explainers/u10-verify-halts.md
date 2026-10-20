@@ -14,6 +14,9 @@ After the host says a pull request merged, someone has to check that what reache
 - **Tested commit.** On a queue path, the commit the queue built and ran CI against, recorded with the pull request head the queue reported for it (KTD7).
 - **Merged commit.** The commit the host says it landed (`merge_commit_sha` on GitHub).
 - **Bare cache.** A git repository with no working checkout, only the object store. Slipway keeps one per project under `$SLIPWAY_HOME/cache/git/`.
+- **Advertised.** A commit some ref on the remote points at, so the remote lists it when git asks what it has. Some hosts serve only advertised commits and refuse a request for any other id.
+- **Held ref.** A ref Slipway writes in its own cache, under `refs/slipway/held/<branch>`, pointing at a confirmed head so that commit stays in the cache after the host deletes the branch.
+- **Prune.** On a fetch, deleting a local branch ref whose branch no longer exists on the remote.
 - **Halt.** A stop a person must look at, with a class from a closed set and the evidence that explains it.
 - **Partial landing.** The commit landed but the card did not move to done.
 
@@ -21,7 +24,7 @@ After the host says a pull request merged, someone has to check that what reache
 
 | File | What it does |
 |:-|:-|
-| `src/slipway/gitread.py` | Read only git calls: `run`, `GitError`, `rev_parse`, `fetch`, `log_oneline`, `log_messages`, `default_branch` (rewritten from native-relay's names), and the new `tree_of`, `is_ancestor`, `merge_tree`, `first_parent`, `cache_path`, `refresh`. |
+| `src/slipway/gitread.py` | Git calls that only read the project's remote: `run`, `GitError`, `rev_parse`, `fetch`, `log_oneline`, `log_messages`, `default_branch` (rewritten from native-relay's names), and the new `tree_of`, `is_ancestor`, `merge_tree`, `first_parent`, `cache_path`, `refresh`, `hold`, `release`. The only writes are to Slipway's own cache. |
 | `src/slipway/verify.py` | `verify(...)` returns a `Verdict`: the outcome, the checks, the evidence, and a `Halt` when one applies. Also `hand_landing` and `key_pattern`. |
 | `src/slipway/halts.py` | The seven halt classes, each with its kind, the evidence keys it requires, and its needs you line. `Halt` refuses a class outside the set and missing evidence when it is built. |
 | `tests/unit/test_verify.py` | Every landing path and outcome on real git in temporary repositories, plus the `gitread` calls. |
@@ -29,9 +32,20 @@ After the host says a pull request merged, someone has to check that what reache
 
 ## How verify reads git without running project code
 
-The workflow calls `gitread.refresh(cache, remote, commits=(confirmed,))` first. The first time it clones bare; after that it fetches every branch. A commit not yet present, such as a confirmed head whose branch the host deleted on merge, is fetched by its id. Because the cache is bare, no checkout ever happens, so no filter, hook, or attribute from the project can run (KTD18). Every git call also points hooks at nothing and turns off credential prompts. A `GitError` message is passed through `redact.scrub`, because a remote URL can carry a token.
+The cache is filled at two moments.
 
-Verify then reads only that cache. In tests the remote is always a path on disk; the network guard refuses an `https` remote, and a test proves it.
+**At confirm time**, while the branch still exists on the remote, the workflow calls `gitread.hold(cache, remote, branch, confirmed)`. It refreshes the cache, which brings the branch in with every other, so the confirmed head arrives as an advertised commit that any host serves. It then writes the held ref `refs/slipway/held/<branch>` pointing at that commit. Holding the same branch again moves the ref to the new head.
+
+**At verify time** the workflow calls `gitread.refresh(cache, remote, commits=(confirmed,), refs=pull_refs)`. The first time it clones bare; after that it fetches every branch with prune, so a `slipway/*` branch the host deleted on merge leaves the cache too and branch refs do not pile up. Prune touches only `refs/heads/`, so the held ref survives, and garbage collection never drops a commit a ref points at. A confirmed head the cache still lacks is looked for in two more places, in order:
+
+1. `refs`, the ref names a host keeps for the pull request after its branch is gone (`refs/pull/<n>/head` on GitHub). The ref layout belongs to the host, so a host adapter supplies it and `gitread` names none (R1). These are fetched for their objects only and stored under no local ref.
+2. The commit's bare id. This is what used to be the only route, and it is why squash and rebase landings were fragile: with delete branch on merge, nothing advertises the confirmed head any more, and a host that refuses unadvertised ids fails the fetch, which verify reported as `git_unreadable`.
+
+When the card is finished, the workflow calls `gitread.release(cache, branch)` to drop the held ref.
+
+Because the cache is bare, no checkout ever happens, so no filter, hook, or attribute from the project can run (KTD18). Every git call also points hooks at nothing and turns off credential prompts. A `GitError` message is passed through `redact.scrub`, because a remote URL can carry a token.
+
+Verify then reads only that cache. In tests the remote is always on disk; the network guard refuses an `https` remote, and a test proves it. The tests reach the origin through a `file://` URL rather than a bare path, because cloning a bare path copies the origin's whole object store, unreachable commits included, which would hide a refused fetch. A refusing origin is built by setting git's three `uploadpack.allow*SHA1InWant` settings to false and pinning the client to git protocol version 0, since protocol version 2 does not enforce those settings. Under that origin a fresh cache cannot get a squash landed card's confirmed head, and a cache that held it at confirm time verifies the card as landed.
 
 ## The landing relation per path
 
@@ -42,6 +56,8 @@ The relation between the confirmed commit and the merged commit depends on the l
 | `merge_queue`, `bitbucket_queue` | merged equals tested, and the tested commit's recorded pull request head equals confirmed | The queue lands the commit it tested, which it built itself. The head it recorded ties that commit back to what was approved. |
 | `auto_merge_strict` | tree of merged equals tree of confirmed | Measured on this repository under merge commit, squash, and rebase: with the branch kept up to date, every method lands the confirmed tree. The landed hash differs from the confirmed hash under squash and rebase, so hashes are never compared. |
 | `plain_merge` | tree of merged equals the tree git builds by merging confirmed into merged's first parent | Auto merge on with no required up to date check. The branch may be behind when it lands, so the landed tree also holds whatever reached `main` meanwhile. `git merge-tree` computes that merge in the object store alone. When the branch was up to date this reduces to the strict relation. |
+
+Each relation is recorded under its own check name. A queue path records two checks, `merged_equals_tested` and `tested_head_equals_confirmed`; when the first fails the second is recorded as a skip. The other two paths record one, `confirmed_landed`. No name appears twice in a verdict, so a page that reads a check by name can never show a pass beside a halted verdict, which it could when both queue checks shared the name `confirmed_landed` and the first one passed.
 
 On every path verify also checks `new_commit_since_baseline`: the merged commit is on the branch tip's history and comes after the baseline.
 
@@ -56,11 +72,14 @@ The host's merged event usually arrives before the tracker's own rule moves the 
 ## The verify decision
 
 ```
+hold the confirmed head at confirm time (workflow)
+        |
 refresh the bare cache (workflow)
         |
 read branch tip, trees, ancestry   on GitError ->  halted, git_unreadable
         |
-new_commit_since_baseline and confirmed_landed
+new_commit_since_baseline, then the path's relation checks
+  (queue: merged_equals_tested, tested_head_equals_confirmed; else confirmed_landed)
         |
   any failed?   yes ->  halted, commit_mismatch (relation, expected, found)
         |no
@@ -93,5 +112,6 @@ A verify halt is a wait: the workflow sits in `halted`, posts a failing landing 
 ## How it connects
 
 - `verify` imports `gitread`, `halts`, and `trackers.base` (for `TrackerStatus`). `gitread` imports `redact`. `halts` imports only the standard library. None of them imports `service`, `workflow`, or a surface (KTD23).
+- U14 calls `gitread.hold` when it confirms the branch head, passes the host adapter's pull request refs to `gitread.refresh` before each verify, and calls `gitread.release` once the card reaches a terminal state.
 - U9's `probe_landing` decides the landing path; U14 passes it in with the confirmed and tested commits from the build row, and the tracker status from the U8 adapter.
 - U14 turns the verdict into a transition: `landed` to `landed`; any halt, or `blocked` with the tracker status's `tracker_unreadable`, to `halted` with the needs you line on the `slipway/landing` check.
