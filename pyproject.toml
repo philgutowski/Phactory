@@ -28,8 +28,9 @@ slipway = ["records/schema/*.sql"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-# src holds the package, tests holds the guard and helper modules.
-pythonpath = ["src", "tests"]
+# src holds the package, tests holds the guard and helper modules, and the
+# repository root holds factory, the tooling Slipway builds itself with.
+pythonpath = ["src", "tests", "."]
 # Plugins named with -p load before any conftest or test module, so the
 # network guard is in place before anything under test can open a socket.
 # _gate turns a skipped integration test into a failure when CI is set.
@@ -41,7 +42,7 @@ markers = [
 [tool.ruff]
 target-version = "py312"
 line-length = 100
-src = ["src", "tests"]
+src = ["src", "tests", "."]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP"]

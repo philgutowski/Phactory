@@ -16,14 +16,14 @@ Project gates can run on the operator's instances of [zig-actions-runner](https:
 
 ## How Slipway is built
 
-Slipway is its own first project. Every unit of the plan is a card on this repository's GitHub Projects board. Cards a Claude Code cloud session can build are built that way, from the card text alone, and land as a pull request that auto merges on a green gate; changes to the gate, the deploy files, or anything that holds a credential wait for one review. Spikes, deploys, and the acceptance pass are operator cards run by hand. The plan's Build Process section has the card template and the lane rules.
+Slipway is its own first project. Every unit of the plan is a card on this repository's GitHub Projects board. Cards a Claude Code cloud session can build are built that way, from the card text alone, and land as a pull request that auto merges once the gate is green and a model review has read the change against its card; the operator is asked to read changes to the gate, the deploy files, or anything that holds a credential, but the merge does not wait. Spikes, deploys, and the acceptance pass are operator cards run by hand. The plan's Build Process section has the card template and the lane rules, and `docs/explainers/build-loop.md` has the loop as built: the ready rule, the handoff, the dispatcher, and the review check.
 
 ## Status
 
-Planned 2026-10-14, reviewed and deepened 2026-10-15. Nothing is built yet.
+Planned 2026-10-14, reviewed and deepened 2026-10-15. Phase 1 and the builder contract are built; the loop that builds the rest is `docs/explainers/build-loop.md`.
 
 - The plan: `docs/plans/2026-10-14-1730-feat-slipway-first-version-plan.md`. Requirements R1 to R42, twenty eight technical decisions, twenty five units in six phases. Four spikes gate the build: the Managed Agents event log and push path, each host's merge path and machine identity, the MCP surface behind an outside identity provider, and the durability of the workflow engine.
 - The seed note: `docs/ideation/2026-10-14-software-factory.md`.
 - Research: `docs/research/2026-10-14-brainstorm/` (what was in the room at the brainstorm) and `docs/research/2026-10-14-plan/` (the planning research, the three deepening reviews, and the resolved document review).
 
-The first card is the repository scaffold (U5). The four spikes run beside it.
+Landed: U5, U6, U7, U8, U10, U11, U13 and their follow ups. The four spikes are operator cards and gate U12 (U1), U18 (U3), and U14 (U4).

@@ -1,9 +1,11 @@
-# Paths where a change waits for one review even with auto merge on (KTD25).
-# A change here either lands on the host holding every customer credential or
-# needs a live smoke only the operator can run. The ruleset on main requires
-# code owner review, so these lines are the review rule.
+# Paths where a change lands on the host holding every customer credential or
+# needs a live smoke only the operator can run (KTD25). The operator is asked
+# to review a change here and reads it first once it lands; since 2026-10-20
+# the merge itself waits only for the ci and review checks, by the operator's
+# decision, so the ruleset on main does not require code owner review.
 
 /.github/                   @philgutowski
+/factory/                   @philgutowski
 /deploy/                    @philgutowski
 /src/slipway/config/       @philgutowski
 /src/slipway/auth.py       @philgutowski
@@ -16,6 +18,6 @@
 /src/slipway/onboard/      @philgutowski
 /src/slipway/runner/       @philgutowski
 
-# Not in KTD25's list: this file itself. Without this line an auto merged
-# change could delete the rule above without anyone reading it.
+# Not in KTD25's list: this file itself, so a change to who is asked is
+# itself something the operator is asked about.
 /CODEOWNERS                 @philgutowski

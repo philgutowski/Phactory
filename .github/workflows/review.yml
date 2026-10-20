@@ -1,0 +1,60 @@
+# The review check: a model review of every pull request before auto merge.
+#
+# Auto merge waits for the required checks, and ci only proves the gate is
+# green. This job is the second required check: it hands the diff, the card
+# the pull request closes, and factory/review-brief.md to a reviewer model
+# in Claude Code's print mode, posts the verdict as a pull request review,
+# and fails when a finding is blocking or the review could not run. The
+# script is factory/review.py; the explainer is docs/explainers/build-loop.md.
+#
+# Same shape as ci.yml, one checkout and one run step, so the job can move to
+# an operator runner later. It stays on a hosted runner by default because the
+# reviewer needs Node for the CLI and a route to the Claude API; the variable
+# SLIPWAY_REVIEW_RUNS_ON moves it.
+#
+# The repository supplies, as settings, never as edits here:
+#   secret   CLAUDE_CODE_OAUTH_TOKEN  a subscription token from `claude setup-token`,
+#                                     or ANTHROPIC_API_KEY for API billing; with
+#                                     neither set the check is red
+#   variable SLIPWAY_REVIEW_MODEL   the reviewer model, default claude-fable-5-1
+#   variable SLIPWAY_REVIEW_EFFORT  low, medium, high, xhigh, or max; default high
+#   variable SLIPWAY_REVIEW_BUDGET  a cap in dollars on one review; default 8
+#
+# A change to this file, the script, or the brief is a change to what passes
+# review, so CODEOWNERS holds .github/ and factory/ and the operator reads it.
+
+name: review
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ${{ vars.SLIPWAY_REVIEW_RUNS_ON || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Review the pull request against its card and the brief
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          REVIEW_MODEL: ${{ vars.SLIPWAY_REVIEW_MODEL }}
+          REVIEW_EFFORT: ${{ vars.SLIPWAY_REVIEW_EFFORT }}
+          REVIEW_BUDGET_USD: ${{ vars.SLIPWAY_REVIEW_BUDGET }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          npm install -g --silent @anthropic-ai/claude-code
+          # The script imports the card parser from the package, nothing else.
+          export PYTHONPATH="$PWD/src:$PWD"
+          python3 factory/review.py

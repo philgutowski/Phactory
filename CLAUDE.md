@@ -50,7 +50,7 @@ With `CI` set, a skipped integration test is a failure (`tests/_gate.py`), exact
 - **Write the explainer.** Each phase has one file under `docs/explainers/`, written with the code: what each file does and how the pieces connect.
 - **No dashes as punctuation.** No em dash, no en dash, and no two hyphens in a row, anywhere in prose, code comments, commit messages, or docs. Use a comma, a period, or a new sentence. Command line flags inside code are code, not punctuation.
 - **Commits.** Plain messages, no co author trailers.
-- **Review paths.** A change under a path in `CODEOWNERS` waits for one review (KTD25) even with auto merge on. Say so in the pull request when a card touches one.
+- **Review paths.** `CODEOWNERS` names the paths where a change lands on the host holding every credential or needs a live smoke; the operator is asked to review them but the merge does not wait. Say so in the pull request when a card touches one, so the operator reads it first after it lands.
 
 ## The handoff shape
 
@@ -60,6 +60,15 @@ A cloud card's starting comment carries, in this order:
 2. Branch: `slipway/u<n>-<slug>`, where `<n>` is the unit number and the issue is titled `U<n>: ...`. The board workflow finds the card from this name.
 3. Rules: this file, plus "define jargon on first use and write the explainer under `docs/explainers/`".
 4. Files other open cards declare, which this card must not touch.
-5. Done line: tests, ruff, and the import test green, pull request opened with `Closes #<issue>` in the body.
+5. Done line: tests, ruff, and the import test green, pull request opened with `Closes #<issue>` in the body, auto merge on, and the pull request watched until it merges.
 
 The card's own `slipway` block (see `.github/ISSUE_TEMPLATE/card.md`) holds `good`, `paths`, `test`, and `lane`. Its `paths` is the file list, and its `good` is the definition of done.
+
+`factory/handoff.py` renders this shape from the board, and the `dispatch` skill (`.claude/skills/dispatch/SKILL.md`) is the procedure that posts it and starts the session.
+
+## The two checks on every pull request
+
+- `ci` runs the gate above.
+- `review` is a model review: `factory/review.py` hands the diff, the card, and `factory/review-brief.md` to a reviewer model (on the operator's subscription, through the `CLAUDE_CODE_OAUTH_TOKEN` secret) and posts the verdict as a pull request review. A blocking finding turns the check red; fix it and push, and both checks run again. Answer an advisory finding in one line on the pull request. Never weaken a test, force push, or push an empty commit to get green.
+
+Auto merge waits for both and for nothing else: the review check is the review, by the operator's decision of 2026-10-20. The explainer is `docs/explainers/build-loop.md`.
