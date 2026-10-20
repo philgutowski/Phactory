@@ -344,11 +344,62 @@ def test_refresh_returns_a_new_value_and_never_exposes_the_old_one():
     assert not hasattr(credential, "__dict__")
 
 
-def test_a_refresh_that_mints_the_same_value_or_nothing_is_refused():
+def test_a_rotating_refresh_that_mints_the_same_value_or_nothing_is_refused():
+    expires = datetime(2026, 10, 15, 13, 0, tzinfo=UTC)
     with pytest.raises(CredentialError):
-        Credential("example-app", minter("same-value-aaaa", "same-value-aaaa")).refresh()
+        Credential("example-app",
+                   minter("same-value-aaaa", "same-value-aaaa", expiry=expires)).refresh()
     with pytest.raises(CredentialError):
         Credential("example-app", minter(""))
+    with pytest.raises(CredentialError):
+        Credential("example-app", minter("static-value-aaaa", "")).refresh()
+
+
+def test_a_static_credential_survives_a_refresh_cycle_with_no_error():
+    # A static token (no expiry, a Bitbucket repository access token) is
+    # never due, and a refresh called anyway keeps the same value.
+    credential = Credential("example-static", minter(*["static-value-aaaa"] * 4))
+    start = datetime(2026, 10, 15, 12, 0, tzinfo=UTC)
+    for minutes in (0, 50, 100):
+        assert not credential.due(start + timedelta(minutes=minutes))
+        assert credential.refresh() == "static-value-aaaa"
+    assert credential.current() == "static-value-aaaa"
+    assert credential.expires_at is None
+
+
+def test_a_static_credential_takes_a_new_value_when_the_operator_changes_it():
+    credential = Credential("example-static", minter("static-one-aaaa", "static-two-bbbb"))
+    assert credential.refresh() == "static-two-bbbb"
+    held = [getattr(credential, slot, None) for slot in Credential.__slots__]
+    assert "static-one-aaaa" not in held
+
+
+def test_a_rotating_credential_through_a_refresh_cycle_hides_every_old_value():
+    first = datetime(2026, 10, 15, 13, 0, tzinfo=UTC)
+    mints = iter([("token-one-aaaa", first),
+                  ("token-two-bbbb", first + timedelta(hours=1)),
+                  ("token-three-cccc", first + timedelta(hours=2))])
+    credential = Credential("example-app", lambda: next(mints))
+    now = first - timedelta(hours=1)
+    refreshed = []
+    while now < first + timedelta(hours=1):
+        now += timedelta(minutes=5)
+        if credential.due(now):
+            refreshed.append((now, credential.refresh()))
+    assert refreshed == [(first - timedelta(minutes=10), "token-two-bbbb"),
+                         (first + timedelta(minutes=50), "token-three-cccc")]
+    held = [getattr(credential, slot, None) for slot in Credential.__slots__]
+    assert "token-one-aaaa" not in held and "token-two-bbbb" not in held
+    assert "token-two-bbbb" not in repr(credential)
+
+
+def test_a_rotating_credential_that_stops_expiring_must_still_change_value():
+    # Static means static on both sides: a rotating token that comes back
+    # unchanged with no expiry is still the value about to stop working.
+    expires = datetime(2026, 10, 15, 13, 0, tzinfo=UTC)
+    mints = iter([("token-one-aaaa", expires), ("token-one-aaaa", None)])
+    with pytest.raises(CredentialError):
+        Credential("example-app", lambda: next(mints)).refresh()
 
 
 def test_a_credential_is_due_within_the_margin_of_its_expiry():

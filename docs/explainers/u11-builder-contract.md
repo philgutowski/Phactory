@@ -48,7 +48,14 @@ KTD26 maps each primitive to exactly one carrier. A primitive with no row is not
 
 ### The credential
 
-`Credential(name, mint)` calls `mint()` once at construction and again on every `refresh()`. `mint` returns a new value and its expiry. `current()` returns the value. `refresh()` drops the old value before it returns, so nothing on the object still holds it; it refuses an empty value or the same value again. `due(now)` says whether the value expires within ten minutes, the cadence U12 and U13 refresh on, since a GitHub App installation token lives one hour. `repr` and `str` show the name only, the class has no `__dict__`, and pickling it raises, so the value cannot leak through a log line or a serialised task input.
+`Credential(name, mint)` calls `mint()` once at construction and again on every `refresh()`. `mint` returns a new value and its expiry. `current()` returns the value. `refresh()` drops the old value before it returns, so nothing on the object still holds it, and it always refuses an empty value. `due(now)` says whether the value expires within ten minutes.
+
+The refresh rule, decided in follow up #54: an adapter calls `refresh()` only when `due(now)` says so. That splits credentials in two by whether `mint` returns an expiry.
+
+- **Rotating.** A credential with an expiry, such as a GitHub App installation token, which lives one hour. `due` turns true ten minutes before expiry, so it is refreshed on a fifty minute cadence. A refresh that mints the same value again raises `CredentialError`, because that value is about to stop working and the build would fail later with a confusing push error instead of now with a clear one.
+- **Static.** A credential with no expiry, such as KTD6's Bitbucket repository access token, which does not rotate. `due` is never true for it, so an adapter never refreshes it. If `refresh()` is called on one anyway, the same value back is fine and is kept, so a static credential survives any refresh cycle without an error. A different value is taken, which is how an operator's changed token reaches the next refresh.
+
+A credential counts as static only when both the value it holds and the new mint have no expiry, so a rotating token that comes back unchanged without an expiry still raises. U13's `refresh_if_due` in `src/slipway/builders/cli.py` already follows the rule: it returns early when `expires_at` is None or `due` is false. U12 implements against the same rule. `repr` and `str` show the name only, the class has no `__dict__`, and pickling it raises, so the value cannot leak through a log line or a serialised task input.
 
 ## The handoff
 
