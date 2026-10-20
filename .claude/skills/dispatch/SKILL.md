@@ -9,6 +9,12 @@ This is the conductor's procedure. A conductor is a Claude Code session (a sched
 
 Everything below is idempotent: a card with a branch is dispatched and is skipped, so running the procedure twice dispatches nothing twice.
 
+The conductor follows "Asking the operator" in `CLAUDE.md`: it decides what it can, keeps the factory moving around anything only the operator can supply, and asks for at most one thing per run, as a single step or a multiple choice question with its recommendation first.
+
+## Where the conductor runs
+
+The conductor needs two things a session does not always have: the `create_session` tool from the claude-code-remote tools, and GitHub access to this repository. A scheduled task that starts a fresh session gets neither today; the first live run on 2026-10-20 stopped at step 0 for exactly that reason. So the scheduled task fires into a standing conductor session that has both, and each firing resumes that session with this procedure. If a run finds either one missing, it says so in one line and stops, because without them it can neither read the gate nor start a builder.
+
 ## 0. Check the gate is live
 
 The factory never runs ahead of its review gate. Read the rules on `main` and confirm `review` is a required status check:
@@ -50,6 +56,7 @@ It prints every open cloud card with `ready` true or the reasons it is not: a de
 - At most **two** new dispatches per run.
 - Prefer, in order: a plan unit on the critical path (U9, then U14, then U25, then U16, U18, U20, U22), then follow ups oldest first.
 - Skip a card whose issue has a comment from the operator saying to hold it.
+- Two cards chosen in the same run must not share a declared path. The ready rule checks each card only against the cards already in flight, so check the chosen pair against each other and take the next card down when they overlap.
 
 ## 4. For each chosen card
 
@@ -65,6 +72,8 @@ gh api -X POST "repos/$REPO/git/refs" -f ref="refs/heads/$BRANCH" -f sha="$BASE"
 gh api -X POST "repos/$REPO/issues/$N/comments" -F body=@"$S/handoff-$N.md"
 ```
 
+If the proxy refuses either `gh api` write (it has refused git refs and issue comments with a 403), make the same two writes with the GitHub MCP tools: `create_branch` from `main`, checking that the new ref's commit is `$BASE`, then `add_issue_comment` with the handoff text exactly as rendered.
+
 Creating the branch first is what marks the card dispatched for the next run, and the board workflow moves the card to In progress on it. Then start the builder with `create_session` from the claude-code-remote tools:
 
 - `prompt`: the handoff text, exactly as rendered, plus any note the conductor adds (a recorded spike the card leans on, a file to read first).
@@ -79,8 +88,8 @@ Append one line to the issue comment with the session id, so the next conductor 
 
 ## 5. Leave the rest alone
 
-Do not open, approve, merge, or close pull requests. The builder session opens its pull request, enables auto merge, and watches the `ci` and `review` checks; auto merge lands it when both are green. Nobody approves by hand. If a builder session has failed (its pull request is red for a day with no push, or the session ended without a pull request), say so in one line on the issue and leave the branch; the operator decides whether to re dispatch, which is: delete the branch, then run this procedure again.
+Do not open, approve, merge, or close pull requests. One thing the conductor does do: the ruleset requires a branch to be up to date with `main`, so a pull request from a `slipway/` branch can sit green but behind after another card lands. When its builder session is idle, update the branch with the GitHub MCP tool `update_pull_request_branch` (a merge commit, which keeps the builder's checkout valid) and send the builder one message saying so, telling it to run `git pull` on its branch before its next push. The builder session opens its pull request, enables auto merge, and watches the `ci` and `review` checks; auto merge lands it when both are green. Nobody approves by hand. If a builder session has failed (its pull request is red for a day with no push, or the session ended without a pull request), the conductor re dispatches it without asking: first send the old session one message asking it to stop, then start a new builder with `create_session` on the same branch, with the original handoff plus a note on what the old session left behind, and say so in one line on the issue. A card that fails twice is the one case for the operator, asked as a single multiple choice question: rewrite the card, split it, or drop it.
 
 ## 6. Report
 
-End with a short note: which cards were dispatched with their session ids, which are in flight, which are blocked and on what, and anything that needs the operator. If nothing was ready and nothing changed, say that in one line.
+End with a short note: which cards were dispatched with their session ids, which are in flight, which are blocked and on what, and the decisions the conductor made on its own. Name something for the operator only when it is the actual bottleneck and only the operator can supply it, and then ask for it in one step, as a multiple choice question when that fits. If nothing was ready and nothing changed, say that in one line.
