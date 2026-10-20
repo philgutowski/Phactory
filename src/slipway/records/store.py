@@ -50,7 +50,8 @@ class Claim:
 class Transition:
     """The outcome of record_transition.
 
-    recorded is False when the build had already left from_state, which is
+    recorded is False when the build had already left from_state, or its
+    last_seq no longer matched the expected_seq the caller passed, which is
     what a replayed step sees; state is then the build's current state.
     """
 
@@ -152,12 +153,25 @@ def attach_run(conn, build_id: int, run_id: str) -> Attach:
 
 
 def record_transition(conn, build_id: int, from_state: str, to_state: str, actor: str,
-                      evidence: dict | None = None, claims: dict | None = None) -> Transition:
+                      evidence: dict | None = None, claims: dict | None = None,
+                      expected_seq: int | None = None) -> Transition:
     """Move a build from from_state to to_state and write the transition row.
 
     The build update is a compare and set on from_state: when the build is
     no longer there, as on a replayed step, nothing is written and the result
-    is already past. Otherwise seq is the build's last_seq plus one, taken
+    is already past. from_state alone is not enough where the machine has a
+    cycle (gate_red, queued, gate_running, gate_red again; halted and
+    verifying): a step replayed from an earlier lap finds the build back in
+    the same from_state and would write a transition the host never
+    reported. expected_seq closes that gap. It is the build's last_seq as the
+    caller saw it when it decided on this move, that is, the seq of the
+    transition that brought the build into from_state, and when given it is
+    matched against last_seq in the same WHERE. A build that has moved on and
+    come back has a higher last_seq, so the replay is already past too.
+    Leaving it None keeps the from_state only check, for a caller that does
+    not know the seq.
+
+    Otherwise seq is the build's last_seq plus one, taken
     under the row lock the update holds, and the claim columns in claims are
     written in the same transaction. An edge not in allowed_edges is refused
     by the database (the trigger on builds and the foreign key on
@@ -183,9 +197,14 @@ def record_transition(conn, build_id: int, from_state: str, to_state: str, actor
         for column in sorted(claims):
             assignments.append(sql.SQL("{} = %s").format(sql.Identifier(column)))
             values.append(claims[column])
-        query = sql.SQL("UPDATE builds SET {} WHERE id = %s AND state = %s "
-                        "RETURNING last_seq").format(sql.SQL(", ").join(assignments))
-        row = conn.execute(query, [*values, build_id, from_state]).fetchone()
+        conditions = [sql.SQL("id = %s"), sql.SQL("state = %s")]
+        values += [build_id, from_state]
+        if expected_seq is not None:
+            conditions.append(sql.SQL("last_seq = %s"))
+            values.append(expected_seq)
+        query = sql.SQL("UPDATE builds SET {} WHERE {} RETURNING last_seq").format(
+            sql.SQL(", ").join(assignments), sql.SQL(" AND ").join(conditions))
+        row = conn.execute(query, values).fetchone()
         if row is None:
             current = conn.execute("SELECT state FROM builds WHERE id = %s",
                                    (build_id,)).fetchone()[0]

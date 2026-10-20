@@ -8,12 +8,14 @@ Slipway causes (KTD27), so no method here writes.
 The interface every adapter implements:
 
     ready()                -> (cards, reason)   open cards carrying the lane label
-    read(key)              -> Card              one card, with labels and body
+    read(key)              -> Card              one card, with labels, body, and status
     status(key)            -> TrackerStatus     the card's status, and whether it is terminal
     closing_reference(key) -> ClosingReference  the tokens the tracker's automation keys on
 
 ready returns candidates, not a verdict: the ready rule itself is
-slipway.cards.contract.ready, which the caller applies to each card. A read
+slipway.cards.contract.ready, which the caller applies to each card. read
+fills Card.status the same way ready does, so a caller that reads one card by
+key and applies the ready rule gets the answer ready would have given. A read
 that fails returns a reason instead of raising, because "the tracker could
 not be read" and "nothing is ready" lead to different places. A status read
 that fails is a skip with halt class tracker_unreadable (KTD11): verify
@@ -39,7 +41,8 @@ class Card:
 
     key is the tracker's own name for it: the issue number on GitHub, the
     issue key (such as ABC-12) on Jira. status is the board column on GitHub
-    Projects and the workflow status on Jira; None when the tracker gave none.
+    Projects and the workflow status on Jira, from ready() and read(key)
+    alike; None when the tracker gave none.
     skipped carries the reason when the read failed, and the other fields are
     then empty.
     """
