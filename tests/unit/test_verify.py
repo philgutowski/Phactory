@@ -21,6 +21,7 @@ import pytest
 from _nonet import NetworkReached
 from _repo import git, make_repo
 from slipway import gitread, verify
+from slipway.config.project import LandingPath
 from slipway.halts import COMMIT_MISMATCH, GIT_UNREADABLE, MERGED_CARD_NOT_MOVED
 from slipway.trackers.base import TRACKER_UNREADABLE, TrackerStatus, skipped
 
@@ -107,7 +108,7 @@ class Landing:
         """What the workflow does at confirm time, while the branch still exists."""
         return gitread.hold(self.cache, self.remote, BRANCH, self.confirmed)
 
-    def verify(self, merged, status=DONE, path=verify.AUTO_MERGE_STRICT, refs=(), **kw):
+    def verify(self, merged, status=DONE, path=LandingPath.AUTO_MERGE_STRICT, refs=(), **kw):
         gitread.refresh(self.cache, self.remote, commits=(self.confirmed,), refs=refs)
         kw.setdefault("tested", self.tested)
         kw.setdefault("tested_head", self.tested_head)
@@ -132,11 +133,11 @@ def test_merged_on_main_card_still_in_progress_is_partial_landing(tmp_path):
 def test_queue_path_landed_without_a_commit_naming_the_key(tmp_path):
     card = Landing(tmp_path)
     merged = card.queue()
-    v = card.verify(merged, path=verify.MERGE_QUEUE)
+    v = card.verify(merged, path=LandingPath.MERGE_QUEUE)
     assert v.outcome == verify.LANDED and v.landed
     assert v.halt is None
     assert v.evidence["hand_landing"] is None
-    assert v.evidence["landing_path"] == verify.MERGE_QUEUE
+    assert v.evidence["landing_path"] == LandingPath.MERGE_QUEUE
     assert v.check(verify.MERGED_EQUALS_TESTED).result == verify.PASS
     assert v.check(verify.TESTED_HEAD_EQUALS_CONFIRMED).result == verify.PASS
     assert v.check(verify.CONFIRMED_LANDED) is None
@@ -154,7 +155,7 @@ def test_queue_path_merged_differs_from_tested(tmp_path):
     tested = card.queue()
     merged = card.repo.commit("late.txt", "pushed after the queue\n", "late")
     card.repo.git("push", "-q", "origin", "main")
-    v = card.verify(merged, path=verify.MERGE_QUEUE, tested=tested)
+    v = card.verify(merged, path=LandingPath.MERGE_QUEUE, tested=tested)
     assert v.outcome == verify.HALTED
     assert v.halt_class == COMMIT_MISMATCH
     assert v.halt.evidence["relation"] == verify.MERGED_EQUALS_TESTED
@@ -173,7 +174,7 @@ def test_queue_path_tested_head_differs_from_confirmed(tmp_path):
     later = r.commit("src/c.py", "c = 3\n", "pushed after confirm")
     r.git("checkout", "-q", "main")
     merged = card.queue(head=later)
-    v = card.verify(merged, path=verify.BITBUCKET_QUEUE)
+    v = card.verify(merged, path=LandingPath.BITBUCKET_QUEUE)
     assert v.halt_class == COMMIT_MISMATCH
     assert v.halt.evidence["relation"] == verify.TESTED_HEAD_EQUALS_CONFIRMED
     assert v.halt.evidence["found"] == later
@@ -192,7 +193,7 @@ def test_auto_merge_strict_landed_under_each_method(tmp_path, method):
     assert merged != card.confirmed
     v = card.verify(merged)
     assert v.outcome == verify.LANDED
-    assert v.evidence["landing_path"] == verify.AUTO_MERGE_STRICT
+    assert v.evidence["landing_path"] == LandingPath.AUTO_MERGE_STRICT
     assert v.evidence["merged_tree"] == v.evidence["expected_tree"]
 
 
@@ -218,7 +219,7 @@ def test_auto_merge_strict_on_a_branch_that_was_behind_is_a_mismatch(tmp_path):
 def test_plain_merge_folds_in_what_landed_meanwhile(tmp_path, method):
     card = Landing(tmp_path, behind=True)
     merged = card.land(method)
-    v = card.verify(merged, path=verify.PLAIN_MERGE)
+    v = card.verify(merged, path=LandingPath.PLAIN_MERGE)
     assert v.outcome == verify.LANDED
     assert v.check("confirmed_landed").detail
     assert v.evidence["merged_tree"] != gitread.tree_of(card.cache, card.confirmed)
@@ -239,7 +240,7 @@ def test_tracker_read_fails_is_a_blocking_skip_with_no_class(tmp_path):
 def test_commit_mismatch_beats_an_unreadable_tracker(tmp_path):
     card = Landing(tmp_path)
     tested = card.queue()
-    v = card.verify(card.baseline, status=skipped("down"), path=verify.MERGE_QUEUE,
+    v = card.verify(card.baseline, status=skipped("down"), path=LandingPath.MERGE_QUEUE,
                     tested=tested)
     assert v.halt_class == COMMIT_MISMATCH
     assert v.halt.evidence["relation"] == "new_commit_since_baseline"
@@ -264,6 +265,18 @@ def test_hand_landing_is_evidence_when_a_message_names_the_card(tmp_path):
     v = card.verify(merged)
     assert v.landed
     assert v.evidence["hand_landing"] == merged
+
+
+def test_every_landing_path_has_a_relation():
+    assert set(verify.RELATIONS) == set(LandingPath)
+
+
+def test_verify_names_no_landing_path_of_its_own():
+    names = {path.value for path in LandingPath}
+    own = {name for name, value in vars(verify).items()
+           if isinstance(value, str) and not isinstance(value, LandingPath)
+           and value in names}
+    assert own == set()
 
 
 def test_unknown_landing_path_is_refused(tmp_path):

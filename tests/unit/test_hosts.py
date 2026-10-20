@@ -29,9 +29,13 @@ from slipway.config.project import LandingPath, MergeMethod, load_project
 from slipway.hosts import base, webhooks
 from slipway.hosts.base import (
     AUTO_MERGE_ARMED,
+    AUTO_MERGE_STRICT,
+    BITBUCKET_QUEUE,
     ENQUEUED,
     INTERFACE,
+    MERGE_QUEUE,
     NOT_SUPPORTED,
+    PLAIN_MERGE,
     BranchConflict,
     CheckState,
     Credential,
@@ -44,7 +48,6 @@ from slipway.hosts.bitbucket import BitbucketHost
 from slipway.hosts.github import GitHubHost
 from slipway.hosts.webhooks import Dropped, Event, WebhookRefused, verify
 from slipway.trackers.base import ClosingReference
-from slipway.verify import AUTO_MERGE_STRICT, BITBUCKET_QUEUE, MERGE_QUEUE, PLAIN_MERGE
 
 TESTS = Path(__file__).resolve().parents[1]
 FIXTURES = TESTS / "fixtures" / "host"
