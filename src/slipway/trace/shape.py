@@ -59,6 +59,7 @@ instead of each remembering every field.
 
 import hashlib
 import json
+import math
 import re
 import secrets
 from collections.abc import Iterable
@@ -186,9 +187,11 @@ def scrubbed(records: Iterable[Record], injected_values: Iterable[str] = ()) -> 
 
     injected_values are the exact credential values Slipway put into the
     session; scrub also removes every known token shape. The fields are found
-    by type at run time, not listed, so a string field added to a record type
-    later is scrubbed without a change here. Call this before dump_jsonl and
-    before Trace.add.
+    by type at run time, not listed, so a field typed str added to a record
+    type later is scrubbed without a change here. A container field (a list
+    or dict of strings) is not reached, and a test refuses any record field
+    typed as one, so whoever adds one extends this first. Call this before
+    dump_jsonl and before Trace.add.
     """
     values = tuple(injected_values)
     out = []
@@ -376,10 +379,15 @@ class Trace:
         covers them and every child and event, so a session that left no
         records still gets a real span. cost is the provider's reported spend
         in US dollars (BuilderResult.cost), so the exported trace carries it
-        beside the token counts.
+        beside the token counts. It is written under Slipway's own key and
+        under gen_ai.usage.cost, the key Langfuse reads as cost.
         """
+        if any(t is not None and t <= 0 for t in (start_ns, end_ns)):
+            raise ValueError("session start and end must be real times, after the epoch")
         if start_ns is not None and end_ns is not None and end_ns < start_ns:
             raise ValueError("a session cannot end before it starts")
+        if cost is not None and not math.isfinite(cost):
+            raise ValueError("cost must be a finite number")
         children = self.spans[1:]
         times = [t for s in children for t in (s.start_ns, s.end_ns)]
         times += [e.time_ns for s in self.spans for e in s.events]
@@ -392,6 +400,7 @@ class Trace:
             "slipway.diff.insertions": insertions,
             "slipway.diff.deletions": deletions,
             "slipway.cost.usd": None if cost is None else float(cost),
+            "gen_ai.usage.cost": None if cost is None else float(cost),
         })
         self.root.error = error
 

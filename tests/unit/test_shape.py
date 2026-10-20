@@ -97,7 +97,7 @@ def check_attributes(items):
 
 
 def check_otlp(body):
-    body = json.loads(json.dumps(body))  # it must survive JSON as is
+    body = json.loads(json.dumps(body, allow_nan=False))  # it must survive JSON as is
     assert set(body) == {"resourceSpans"}
     for resource_spans in body["resourceSpans"]:
         check_attributes(resource_spans["resource"]["attributes"])
@@ -213,6 +213,7 @@ def test_the_root_carries_the_cost():
     root = check_otlp(trace.otlp())["resourceSpans"][0]["scopeSpans"][0]["spans"][0]
     assert attrs(root)["slipway.cost.usd"] == 0.42
     assert {"key": "slipway.cost.usd", "value": {"doubleValue": 0.42}} in root["attributes"]
+    assert attrs(root)["gen_ai.usage.cost"] == 0.42
     whole = trace_of("cli", "EX-12", "b", "a" * 40, [], start_ns=1, end_ns=2, cost=3)
     assert attrs(whole.otlp()["resourceSpans"][0]["scopeSpans"][0]["spans"][0])[
         "slipway.cost.usd"] == 3.0
@@ -240,6 +241,15 @@ def _full_record(cls):
     hints = typing.get_type_hints(cls)
     return cls(**{name: f"{name} {INJECTED} {TOKEN}" if _takes_str(hint) else 1
                   for name, hint in hints.items()})
+
+
+@pytest.mark.parametrize("cls", list(RECORD_TYPES.values()), ids=list(RECORD_TYPES))
+def test_record_fields_are_scalars_scrubbed_can_reach(cls):
+    # scrubbed reaches top level str fields only. A list or dict field would
+    # carry strings past it, so a new one must fail here until scrubbed recurses.
+    for name, hint in typing.get_type_hints(cls).items():
+        kinds = {a for a in (typing.get_args(hint) or (hint,)) if a is not type(None)}
+        assert kinds <= {str, int, float, bool}, (cls.__name__, name, hint)
 
 
 def test_every_record_type_is_in_the_record_union():
@@ -308,3 +318,15 @@ def test_builders_and_trace_import_only_cards_trackers_config_redact_and_each_ot
                 assert layer(edge.imported) in may, str(edge)
     for path in sorted((SRC / "slipway" / "trace").rglob("*.py")):
         assert all(layer(e.imported) in ("trace", "redact") for e in edges_of(SRC, path))
+
+
+@pytest.mark.parametrize("times", [(0, 5), (-5, 5), (1, 0)])
+def test_finish_refuses_a_start_or_end_at_or_before_the_epoch(times):
+    with pytest.raises(ValueError):
+        trace_of("cli", "EX-12", "b", "a" * 40, [], start_ns=times[0], end_ns=times[1])
+
+
+@pytest.mark.parametrize("cost", [float("nan"), float("inf")])
+def test_finish_refuses_a_cost_that_is_not_finite(cost):
+    with pytest.raises(ValueError):
+        trace_of("cli", "EX-12", "b", "a" * 40, [], start_ns=1, end_ns=2, cost=cost)
