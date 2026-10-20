@@ -26,10 +26,22 @@ Slipway handoff for card EX-12: Add the hello page
    Never print it, and never write it to a file or a commit.
 
 8. Side reference: refs/slipway/log/EX-12
-   Keep an action log in actions.jsonl: one JSON object per line, with its type under "type",
-   for each tool call, file change, command, and outside connection.
-   Before you finish, push it as the only file of a commit to refs/slipway/log/EX-12.
-   Never commit it to the branch.
+   Keep an action log at .git/actions.jsonl, inside the git directory, so no commit on the
+   branch can pick it up: one JSON object per line, with its type under "type", for each
+   tool call, file change, command, and outside connection.
+   After your last push to the branch, push the log from the repository root with exactly
+   these commands:
+
+      blob=$(git hash-object -w .git/actions.jsonl)
+      tree=$(printf '100644 blob %s\tactions.jsonl\n' "$blob" | git mktree)
+      if git fetch origin refs/slipway/log/EX-12; then parent="-p FETCH_HEAD"; else parent=""; fi
+      commit=$(git commit-tree "$tree" $parent -m "slipway log EX-12 actions")
+      git push origin "$commit:refs/slipway/log/EX-12"
+
+   They push one commit that holds actions.jsonl alone, as the child of the reference's tip.
+   Never push HEAD or the branch to refs/slipway/log/EX-12, and never commit the log to the branch.
+   While your session runs, you are this reference's only writer. Once it ends, Slipway
+   writes the build's closing commit on top of yours, with trace.jsonl beside actions.jsonl.
 
 The card:
 
