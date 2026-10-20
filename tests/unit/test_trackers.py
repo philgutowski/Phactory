@@ -23,6 +23,7 @@ from pathlib import Path
 import pytest
 
 from _nonet import NetworkReached
+from slipway.cards import contract
 from slipway.config.bindings import BindingInvalid, resolve_tracker_credential
 from slipway.config.project import Tracker, load_project
 from slipway.trackers import github as github_module
@@ -166,10 +167,52 @@ def test_github_read_returns_labels_from_the_fixture(github_project):
     card = GitHubTracker(github_project, run=run).read("12")
     assert card.labels == ("cloud", "docs")
     assert card.title == "Add the brief renderer"
-    assert card.status == "OPEN"
+    # The board column, not the issue state.
+    assert card.status == "Ready"
     assert "```slipway" in card.body
-    assert run.calls == [["gh", "issue", "view", "12", "--repo", "o/r",
-                          "--json", "number,title,body,state,labels"]]
+    assert run.calls[0] == ["gh", "issue", "view", "12", "--repo", "o/r",
+                            "--json", "number,title,body,state,labels"]
+    # Then the one point membership query for the column, and nothing else.
+    assert len(run.calls) == 2
+    assert run.calls[1][:3] == ["gh", "api", "graphql"]
+    assert "number=12" in run.calls[1]
+
+
+def test_github_read_and_ready_agree_on_status_for_the_same_card(github_project):
+    # The membership fixture puts the card in Ready on board 7, the project's.
+    run = DispatchRun(issues={"12": "github_issue_labelled"})
+    tracker = GitHubTracker(github_project, run=run)
+    cards, reason = tracker.ready()
+    assert reason is None
+    from_ready = {card.key: card.status for card in cards}
+    card = tracker.read("12")
+    assert card.skipped is None
+    assert card.status == from_ready["12"] == "Ready"
+    # So the ready rule passes a card read by key, where the issue state
+    # (OPEN) used to make it silently not ready.
+    assert contract.ready(card, github_project).ready
+
+
+def test_github_read_of_an_issue_off_the_board_has_no_status(github_project):
+    run = DispatchRun(issues={"12": "github_issue_labelled"},
+                      membership=membership("Ready", owner="someone-else"))
+    card = GitHubTracker(github_project, run=run).read("12")
+    assert (card.status, card.skipped) == (None, None)
+
+
+def test_github_read_of_a_closed_issue_never_reads_its_column(github_project):
+    run = DispatchRun(issues={"12": "github_issue_labelled"},
+                      membership=membership("Ready", state="CLOSED"))
+    card = GitHubTracker(github_project, run=run).read("12")
+    assert card.status == "CLOSED"
+
+
+def test_github_read_with_the_budget_spent_is_a_skip(github_project):
+    run = DispatchRun(issues={"12": "github_issue_labelled"},
+                      membership="github_graphql_rate_limited")
+    card = GitHubTracker(github_project, run=run).read("12")
+    assert card.skipped.startswith("GitHub GraphQL budget exhausted")
+    assert (card.title, card.status, card.labels) == ("", None, ())
 
 
 def test_github_read_of_an_origin_fixture_has_no_labels(github_project):
