@@ -243,11 +243,22 @@ class GitHubTracker:
         return cards, None
 
     def read(self, key) -> Card:
-        """One issue with its labels. status is the issue state (OPEN or CLOSED)."""
+        """One issue with its labels, and its board column as status, as ready() reads it.
+
+        Two reads: gh issue view for the title, body, and labels, then the
+        one point membership query for the column, never a board listing.
+        status is None when the issue is not on the board or has no column.
+        A closed issue reads the issue state, CLOSED, whatever column its
+        item sits in: ready() lists only open issues, so a closed card must
+        never read as ready. Either read failing is a skip with its reason.
+        """
         payload, reason = self._issue(key)
         if payload is None:
             return Card(key=str(key), skipped=reason)
-        card = self._card(payload, status=payload.get("state"))
+        state, column, reason = self._membership(key)
+        if reason:
+            return Card(key=str(key), skipped=reason)
+        card = self._card(payload, status=state if state == CLOSED_STATE else column)
         return Card(str(key), card.title, card.body, card.status, card.labels)
 
     def status(self, key) -> TrackerStatus:
