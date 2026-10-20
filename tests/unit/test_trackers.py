@@ -1,7 +1,7 @@
 """U8 test scenarios for the GitHub Projects and Jira tracker adapters.
 
-Every adapter here is built with an injected transport: DispatchRun stands in
-for gh, FakeOpener for urllib's opener. Both answer from the JSON fixtures in
+Every adapter here is built with an injected transport from tests/_fakes.py:
+DispatchRun stands in for gh, FakeOpener for urllib's opener. Both answer from the JSON fixtures in
 tests/fixtures/tracker and refuse anything unrouted. The six fixtures named
 github_* and jira_* without a further suffix are native-relay's, unchanged;
 the others add what Slipway reads and the origin never did (labels, and the
@@ -22,6 +22,7 @@ from pathlib import Path
 
 import pytest
 
+from _fakes import DispatchRun, FakeOpener
 from _nonet import NetworkReached
 from slipway.cards import contract
 from slipway.config.bindings import BindingInvalid, resolve_tracker_credential
@@ -34,7 +35,6 @@ from slipway.trackers.jira import JiraTracker
 from test_imports import SRC, edges_of, layer
 
 TESTS = Path(__file__).resolve().parents[1]
-FIXTURES = TESTS / "fixtures" / "tracker"
 CONFIG = TESTS / "fixtures" / "config"
 SLUG = "example"
 
@@ -42,10 +42,6 @@ SLUG = "example"
 # this environment, never in the project file.
 JIRA_ENV = {"EXAMPLE_JIRA_EMAIL": "builder@example.test",
             "EXAMPLE_JIRA_TOKEN": "jira-example-token-value"}
-
-
-def fixture(name: str) -> str:
-    return (FIXTURES / f"{name}.json").read_text()
 
 
 @pytest.fixture(autouse=True)
@@ -70,81 +66,6 @@ def jira_project():
 def github_project(jira_project):
     return replace(jira_project, tracker=Tracker.GITHUB_PROJECTS, repository="o/r",
                    board="o/7", tracker_site="github.com", tracker_credential="example-github")
-
-
-# Transports.
-
-class DispatchRun:
-    """A run(args, timeout=None) for gh that answers from fixtures by subcommand."""
-
-    def __init__(self, issues=None, listing="github_issue_list",
-                 membership="github_issue_membership", failure=None, graphql_failure=None):
-        self.issues = dict(issues or {})
-        self.listing = listing
-        self.membership = membership
-        self.failure = failure
-        self.graphql_failure = graphql_failure
-        self.calls = []
-
-    def __call__(self, args, timeout=None):
-        args = list(args)
-        self.calls.append(args)
-        if self.failure is not None:
-            return subprocess.CompletedProcess(args, *self.failure)
-        if args[:2] == ["gh", "project"]:
-            # Served so a regression shows up as a call, not a crash.
-            return subprocess.CompletedProcess(args, 0, fixture("github_project_items"), "")
-        if args[:3] == ["gh", "api", "graphql"]:
-            if self.graphql_failure is not None:
-                return subprocess.CompletedProcess(args, *self.graphql_failure)
-            body = self.membership
-            return subprocess.CompletedProcess(
-                args, 0, body if body.lstrip().startswith("{") else fixture(body), "")
-        if args[:3] == ["gh", "issue", "list"]:
-            return subprocess.CompletedProcess(args, 0, fixture(self.listing), "")
-        if args[:3] == ["gh", "issue", "view"]:
-            name = self.issues.get(args[3])
-            if name is None:
-                return subprocess.CompletedProcess(args, 1, "", f"no issue {args[3]}")
-            return subprocess.CompletedProcess(args, 0, fixture(name), "")
-        raise AssertionError(f"no fixture routed for {args!r}")
-
-    def graphql_queries(self):
-        return [arg[len("query="):] for call in self.calls if call[:3] == ["gh", "api", "graphql"]
-                for arg in call if arg.startswith("query=")]
-
-
-class _Body:
-    def __init__(self, text):
-        self.text = text
-
-    def read(self):
-        return self.text.encode("utf-8")
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *exc):
-        return False
-
-
-class FakeOpener:
-    """Stands in for urllib's opener. Routes a URL substring to a fixture file."""
-
-    def __init__(self, routes, error=None):
-        self.routes = dict(routes)
-        self.error = error
-        self.requests = []
-
-    def open(self, request, timeout=None):
-        url = request.get_full_url()
-        self.requests.append((url, dict(request.header_items()), timeout))
-        if self.error:
-            raise self.error
-        for fragment, name in self.routes.items():
-            if fragment in url:
-                return _Body(fixture(name))
-        raise AssertionError(f"no fixture routed for {url}")
 
 
 def jira(project, opener):
