@@ -30,8 +30,10 @@ The operator file (`$SLIPWAY_HOME/operator.toml`) never holds a value either. It
 
 | Service | Mount |
 |:-|:-|
-| `app` | `projects/` writable (onboard saves project files), `operator.toml` absent |
+| `app` | `projects/` writable (onboard saves project files), and `operator.toml` alone as a read only file mount |
 | `worker` | Read only, `operator.toml` present |
+
+A bind mount maps one path on the VPS into a container. The app gets two: the `projects/` directory, writable, and the single file `operator.toml`, read only, both under the same `SLIPWAY_HOME` path inside the container so `load_operator()` and `load_project()` find them unchanged. The next section says why the app reads the operator file at all.
 
 ## Published ports
 
@@ -44,6 +46,22 @@ The operator file (`$SLIPWAY_HOME/operator.toml`) never holds a value either. It
 | Postgres | Compose network only |
 | Dagger engine | Compose network only |
 
-## Open question for the operator
+## What the app reads from the operator file
 
-KTD28 keeps the operator file out of the app, yet the app needs two things that today live only there: the operator's OAuth subject (the page admits only that subject, KTD13) and the map from repository to webhook secret variable (KTD10). U6 does not settle this. The candidates are giving the app a reduced copy of those two entries, or fixed variable names for them. The deciding card is the one that builds the app (U18 or U20).
+Decided by #39. The app mounts the operator file read only and loads it with the same `load_operator()` the worker uses. It is the one source for everything the app needs from it:
+
+- `operator_subject`, the OAuth subject (the stable user id the identity provider puts in a token) the status page admits and the MCP verifier knows as the operator's (KTD13).
+- `identity_provider`, the issuer and client id the verifier pins, and the name of the variable holding the client secret.
+- `webhook_secrets`, the map from each repository to the variable holding its webhook secret and, during a rotation, the previous one (KTD10). The webhook endpoint builds U9's `secrets_for(repository)` from it: the entry for the payload's repository, each named variable read from the app's environment, and no entry meaning a repository Slipway does not manage.
+- The entry names onboard checks a project file against before saving it (`check_names`, U6), since onboard runs in the app and writes `projects/`.
+
+What keeps the app narrow is its environment, not the file. The operator file holds no secret value (R3, and `refuse_secrets` refuses one), so reading it tells the app only which variable names exist. The values arrive by environment, and the app's compose service receives only its own, as the table above lists. An app that tried to resolve an account token or a host credential would find the variable unset and fail, as `bindings.py` already does for an unset variable.
+
+The file is read when the app starts. Adding a repository or rotating a secret changes the environment file too, and compose hands a container its environment only when it creates the container, so either change is one `docker compose up -d app` after both files are edited.
+
+Two other mechanisms were weighed and set aside:
+
+- **A derived file the worker writes**, holding only the app's entries. The worker's `SLIPWAY_HOME` is read only, so it would need a second writable volume, and the app could start before the file exists or read one older than the operator file. Narrowing the file buys nothing when it holds no values.
+- **Two app only variables**, the subject and the secret map packed into one string. They copy what the operator file already says into a second place that can drift from it, they leave out the identity provider and the names onboard checks, and a map packed into one variable has to be parsed by hand.
+
+U18 (#21) loads the subject and identity provider this way, and U9 (#12) takes `secrets_for` as a callable, so it needs nothing from this decision beyond the endpoint that builds it.
