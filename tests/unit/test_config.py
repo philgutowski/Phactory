@@ -187,6 +187,12 @@ def test_bad_enum_names_the_key_and_the_choices(isolated_home):
     assert "merge_queue" in error.message
 
 
+def test_project_file_may_pin_plain_merge(isolated_home):
+    edit(project_file(isolated_home), 'landing_path = "auto_merge_strict"',
+         'landing_path = "plain_merge"')
+    assert load_project(SLUG).landing_path is LandingPath.PLAIN_MERGE
+
+
 def test_wrong_type_names_the_key(isolated_home):
     edit(project_file(isolated_home), "build_cap = 3", 'build_cap = "three"')
     assert failure(lambda: load_project(SLUG)).field == "build_cap"

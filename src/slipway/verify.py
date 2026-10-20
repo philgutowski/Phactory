@@ -54,16 +54,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from slipway import gitread
+from slipway.config.project import LandingPath
 from slipway.halts import COMMIT_MISMATCH, GIT_UNREADABLE, MERGED_CARD_NOT_MOVED, Halt, halt
 from slipway.trackers.base import TrackerStatus
-
-MERGE_QUEUE = "merge_queue"
-AUTO_MERGE_STRICT = "auto_merge_strict"
-BITBUCKET_QUEUE = "bitbucket_queue"
-PLAIN_MERGE = "plain_merge"
-
-QUEUE_PATHS = frozenset({MERGE_QUEUE, BITBUCKET_QUEUE})
-LANDING_PATHS = QUEUE_PATHS | {AUTO_MERGE_STRICT, PLAIN_MERGE}
 
 PASS, FAIL, SKIP = "pass", "fail", "skip"
 
@@ -72,6 +65,19 @@ PASS, FAIL, SKIP = "pass", "fail", "skip"
 MERGED_EQUALS_TESTED = "merged_equals_tested"
 TESTED_HEAD_EQUALS_CONFIRMED = "tested_head_equals_confirmed"
 CONFIRMED_LANDED = "confirmed_landed"
+
+# The relation each landing path is checked by. config owns the list of
+# paths; a path with no entry here is refused, and a unit test fails when
+# this table and LandingPath disagree.
+TESTED_COMMIT = "tested_commit"
+TREE_EQUALS_CONFIRMED = "tree_equals_confirmed"
+TREE_EQUALS_CONFIRMED_MERGED_INTO_PARENT = "tree_equals_confirmed_merged_into_parent"
+RELATIONS = {
+    LandingPath.MERGE_QUEUE: TESTED_COMMIT,
+    LandingPath.BITBUCKET_QUEUE: TESTED_COMMIT,
+    LandingPath.AUTO_MERGE_STRICT: TREE_EQUALS_CONFIRMED,
+    LandingPath.PLAIN_MERGE: TREE_EQUALS_CONFIRMED_MERGED_INTO_PARENT,
+}
 
 LANDED = "landed"
 PARTIAL_LANDING = "partial_landing"
@@ -167,8 +173,11 @@ def verify(repo, baseline, confirmed, tested, merged, card_key,
     recorded with it (KTD7); both are None off a queue path. branch defaults
     to the repository's default branch.
     """
-    if landing_path not in LANDING_PATHS:
-        raise ValueError(f"{landing_path!r} is not a landing path: {sorted(LANDING_PATHS)}")
+    if landing_path not in RELATIONS:
+        names = sorted(path.value for path in RELATIONS)
+        raise ValueError(f"{landing_path!r} is not a landing path: {names}")
+    landing_path = LandingPath(landing_path).value
+    relation = RELATIONS[landing_path]
     repo = Path(repo)
     run = _Run()
     run.evidence.update(landing_path=landing_path, baseline=baseline, confirmed=confirmed,
@@ -179,7 +188,7 @@ def verify(repo, baseline, confirmed, tested, merged, card_key,
         tip = gitread.rev_parse(repo, f"refs/heads/{branch}")
         run.evidence.update(branch=branch, branch_tip=tip)
         _commits(repo, run, baseline, confirmed, tested, tested_head, merged, tip,
-                 landing_path, branch)
+                 relation, branch)
         run.evidence["hand_landing"] = hand_landing(repo, baseline, merged, card_key)
     except gitread.GitError as exc:
         run._skip("git", str(exc))
@@ -196,7 +205,7 @@ def verify(repo, baseline, confirmed, tested, merged, card_key,
 
 
 def _commits(repo, run, baseline, confirmed, tested, tested_head, merged, tip,
-             landing_path, branch):
+             relation, branch):
     on_branch = gitread.is_ancestor(repo, merged, tip)
     after_baseline = merged != baseline and gitread.is_ancestor(repo, baseline, merged)
     run._check("new_commit_since_baseline", on_branch and after_baseline,
@@ -204,7 +213,7 @@ def _commits(repo, run, baseline, confirmed, tested, tested_head, merged, tip,
                relation="new_commit_since_baseline",
                expected=f"a commit on {branch} after {baseline}", found=merged)
 
-    if landing_path in QUEUE_PATHS:
+    if relation == TESTED_COMMIT:
         # Two checks, each under its own name, so reading a check by name
         # can never find a pass that sits beside the failure that halted.
         if run._check(MERGED_EQUALS_TESTED, merged == tested,
@@ -220,11 +229,9 @@ def _commits(repo, run, baseline, confirmed, tested, tested_head, merged, tip,
         return
 
     merged_tree = gitread.tree_of(repo, merged)
-    if landing_path == AUTO_MERGE_STRICT:
-        relation = "tree_equals_confirmed"
+    if relation == TREE_EQUALS_CONFIRMED:
         expected = gitread.tree_of(repo, confirmed)
     else:
-        relation = "tree_equals_confirmed_merged_into_parent"
         parent = gitread.first_parent(repo, merged)
         expected = parent and gitread.merge_tree(repo, parent, confirmed)
     run.evidence.update(merged_tree=merged_tree, expected_tree=expected)

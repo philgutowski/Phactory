@@ -111,7 +111,18 @@ A verify halt is a wait: the workflow sits in `halted`, posts a failing landing 
 
 ## How it connects
 
-- `verify` imports `gitread`, `halts`, and `trackers.base` (for `TrackerStatus`). `gitread` imports `redact`. `halts` imports only the standard library. None of them imports `service`, `workflow`, or a surface (KTD23).
+- `verify` imports `gitread`, `halts`, `trackers.base` (for `TrackerStatus`), and `config.project` (for `LandingPath`). `gitread` imports `redact`. `halts` imports only the standard library. None of them imports `service`, `workflow`, or a surface (KTD23).
 - U14 calls `gitread.hold` when it confirms the branch head, passes the host adapter's pull request refs to `gitread.refresh` before each verify, and calls `gitread.release` once the card reaches a terminal state.
 - U9's `probe_landing` decides the landing path; U14 passes it in with the confirmed and tested commits from the build row, and the tracker status from the U8 adapter.
 - U14 turns the verdict into a transition: `landed` to `landed`; any halt, or `blocked` with the tracker status's `tracker_unreadable`, to `halted` with the needs you line on the `slipway/landing` check.
+
+## Follow up: one list of landing paths (#51)
+
+An **enum** is a fixed set of named values defined once in code; Python's `StrEnum` makes each value also a plain string, so `LandingPath.PLAIN_MERGE == "plain_merge"` holds.
+
+Verify first kept its own landing path strings beside the `LandingPath` enum in `src/slipway/config/project.py`, and only verify knew `plain_merge`. A rename on either side would have made verify refuse every call. Now:
+
+- `LandingPath` has a fourth member, `PLAIN_MERGE`, so a project file may also pin `landing_path = "plain_merge"`.
+- `verify.py` names no landing path of its own. It imports `LandingPath` and keeps one table, `RELATIONS`, mapping each member to the relation it is checked by: `tested_commit` for the two queues, `tree_equals_confirmed` for `auto_merge_strict`, and `tree_equals_confirmed_merged_into_parent` for `plain_merge`. `verify` refuses any path missing from the table and picks its checks from the relation, not from the path's name.
+- `tests/unit/test_verify.py` fails when the table and the enum disagree, so adding a member to `LandingPath` without a relation is caught by the gate, not by the first card that lands that way. A second test fails if verify grows a landing path string again.
+- `src/slipway/hosts/base.py` used to import its landing path names from verify. It now derives `MERGE_QUEUE`, `AUTO_MERGE_STRICT`, `BITBUCKET_QUEUE`, `PLAIN_MERGE`, and `LANDING_PATHS` from `LandingPath`, keeping the names `hosts/github.py` and the host tests already use.

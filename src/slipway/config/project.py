@@ -47,6 +47,7 @@ class LandingPath(StrEnum):
     MERGE_QUEUE = "merge_queue"  # GitHub merge queue
     AUTO_MERGE_STRICT = "auto_merge_strict"  # GitHub auto merge, branch kept up to date
     BITBUCKET_QUEUE = "bitbucket_queue"
+    PLAIN_MERGE = "plain_merge"  # GitHub auto merge, no required up to date check
 
 
 class MergeMethod(StrEnum):

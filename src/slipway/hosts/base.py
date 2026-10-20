@@ -67,7 +67,6 @@ from slipway.config.operator import Host, HostCredential, Operator
 from slipway.config.project import LandingPath, MergeMethod, Project
 from slipway.redact import scrub
 from slipway.trackers.base import ClosingReference
-from slipway.verify import AUTO_MERGE_STRICT, BITBUCKET_QUEUE, MERGE_QUEUE, PLAIN_MERGE
 
 # Every HTTP request is bounded by this many seconds.
 NETWORK_TIMEOUT_SECONDS = 30
@@ -82,10 +81,14 @@ ENQUEUED = "enqueued"
 AUTO_MERGE_ARMED = "auto_merge_armed"
 NOT_SUPPORTED = "not_supported"
 
-# The landing paths a probe can answer, the three the project file may pin
-# plus plain_merge, which verify (U10) names for a repository with auto merge
-# on but no required up to date check (docs/spikes/merge-paths.md).
-LANDING_PATHS = (MERGE_QUEUE, AUTO_MERGE_STRICT, BITBUCKET_QUEUE, PLAIN_MERGE)
+# The landing paths a probe can answer, named once by config's LandingPath.
+# plain_merge is a repository with auto merge on but no required up to date
+# check (docs/spikes/merge-paths.md).
+MERGE_QUEUE = LandingPath.MERGE_QUEUE.value
+AUTO_MERGE_STRICT = LandingPath.AUTO_MERGE_STRICT.value
+BITBUCKET_QUEUE = LandingPath.BITBUCKET_QUEUE.value
+PLAIN_MERGE = LandingPath.PLAIN_MERGE.value
+LANDING_PATHS = tuple(path.value for path in LandingPath)
 MERGE_METHODS = tuple(method.value for method in MergeMethod)
 
 # Where a probe's answer came from.
