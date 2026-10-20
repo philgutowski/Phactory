@@ -1,0 +1,9 @@
+{
+  "id": 4242,
+  "node_id": "CR_kwDOExample4242",
+  "head_sha": "1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d",
+  "html_url": "https://github.com/example-org/example-app/runs/4242",
+  "status": "completed",
+  "conclusion": "failure",
+  "name": "slipway/landing"
+}

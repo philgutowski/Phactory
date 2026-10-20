@@ -1,0 +1,56 @@
+{
+  "action": "completed",
+  "check_run": {
+    "id": 42,
+    "node_id": "CR_kwDOExample42",
+    "head_sha": "1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d",
+    "external_id": "",
+    "html_url": "https://github.com/example-org/example-app/runs/42",
+    "status": "completed",
+    "conclusion": "success",
+    "started_at": "2026-10-20T10:30:00Z",
+    "completed_at": "2026-10-20T10:40:00Z",
+    "name": "ci",
+    "check_suite": {
+      "id": 7,
+      "head_branch": "slipway/u9-host-adapters-webhooks"
+    },
+    "app": {
+      "id": 15368,
+      "slug": "github-actions",
+      "name": "GitHub Actions"
+    },
+    "pull_requests": [
+      {
+        "id": 1000104,
+        "number": 104,
+        "url": "https://api.github.com/repos/example-org/example-app/pulls/104",
+        "head": {
+          "ref": "slipway/u9-host-adapters-webhooks",
+          "sha": "1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d"
+        },
+        "base": {
+          "ref": "main",
+          "sha": "da38e6c2ec96b89748d4f34ae3cf5b07e5824f7e"
+        }
+      }
+    ]
+  },
+  "repository": {
+    "id": 1296269,
+    "node_id": "R_kgDOExample",
+    "name": "example-app",
+    "full_name": "example-org/example-app",
+    "private": true,
+    "owner": {
+      "login": "example-org",
+      "type": "Organization"
+    },
+    "html_url": "https://github.com/example-org/example-app",
+    "default_branch": "main"
+  },
+  "sender": {
+    "login": "github-actions[bot]",
+    "type": "Bot"
+  }
+}

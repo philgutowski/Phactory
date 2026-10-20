@@ -1,0 +1,11 @@
+{
+  "data": {
+    "enqueuePullRequest": {
+      "mergeQueueEntry": {
+        "id": "MQE_kwDOExample",
+        "state": "AWAITING_CHECKS",
+        "position": 1
+      }
+    }
+  }
+}

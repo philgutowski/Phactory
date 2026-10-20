@@ -1,0 +1,19 @@
+{
+  "id": 1296269,
+  "node_id": "R_kgDOExample",
+  "name": "example-app",
+  "full_name": "example-org/example-app",
+  "private": true,
+  "owner": {
+    "login": "example-org",
+    "type": "Organization"
+  },
+  "html_url": "https://github.com/example-org/example-app",
+  "default_branch": "main",
+  "allow_squash_merge": true,
+  "allow_merge_commit": true,
+  "allow_rebase_merge": true,
+  "allow_auto_merge": true,
+  "allow_update_branch": true,
+  "delete_branch_on_merge": true
+}

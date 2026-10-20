@@ -1,0 +1,7 @@
+{
+  "id": 777,
+  "state": "failure",
+  "context": "slipway/landing",
+  "url": "https://api.github.com/repos/example-org/example-app/statuses/1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d",
+  "target_url": "https://slipway.example.test/p/example/cards/12"
+}

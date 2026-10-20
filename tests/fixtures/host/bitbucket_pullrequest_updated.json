@@ -1,0 +1,114 @@
+{
+  "repository": {
+    "type": "repository",
+    "name": "example-app",
+    "full_name": "example-ws/example-app",
+    "uuid": "{7dd600e6-0d9c-4801-9ec3-2f1a8f6e7b10}",
+    "is_private": true,
+    "links": {
+      "html": {
+        "href": "https://bitbucket.org/example-ws/example-app"
+      }
+    },
+    "workspace": {
+      "slug": "example-ws",
+      "name": "Example"
+    },
+    "project": {
+      "key": "EX",
+      "name": "Example"
+    }
+  },
+  "actor": {
+    "type": "user",
+    "display_name": "Example Operator",
+    "nickname": "example-operator",
+    "uuid": "{aa1c7c2e-1111-4c4d-9c9d-0a0a0a0a0a0a}"
+  },
+  "pullrequest": {
+    "type": "pullrequest",
+    "id": 7,
+    "title": "EX-12: Host adapters and webhooks",
+    "description": "Base: 0123456789abcdef0123456789abcdef01234567",
+    "state": "OPEN",
+    "author": {
+      "type": "user",
+      "display_name": "Example Operator",
+      "nickname": "example-operator",
+      "uuid": "{aa1c7c2e-1111-4c4d-9c9d-0a0a0a0a0a0a}"
+    },
+    "close_source_branch": true,
+    "closed_by": null,
+    "reason": "",
+    "created_on": "2026-10-20T10:00:00+00:00",
+    "updated_on": "2026-10-20T11:00:00+00:00",
+    "merge_commit": null,
+    "source": {
+      "branch": {
+        "name": "slipway/u9-EX-12-host-adapters"
+      },
+      "commit": {
+        "type": "commit",
+        "hash": "7b9c1d2e3f405162738495a6b7c8d9e0f1a2b3c4"
+      },
+      "repository": {
+        "type": "repository",
+        "name": "example-app",
+        "full_name": "example-ws/example-app",
+        "uuid": "{7dd600e6-0d9c-4801-9ec3-2f1a8f6e7b10}",
+        "is_private": true,
+        "links": {
+          "html": {
+            "href": "https://bitbucket.org/example-ws/example-app"
+          }
+        },
+        "workspace": {
+          "slug": "example-ws",
+          "name": "Example"
+        },
+        "project": {
+          "key": "EX",
+          "name": "Example"
+        }
+      }
+    },
+    "destination": {
+      "branch": {
+        "name": "main"
+      },
+      "commit": {
+        "type": "commit",
+        "hash": "0123456789abcdef0123456789abcdef01234567"
+      },
+      "repository": {
+        "type": "repository",
+        "name": "example-app",
+        "full_name": "example-ws/example-app",
+        "uuid": "{7dd600e6-0d9c-4801-9ec3-2f1a8f6e7b10}",
+        "is_private": true,
+        "links": {
+          "html": {
+            "href": "https://bitbucket.org/example-ws/example-app"
+          }
+        },
+        "workspace": {
+          "slug": "example-ws",
+          "name": "Example"
+        },
+        "project": {
+          "key": "EX",
+          "name": "Example"
+        }
+      }
+    },
+    "participants": [],
+    "links": {
+      "html": {
+        "href": "https://bitbucket.org/example-ws/example-app/pull-requests/7"
+      },
+      "self": {
+        "href": "https://api.bitbucket.org/2.0/repositories/example-ws/example-app/pullrequests/7"
+      }
+    }
+  }
+}

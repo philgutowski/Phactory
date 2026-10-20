@@ -1,0 +1,10 @@
+{
+  "ref": "refs/heads/slipway/u9-host-adapters-webhooks",
+  "node_id": "REF_kwDOExample",
+  "url": "https://api.github.com/repos/example-org/example-app/git/refs/heads/slipway/u9-host-adapters-webhooks",
+  "object": {
+    "type": "commit",
+    "sha": "da38e6c2ec96b89748d4f34ae3cf5b07e5824f7e",
+    "url": "https://api.github.com/repos/example-org/example-app/git/commits/da38e6c2ec96b89748d4f34ae3cf5b07e5824f7e"
+  }
+}
