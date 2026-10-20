@@ -184,6 +184,8 @@ def record_transition(conn, build_id: int, from_state: str, to_state: str, actor
     written in the same transaction. An edge not in allowed_edges is refused
     by the database (the trigger on builds and the foreign key on
     transitions), which raises psycopg.errors.IntegrityError or CheckViolation.
+    A build that does not exist, or is deleted while this runs, raises
+    LookupError.
 
     evidence holds structured fields only (keys, commits, numbers) and is
     expected to have passed the redaction module before it reaches here.
@@ -215,8 +217,11 @@ def record_transition(conn, build_id: int, from_state: str, to_state: str, actor
         row = conn.execute(query, values).fetchone()
         if row is None:
             current = conn.execute("SELECT state FROM builds WHERE id = %s",
-                                   (build_id,)).fetchone()[0]
-            return Transition(False, current, None)
+                                   (build_id,)).fetchone()
+            if current is None:
+                # Deleted between the lookup above and the compare and set.
+                raise LookupError(f"no build {build_id}")
+            return Transition(False, current[0], None)
         seq = row[0]
         conn.execute(
             "INSERT INTO transitions (project_id, build_id, seq, from_state, to_state, actor, "
