@@ -14,7 +14,7 @@ from datetime import UTC, datetime, timedelta
 
 import psycopg
 import pytest
-from psycopg import errors
+from psycopg import errors, sql
 
 from slipway.records import migrate, queries, store
 
@@ -95,9 +95,41 @@ def test_no_transaction_file_builds_a_concurrent_index(connect, tmp_path):
     c = connect()
     (tmp_path / "001_t.sql").write_text("CREATE TABLE t (a int);\n")
     (tmp_path / "002_idx.sql").write_text(
-        f"{migrate.NO_TRANSACTION_MARKER}\nCREATE INDEX CONCURRENTLY t_a ON t (a);\n")
+        f"{migrate.NO_TRANSACTION_MARKER}\n"
+        "CREATE INDEX CONCURRENTLY IF NOT EXISTS t_a ON t (a);\n")
     assert migrate.apply(c, schema_dir=tmp_path) == ["001", "002"]
     assert c.execute("SELECT count(*) FROM pg_indexes WHERE indexname = 't_a'").fetchone()[0]
+
+
+def test_no_transaction_file_failing_midway_reruns_from_the_top(connect, tmp_path):
+    c = connect()
+    (tmp_path / "001_t.sql").write_text("CREATE TABLE t (a int);\n")
+    index = tmp_path / "002_idx.sql"
+    index.write_text(f"{migrate.NO_TRANSACTION_MARKER}\n"
+                     "CREATE INDEX CONCURRENTLY IF NOT EXISTS t_a ON t (a);\n"
+                     "CREATE INDEX CONCURRENTLY IF NOT EXISTS t_b ON t (nope);\n")
+    with pytest.raises(psycopg.Error):
+        migrate.apply(c, schema_dir=tmp_path)
+    # The first statement stays applied and the file has no ledger row.
+    assert c.execute("SELECT to_regclass('t_a')").fetchone()[0] is not None
+    assert c.execute("SELECT version FROM schema_migrations").fetchall() == [("001",)]
+    # The fixed file starts again from the top; IF NOT EXISTS skips t_a.
+    index.write_text(index.read_text().replace("(nope)", "(a)"))
+    assert migrate.apply(c, schema_dir=tmp_path) == ["002"]
+    assert c.execute("SELECT to_regclass('t_b')").fetchone()[0] is not None
+
+
+def test_lower_numbered_file_arriving_late_is_refused(connect, tmp_path):
+    c = connect()
+    (tmp_path / "001_a.sql").write_text("CREATE TABLE a (x int);\n")
+    (tmp_path / "003_c.sql").write_text("CREATE TABLE c (x int);\n")
+    assert migrate.apply(c, schema_dir=tmp_path) == ["001", "003"]
+    (tmp_path / "002_b.sql").write_text("CREATE TABLE b (x int);\n")
+    with pytest.raises(migrate.OutOfOrder, match="002_b.sql") as caught:
+        migrate.apply(c, schema_dir=tmp_path)
+    assert "version 003" in str(caught.value)
+    assert c.execute("SELECT to_regclass('b')").fetchone()[0] is None
+    assert c.execute("SELECT count(*) FROM schema_migrations").fetchone()[0] == 2
 
 
 def test_failed_file_leaves_no_ledger_row(connect, tmp_path):
@@ -190,6 +222,60 @@ def test_replayed_transition_inside_a_cycle_is_refused_by_expected_seq(conn, pro
     # A genuine lap two step, naming the seq it actually saw, still goes through.
     fresh = store.record_transition(conn, build, *step, "worker", expected_seq=lap_two[1])
     assert fresh.recorded and fresh.seq == lap_two[1] + 1
+
+
+@pytest.mark.parametrize("lead", [
+    (),
+    ("waiting_for_slot",),
+    ("dispatched", "building", "returned", "pr_open", "awaiting_approval", "queued"),
+    _TO_GATE,
+], ids=["claimed", "waiting_for_slot", "queued", "gate_running"])
+def test_build_can_be_abandoned_before_dispatch_or_while_queued(conn, project, lead):
+    # A card no longer ready before dispatch, or a pull request closed while
+    # queued or while its gate runs, ends the build as abandoned (003).
+    build = store.claim(conn, project, "C-1", "watch").build_id
+    _walk(conn, build, *lead)
+    current = lead[-1] if lead else "claimed"
+    result = store.record_transition(conn, build, current, "abandoned", "worker",
+                                     evidence={"reason": "pr.closed"})
+    assert result.recorded and result.state == "abandoned"
+    # abandoned is ownership terminal, so the card can be claimed again.
+    assert store.claim(conn, project, "C-1", "operator", reason="re dispatch").won
+
+
+def test_claim_row_check_pins_seq_zero_both_ways(conn, project):
+    build = store.claim(conn, project, "C-1", "watch").build_id
+    store.record_transition(conn, build, "claimed", "dispatched", "watch")
+    insert = ("INSERT INTO transitions (project_id, build_id, seq, from_state, to_state, actor) "
+              "VALUES (%s, %s, %s, %s, %s, 'x')")
+    # A seq 0 row naming a from_state is not a claim.
+    with pytest.raises(errors.CheckViolation):
+        conn.execute(insert, (project, build, 0, "claimed", "dispatched"))
+    # A later row with a NULL from_state would skip the edge foreign key.
+    with pytest.raises(errors.CheckViolation):
+        conn.execute(insert, (project, build, 5, None, "claimed"))
+
+
+def test_build_deleted_before_the_compare_and_set_raises_lookup_error(connect, conn, project):
+    build = store.claim(conn, project, "C-1", "watch").build_id
+    other = connect()
+
+    class DeletesFirst:
+        # Passes every call through, but deletes the build from another
+        # connection just before the compare and set runs.
+        def __init__(self, inner):
+            self.inner = inner
+
+        def transaction(self):
+            return self.inner.transaction()
+
+        def execute(self, query, params=None):
+            if isinstance(query, sql.Composed):  # only the compare and set is composed
+                other.execute("DELETE FROM builds WHERE id = %s", (build,))
+            return self.inner.execute(query, params)
+
+    with pytest.raises(LookupError, match=str(build)):
+        store.record_transition(DeletesFirst(conn), build, "claimed", "dispatched", "watch")
 
 
 def test_unknown_claim_column_is_refused(conn, project):
@@ -350,9 +436,12 @@ def test_poll_identity_is_per_project_and_webhooks_carry_none(conn, project):
 def test_poll_path_writes_a_byte_equal_row(connect, project):
     webhook_conn = connect()
     migrate.apply(webhook_conn)
+    # A second schema for the poll side, named per run so a run interrupted
+    # before its finally cannot leave a name the next run collides with.
+    poll_schema = f"p_{uuid.uuid4().hex[:12]}"
     poll_conn = connect()
-    poll_conn.execute("CREATE SCHEMA IF NOT EXISTS poll_side")
-    poll_conn.execute("SET search_path = poll_side")
+    poll_conn.execute(f"CREATE SCHEMA {poll_schema}")
+    poll_conn.execute(f"SET search_path = {poll_schema}")
     try:
         migrate.apply(poll_conn)
         poll_project = store.ensure_project(poll_conn, "example")
@@ -367,7 +456,7 @@ def test_poll_path_writes_a_byte_equal_row(connect, project):
         assert a[1:] == b[1:]
         assert a[-1].encode() == b[-1].encode()
     finally:
-        poll_conn.execute("DROP SCHEMA poll_side CASCADE")
+        poll_conn.execute(f"DROP SCHEMA {poll_schema} CASCADE")
 
 
 # Runner builds and gate runs.

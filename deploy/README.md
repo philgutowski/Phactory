@@ -46,6 +46,16 @@ A bind mount maps one path on the VPS into a container. The app gets two: the `p
 | Postgres | Compose network only |
 | Dagger engine | Compose network only |
 
+## Creating the `slipway` database
+
+The `slipway` database must use UTF8 encoding (the character set Postgres stores text in). A database created under the C locale defaults to SQL_ASCII, which stores bytes without checking them, and psycopg then hands Slipway bytes where it expects text. Create it with the encoding named, from `template0` because the default template may carry another one:
+
+```sh
+createdb -E UTF8 -T template0 slipway
+```
+
+The official Postgres image initialises its cluster as UTF8, so a database it creates through `POSTGRES_DB` is already right; any other route names the encoding as above. Check with `SHOW server_encoding;` inside the database. The integration tests run against a throwaway database that may be SQL_ASCII and survive it by asking for `client_encoding=utf8` on every connection; production does not rely on that.
+
 ## What the app reads from the operator file
 
 Decided by #39. The app mounts the operator file read only and loads it with the same `load_operator()` the worker uses. It is the one source for everything the app needs from it:

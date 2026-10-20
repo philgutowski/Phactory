@@ -437,6 +437,10 @@ stateDiagram-v2
   pr_open --> abandoned: PR closed unmerged
   awaiting_approval --> abandoned: PR closed unmerged
   gate_red --> abandoned: PR closed unmerged
+  claimed --> abandoned: card no longer ready
+  waiting_for_slot --> abandoned: card no longer ready
+  queued --> abandoned: PR closed unmerged
+  gate_running --> abandoned: PR closed unmerged
   merged --> verifying: merged wake up, PR re read
   verifying --> landed: commit equal, card moved
   verifying --> halted: mismatch or card not moved, workflow waits

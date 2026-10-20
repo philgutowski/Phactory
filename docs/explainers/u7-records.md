@@ -15,6 +15,7 @@ This card builds Slipway's memory: the Postgres tables every later unit writes t
 - **Partial unique index.** A uniqueness rule that only applies to rows matching a condition. Here: unique (project, card key) only among builds outside the ownership terminal set.
 - **Claim column.** A column on `builds` that records a side effect has happened (a branch created, a pull request opened). A step writes it in the same transaction as its transition, and skips the side effect next time when the column is already set ("claim before act").
 - **Migration.** A numbered SQL file that changes the schema. **Ledger.** The `schema_migrations` table, one row per applied file.
+- **Forward only.** Migrations only ever add: an applied file is never edited, and a file is never applied below one already applied. A fix is a new, higher numbered file.
 - **Checksum.** The SHA 256 of a file's bytes. If one byte changes, the checksum changes.
 - **Schema (Postgres namespace).** A named folder of tables inside one database. The integration tests give each test its own.
 - **Poll identity.** The text that stands in for a delivery id on an event the poll path found, built from what the event says, so the same state polled twice is recognised as one event.
@@ -27,7 +28,8 @@ This card builds Slipway's memory: the Postgres tables every later unit writes t
 | `src/slipway/records/__init__.py` | Makes `records` a package. One docstring line. |
 | `src/slipway/records/schema/001_init.sql` | Every table KTD16 names, the state list with its page bucket, the allowed edges, the partial unique index, the trigger that guards a build's state, and the unique keys that make writes idempotent. |
 | `src/slipway/records/schema/002_poll_identity.sql` | Adds `host_events.poll_identity` and the unique key (project, poll identity), so a polled event seen on every poll cycle is one row (card #41). |
-| `src/slipway/records/migrate.py` | Finds the numbered files, compares them with the ledger, applies the new ones, refuses a changed one. Also runs as `python -m slipway.records.migrate DSN`. |
+| `src/slipway/records/schema/003_abandon_edges.sql` | Adds the edges to `abandoned` from `claimed`, `waiting_for_slot`, `queued`, and `gate_running`, and replaces the check on `transitions` with one that pins `seq` 0 to the claim both ways (card #42). |
+| `src/slipway/records/migrate.py` | Finds the numbered files, compares them with the ledger, applies the new ones, refuses a changed one or a lower numbered one that arrives late. Also runs as `python -m slipway.records.migrate DSN`. |
 | `src/slipway/records/store.py` | The writes: `ensure_project`, `claim`, `attach_run`, `record_transition`, `ingest_host_event`, `activate_runner_build`, `record_gate_run`. |
 | `src/slipway/records/queries.py` | The reads: `status_buckets`, `card_detail`, `events_since`, `in_flight_files`, `open_findings`, `stale_claims`, `latest_gate_run`, `runner_build_active_at`. |
 | `tests/unit/test_migrate.py` | The ledger rules without a database: ordering, naming, duplicate versions, skip when applied, refuse when changed, the no transaction marker. |
@@ -97,11 +99,13 @@ Each arrow is one allowed edge, one row in `allowed_edges`. Each move writes one
                    scored                           (terminal)
 ```
 
+Since migration 003 four more edges lead to `abandoned`, left out of the drawing to keep it legible: from `claimed` and `waiting_for_slot` (the card stopped being ready before dispatch) and from `queued` and `gate_running` (the pull request was closed while it waited on the merge queue or its gate).
+
 ## How transition integrity is enforced
 
 Four guards, three of them in the database itself, so a bug in Python, or a person typing SQL by hand, still cannot write a history that never happened.
 
-1. **The edge must exist.** `transitions(from_state, to_state)` has a composite foreign key to `allowed_edges`. A row naming `claimed -> merged` fails with a foreign key violation. The claim row is the only one with a NULL from state (a NULL skips a foreign key), and a check constraint pins that row to `seq = 0` and `to_state = 'claimed'`.
+1. **The edge must exist.** `transitions(from_state, to_state)` has a composite foreign key to `allowed_edges`. A row naming `claimed -> merged` fails with a foreign key violation. The claim row is the only one with a NULL from state (a NULL skips a foreign key), and a check constraint pins that row both ways: `seq` 0 is the claim, with a NULL from state and `to_state = 'claimed'`, and every row after it names a from state. (Before migration 003 the check only ran one way, so a `seq` 0 row could carry a from state.)
 2. **The build's state can only move along an edge.** A trigger on `builds` refuses any `UPDATE` that changes `state` to a pair not in `allowed_edges`. So even an update that skips `record_transition` cannot jump a build forward.
 3. **Compare and set on the from state, and on the seq when the caller knows it.** `record_transition(build, from_state, to_state, actor, evidence, claims, expected_seq)` runs `UPDATE builds SET state = to ... WHERE id = build AND state = from`, plus `AND last_seq = expected_seq` when `expected_seq` is given. If the build already left `from_state`, as when the engine replays a step after a crash, zero rows update, nothing is written, and the result says already past with the build's current state. That is how "the same transition recorded twice yields one row" holds.
 
@@ -132,6 +136,8 @@ apply(conn, database="slipway")
   +== for each schema/NNN_name.sql in number order:
   |      in ledger, same checksum      -> skip
   |      in ledger, other checksum     -> refuse (ChecksumMismatch, both checksums named)
+  |      not in ledger, below the      -> refuse (OutOfOrder, both versions named)
+  |      ledger's highest version
   |      not in ledger, normal file    -> BEGIN; SET LOCAL lock_timeout = '5s';
   |                                       run file; insert ledger row; COMMIT
   |      not in ledger, first line is  -> run each statement on its own (no transaction,
@@ -140,16 +146,23 @@ apply(conn, database="slipway")
   +== release the advisory lock
 ```
 
-A file that fails part way rolls back whole, ledger row included, so the next run tries it again. A changed file that was already applied is refused rather than silently ignored: migrations are forward only, and a fix is a new numbered file. SQL comments in the schema are block comments, because a line comment would put two hyphens in the file.
+A file that fails part way rolls back whole, ledger row included, so the next run tries it again.
+
+A no transaction file is the exception: each statement commits on its own, so when the second fails the first stays applied and no ledger row is written. The next run starts that file from the top. That is safe only because `discover()` refuses such a file unless every statement says `IF NOT EXISTS`, so the rerun skips what already landed. One trap remains: a `CREATE INDEX CONCURRENTLY` that fails leaves an invalid index (one Postgres keeps but never uses) under its name, which `IF NOT EXISTS` would then skip, so drop it by hand before the rerun.
+
+Migrations are forward only in order as well as in content (card #42). Say 003 is applied, and a branch that added 002 merges afterwards. Without a guard the next run would apply 002 after 003, an order no other database ever saw. `pending()` refuses it instead, naming both versions, and the fix is to renumber the late file above the highest applied one. Versions compare as numbers, so 10 is above 9. A changed file that was already applied is refused rather than silently ignored: migrations are forward only, and a fix is a new numbered file. SQL comments in the schema are block comments, because a line comment would put two hyphens in the file.
 
 ## How migrations and the store are tested
 
-- `tests/unit/test_migrate.py` drives `discover` and `pending` over small files in a temporary directory: order, bad names, duplicate versions, skip when applied, refuse when changed (the message names both checksums), and the marker.
+- `tests/unit/test_migrate.py` drives `discover` and `pending` over small files in a temporary directory: order, bad names, duplicate versions, skip when applied, refuse when changed (the message names both checksums), the marker, a no transaction statement without `IF NOT EXISTS`, and a lower numbered file pending below the ledger's highest (the message names both versions).
+- The integration suite repeats the last two against Postgres: a no transaction file that fails on its second statement keeps its first and writes no ledger row, and the fixed file then reruns from the top; a `002` arriving after `001` and `003` are applied is refused and creates nothing.
+- The abandon test walks a build to each of `claimed`, `waiting_for_slot`, `queued`, and `gate_running`, records the move to `abandoned`, and claims the card again. The claim row test inserts a `seq` 0 row with a from state and a later row without one, and expects both refused.
 - `tests/integration/test_records.py` reads `SLIPWAY_TEST_DSN`. Each test creates a fresh Postgres schema with a random name, points its connections' `search_path` at it, runs `migrate.apply`, and drops the schema at the end, so tests share one database but no rows. Without the variable each test skips, and under `CI` `tests/_gate.py` turns that skip into a failure.
 - The cycle replay test walks a build round each cycle (the red gate and the halt), replays the lap one step with the seq it saw then, and checks that nothing is written, while a lap two step naming the current seq still goes through.
 - The race tests use real concurrency: the claim test holds one connection's transaction open while a second connection's claim runs in a thread and waits; the cursor test runs two writer threads on two connections while the main thread reads by cursor, then checks the ids it saw equal every id in the table, once each, in order.
 - The poll identity tests ingest the same polled `pr.synchronize` twice and expect one row, check that a new head, another check name, and another check state each make a new row, and check that the identity is per project and NULL on a webhook row.
-- The test connections ask for `client_encoding=utf8`, because a database created by `initdb` under the C locale is SQL_ASCII and psycopg would otherwise hand back bytes instead of text.
+- The test connections ask for `client_encoding=utf8`, because a database created by `initdb` under the C locale is SQL_ASCII and psycopg would otherwise hand back bytes instead of text. Production does not rely on that: `deploy/README.md` says the `slipway` database is created with UTF8 encoding.
+- The byte equal test needs a second schema for the poll side. Its name is random per run, like the per test schema, and it is dropped in a `finally`, so an interrupted run cannot leave a fixed name behind for the next run to trip over.
 
 ## Where this differs from the plan
 
@@ -163,4 +176,5 @@ A file that fails part way rolls back whole, ledger row included, so the next ru
 - **Writes for `attempts`, `scores`, `findings`, and `audit` are not in `store.py`.** Their tables exist; the units that produce those records (U12, U16, U23, U18) add the writes.
 - **The database guard is a name argument.** `apply(conn, database=...)` refuses any other database; the command line defaults it to `slipway`. Reading the connection string from configuration is U6's.
 - **`records/__init__.py` is an extra file**, needed for the package, and `pyproject.toml` gains `psycopg[binary]` and the package data line for the `.sql` files.
+- **Four edges to `abandoned` the first version of the diagram lacked** (card #42): from `claimed`, `waiting_for_slot`, `queued`, and `gate_running`. The plan's diagram now shows them too.
 - **`stale_claims` is an extra query** for KTD3's "a claimed row with no run id older than one watch interval is retried by watch".
