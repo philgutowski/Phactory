@@ -8,10 +8,11 @@ and nothing else, in this order:
 
 1. The body cap. A body over BODY_CAP_BYTES is refused before it is read.
 2. The repository. The payload names it (GitHub repository.full_name,
-   Bitbucket repository.full_name). secrets_for(repository) answers with
-   that repository's secrets, or nothing: an unknown repository is refused
-   before any secret is chosen, so a stranger's payload never reaches the
-   signature check and learns nothing from it.
+   Bitbucket repository.full_name). secrets_for(repository) is the
+   resolution: it answers with that repository's secrets, or nothing, and
+   an unknown repository is refused there, before any secret is chosen or
+   compared, so a stranger's payload never reaches the signature check and
+   learns nothing from its timing.
 3. The signature. GitHub sends X-Hub-Signature-256, Bitbucket X-Hub-Signature,
    each "sha256=" and the hex HMAC SHA-256 of the raw body under the
    webhook secret. HMAC is a keyed hash: only a sender holding the secret
@@ -94,6 +95,8 @@ BITBUCKET_SIGNATURE = "X-Hub-Signature"
 BITBUCKET_DELIVERY = "X-Request-UUID"
 BITBUCKET_EVENT = "X-Event-Key"
 SIGNATURE_PREFIX = "sha256="
+# The hex of a SHA-256 digest, the only shape a signature can take.
+HEX_DIGEST = re.compile(r"[0-9a-f]{64}")
 
 # GitHub's temporary queue branch: the base, the pull request number, and
 # the pull request head the group was built from.
@@ -203,6 +206,9 @@ def verify(host, headers: Mapping[str, str], body: bytes, secrets_for: SecretsFo
         payload = json.loads(body.decode("utf-8"))
     except (UnicodeDecodeError, ValueError) as error:
         raise WebhookRefused(NOT_JSON, str(error)) from None
+    except RecursionError:
+        # Brackets nested deeper than the parser's stack, under the cap.
+        raise WebhookRefused(NOT_JSON, "the payload nests too deeply") from None
     if not isinstance(payload, dict):
         raise WebhookRefused(NOT_JSON, "the payload is not a JSON object")
 
@@ -239,6 +245,10 @@ def check_signature(header: str | None, body: bytes, secrets: tuple[str, ...]) -
     if not header or not header.startswith(SIGNATURE_PREFIX):
         raise WebhookRefused(NO_SIGNATURE, "no sha256= signature header")
     given = header[len(SIGNATURE_PREFIX):].strip().lower()
+    if not HEX_DIGEST.fullmatch(given):
+        # Not a hex digest, so it can match nothing; compare_digest would
+        # also refuse a non ASCII string with a TypeError instead of a no.
+        raise WebhookRefused(BAD_SIGNATURE, "the signature is not a hex digest")
     matched = None
     for index, secret in enumerate(secrets):
         expected = sign(body, secret)

@@ -54,6 +54,7 @@ credential. Every adapter takes an injectable opener for urllib, so tests
 answer from fixtures and never reach a network.
 """
 
+import http.client
 import json
 import urllib.error
 import urllib.parse
@@ -312,7 +313,9 @@ class Client:
             raw = error.read()
             error.close()
             return Response(error.code, _decode(raw), dict(error.headers or {}))
-        except (OSError, ValueError) as error:
+        except (OSError, ValueError, http.client.HTTPException) as error:
+            # HTTPException (an incomplete read, a bad status line) is not an
+            # OSError, and it must take the same scrubbed path.
             raise HostError(scrub(f"{method} {path} failed: {error}", (self._token,))) from None
 
     def get(self, path, params=None) -> Response:

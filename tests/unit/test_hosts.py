@@ -11,6 +11,7 @@ adapter built without its fake.
 Webhook bodies are signed here, by the tests, with invented secrets.
 """
 
+import http.client
 import inspect
 import io
 import json
@@ -199,15 +200,22 @@ def test_an_adapter_without_its_fake_is_caught_by_the_network_guard(github_proje
         host.commit_on_remote(BRANCH, HEAD)
 
 
-def test_a_transport_failure_is_a_host_error_without_the_token(github_project):
+@pytest.mark.parametrize("error", [
+    OSError(f"connection reset while sending Bearer {TOKEN}"),
+    http.client.IncompleteRead(f"partial Bearer {TOKEN}".encode()),
+    http.client.BadStatusLine(f"HTTP/1.1 Bearer {TOKEN}"),
+])
+def test_a_transport_failure_is_a_host_error_without_the_token(github_project, error):
     class Broken:
         def open(self, request, timeout=None):
-            raise OSError(f"connection reset while sending Bearer {TOKEN}")
+            raise error
 
     with pytest.raises(HostError) as caught:
         GitHubHost(github_project, APP, opener=Broken()).commit_on_remote(BRANCH, HEAD)
     assert TOKEN not in str(caught.value)
-    assert "[redacted]" in str(caught.value)
+    # An IncompleteRead prints a byte count, not its bytes, so only an error
+    # whose text carried the token shows the mark.
+    assert ("[redacted]" in str(caught.value)) == (TOKEN in str(error))
 
 
 # create_branch and commit_on_remote.
@@ -545,6 +553,25 @@ def test_a_bad_signature_is_refused_before_parsing():
     assert caught.value.reason == webhooks.NO_SIGNATURE
 
 
+def test_hostile_input_is_refused_not_raised():
+    # Brackets nested past the parser's stack, under the cap.
+    nested = b"[" * 50_000 + b"]" * 50_000
+    with pytest.raises(WebhookRefused) as caught:
+        verify("github", github_headers(nested, "pull_request"), nested, secrets_for)
+    assert caught.value.reason == webhooks.NOT_JSON
+    # A signature that is not a hex digest, including a non ASCII one, which
+    # hmac.compare_digest would refuse with a TypeError.
+    headers, body = github_delivery("github_pull_request_closed", "pull_request",
+                                    signature="sha256=caf\u00e9" + "0" * 60)
+    with pytest.raises(WebhookRefused) as caught:
+        verify("github", headers, body, secrets_for)
+    assert caught.value.reason == webhooks.BAD_SIGNATURE
+    headers["x-hub-signature-256"] = "sha256=not-hex"
+    with pytest.raises(WebhookRefused) as caught:
+        verify("github", headers, body, secrets_for)
+    assert caught.value.reason == webhooks.BAD_SIGNATURE
+
+
 def test_the_previous_secret_is_accepted_inside_the_rotation_window():
     headers, body = github_delivery("github_pull_request_closed", "pull_request",
                                     secret=PREVIOUS)
@@ -598,8 +625,8 @@ def test_an_unmanaged_repository_is_refused_before_a_secret_lookup():
     with pytest.raises(WebhookRefused) as caught:
         verify("github", github_headers(body, "pull_request"), body, watching)
     assert caught.value.reason == webhooks.UNKNOWN_REPOSITORY
-    # The repository was resolved from the payload, found unknown, and no
-    # secret was chosen: the lookup answered None and the check never ran.
+    # The lookup by repository is the resolution: it was asked once, answered
+    # None, and no secret was chosen or compared, so the check never ran.
     assert asked == ["stranger/repo"]
     with pytest.raises(WebhookRefused) as caught:
         verify("github", github_headers(b"{}", "pull_request"), b"{}", watching)
