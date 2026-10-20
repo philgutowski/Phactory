@@ -1,5 +1,6 @@
 """U6 test scenarios for the redaction module (KTD24)."""
 
+import base64
 import dataclasses
 
 import pytest
@@ -22,6 +23,91 @@ def test_scrub_removes_the_percent_encoded_form_inside_a_url():
     out = scrub(text, [INJECTED])
     assert "s3cr3t" not in out
     assert out.endswith("&page=2")
+
+
+def test_scrub_removes_the_lowercase_percent_encoded_form():
+    text = "GET https://api.example.test/?key=s3cr3t%2fvalue%2bwith%3dsymbols&page=2"
+    out = scrub(text, [INJECTED])
+    assert "s3cr3t" not in out
+    assert out == f"GET https://api.example.test/?key={MARK}&page=2"
+
+
+def test_scrub_removes_a_mixed_raw_and_encoded_form_in_either_case():
+    # quote(safe="/") leaves the slash raw; hex case differs between escapes.
+    text = "path s3cr3t/value%2bwith%3Dsymbols done"
+    assert scrub(text, [INJECTED]) == f"path {MARK} done"
+
+
+@pytest.mark.parametrize("lead", [b"", b"u", b"us", b"user:"])
+def test_scrub_removes_the_base64_form_at_every_byte_offset(lead):
+    # Base64 maps 3 bytes to 4 characters, so the value encodes differently
+    # depending on how many bytes come before it. Each lead covers an offset.
+    trail = b"@host"
+    encoded = base64.b64encode(lead + INJECTED.encode() + trail).decode()
+    out = scrub(f"header {encoded} end", [INJECTED])
+    assert out.count(MARK) == 1
+    left = out.index(MARK) - len("header ")
+    right = len(out) - out.index(MARK) - len(MARK) - len(" end")
+    # What stays is only the characters that carry a bit of lead or trail
+    # (6 bits each, one of them shared with the value), plus "=" padding.
+    assert left <= -(-8 * len(lead) // 6)
+    assert right <= -(-8 * len(trail) // 6) + 1 + 2
+
+
+def test_scrub_removes_the_url_safe_base64_form():
+    encoded = base64.urlsafe_b64encode(b"\xff\xfe" + INJECTED.encode()).decode()
+    assert "-" in encoded or "_" in encoded
+    out = scrub(f"cursor={encoded}", [INJECTED])
+    assert out.startswith("cursor=") and MARK in out
+    assert len(out) <= len("cursor=") + 3 + len(MARK) + 1 + 2
+
+
+def test_scrub_removes_a_jira_basic_authorization_header_whole():
+    # Built the way trackers/jira.py builds it, scrubbed with what it passes.
+    email, token = "builder@example.test", "ATAT-not-a-real-token-0123456789"
+    header = "Basic " + base64.b64encode(f"{email}:{token}".encode()).decode("ascii")
+    text = f"request failed, Authorization: {header}"
+    assert scrub(text, (token, email)) == f"request failed, Authorization: Basic {MARK}"
+    assert scrub(text, (email, token)) == f"request failed, Authorization: Basic {MARK}"
+
+
+def test_scrub_with_a_short_email_leaves_the_email_part_of_a_basic_header():
+    # Under eight characters the email is not an injected value, so no pair
+    # is built; the token's own characters still go. The explainer says so.
+    email, token = "ab@c.io", "ATAT-not-a-real-token-0123456789"
+    header = base64.b64encode(f"{email}:{token}".encode()).decode("ascii")
+    out = scrub(f"Basic {header}", (token, email))
+    assert MARK in out and out != f"Basic {MARK}"
+    assert header[:8] in out
+
+
+def test_scrub_removes_two_partly_overlapping_values_whole():
+    out = scrub("key=abcdefgh12345678wxyz end", ["abcdefgh12345678", "12345678wxyz"])
+    assert out == f"key={MARK} end"
+
+
+@pytest.mark.parametrize("text, expected", [
+    ("", ""),
+    ("abcdefgh12345678 end", f"{MARK} end"),
+    ("start abcdefgh12345678", f"start {MARK}"),
+    ("abcdefgh12345678wxyzwxyz", MARK),
+    ("abcdefgh12345678 wxyzwxyz", f"{MARK} {MARK}"),
+])
+def test_scrub_merges_matches_at_the_edges_and_side_by_side(text, expected):
+    assert scrub(text, ["abcdefgh12345678", "wxyzwxyz"]) == expected
+
+
+def test_scrub_builds_no_base64_form_for_a_short_value():
+    value = "s3cr3t!"
+    text = base64.b64encode(f"xx{value}".encode()).decode("ascii")
+    assert scrub(text, [value]) == text
+
+
+def test_scrub_gives_the_same_answer_on_a_repeated_call():
+    # The compiled patterns are cached per value set; a hit must not change the result.
+    text = f"a {INJECTED} b " + base64.b64encode(INJECTED.encode()).decode("ascii")
+    first = scrub(text, [INJECTED])
+    assert scrub(text, [INJECTED]) == first and INJECTED not in first
 
 
 def test_scrub_removes_an_injected_value_inside_a_command_line():
