@@ -41,6 +41,7 @@ the length. Never the value itself.
 """
 
 import base64
+import functools
 import hashlib
 import re
 from dataclasses import dataclass
@@ -127,23 +128,39 @@ def _base64_forms(value: str) -> set[str]:
     return forms | {form.translate(_URLSAFE) for form in forms}
 
 
-def scrub(text: str, injected_values=()) -> str:
-    """Return text with every injected value, in the forms the module docstring lists, and
-    every known token shape removed."""
-    values = list(dict.fromkeys(
-        v for v in injected_values if v and len(v) >= MIN_INJECTED_LENGTH))
+@functools.lru_cache(maxsize=16)
+def _value_patterns(values: tuple[str, ...]) -> tuple[re.Pattern, ...]:
+    """The compiled patterns for one set of injected values, built once per set.
+
+    scrub runs once per string field of every trace record, and the pair
+    forms grow with the square of the value count, so building and compiling
+    them on every call made a long trace take seconds. A session passes the
+    same values on every call, so the cache hits. It is small, because each
+    entry holds the values it was built from for as long as it stays cached.
+    Each pattern stays separate: one alternation of them all would report
+    only the leftmost match and miss a value that starts inside another.
+    """
     literals = set()
     for value in values:
         literals |= _base64_forms(value)
         for other in values:
             if other != value:
                 literals |= _base64_forms(f"{value}:{other}")
-    patterns = [_percent_pattern(v) for v in values] + [re.escape(f) for f in literals]
+    sources = [_percent_pattern(v) for v in values] + [re.escape(f) for f in literals]
+    return tuple(re.compile(source) for source in sources)
+
+
+def scrub(text: str, injected_values=()) -> str:
+    """Return text with every injected value, in the forms the module docstring lists, and
+    every known token shape removed."""
+    values = tuple(dict.fromkeys(
+        v for v in injected_values if v and len(v) >= MIN_INJECTED_LENGTH))
+    patterns = _value_patterns(values) if values else ()
 
     # Find every match in the original text first, then merge spans that
     # overlap or touch, so removing one form never breaks the match of
     # another and a value that contains another is removed whole.
-    spans = sorted((m.start(), m.end()) for p in patterns for m in re.finditer(p, text))
+    spans = sorted((m.start(), m.end()) for p in patterns for m in p.finditer(text))
     merged: list[list[int]] = []
     for start, end in spans:
         if merged and start <= merged[-1][1]:

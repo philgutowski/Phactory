@@ -71,9 +71,43 @@ def test_scrub_removes_a_jira_basic_authorization_header_whole():
     assert scrub(text, (email, token)) == f"request failed, Authorization: Basic {MARK}"
 
 
+def test_scrub_with_a_short_email_leaves_the_email_part_of_a_basic_header():
+    # Under eight characters the email is not an injected value, so no pair
+    # is built; the token's own characters still go. The explainer says so.
+    email, token = "ab@c.io", "ATAT-not-a-real-token-0123456789"
+    header = base64.b64encode(f"{email}:{token}".encode()).decode("ascii")
+    out = scrub(f"Basic {header}", (token, email))
+    assert MARK in out and out != f"Basic {MARK}"
+    assert header[:8] in out
+
+
 def test_scrub_removes_two_partly_overlapping_values_whole():
     out = scrub("key=abcdefgh12345678wxyz end", ["abcdefgh12345678", "12345678wxyz"])
     assert out == f"key={MARK} end"
+
+
+@pytest.mark.parametrize("text, expected", [
+    ("", ""),
+    ("abcdefgh12345678 end", f"{MARK} end"),
+    ("start abcdefgh12345678", f"start {MARK}"),
+    ("abcdefgh12345678wxyzwxyz", MARK),
+    ("abcdefgh12345678 wxyzwxyz", f"{MARK} {MARK}"),
+])
+def test_scrub_merges_matches_at_the_edges_and_side_by_side(text, expected):
+    assert scrub(text, ["abcdefgh12345678", "wxyzwxyz"]) == expected
+
+
+def test_scrub_builds_no_base64_form_for_a_short_value():
+    value = "s3cr3t!"
+    text = base64.b64encode(f"xx{value}".encode()).decode("ascii")
+    assert scrub(text, [value]) == text
+
+
+def test_scrub_gives_the_same_answer_on_a_repeated_call():
+    # The compiled patterns are cached per value set; a hit must not change the result.
+    text = f"a {INJECTED} b " + base64.b64encode(INJECTED.encode()).decode("ascii")
+    first = scrub(text, [INJECTED])
+    assert scrub(text, [INJECTED]) == first and INJECTED not in first
 
 
 def test_scrub_removes_an_injected_value_inside_a_command_line():
