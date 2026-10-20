@@ -14,8 +14,10 @@ Validation runs in three passes, and each failure names the dotted key:
    that holds them (R3). Any other string, such as a Jira status TO_DO, may
    be written in capitals.
 3. Names: check_names(project, operator) refuses a name the operator file
-   does not define. It is a separate call because resolve (bindings.py)
-   reports a missing name as binding_invalid at dispatch instead.
+   does not define, a host credential for another host, and a tracker
+   credential for another site than tracker_site. It is a separate call
+   because resolve (bindings.py) reports the same faults as binding_invalid
+   at dispatch instead; onboard calls it before it saves a project file.
 """
 
 import re
@@ -223,6 +225,16 @@ def check_names(project: Project, operator: Operator) -> None:
 
     if project.tracker_credential not in operator.tracker_credentials:
         fail("tracker_credential", project.tracker_credential, "tracker_credentials")
+    elif (site := operator.tracker_credentials[project.tracker_credential].site) != (
+        project.tracker_site
+    ):
+        # The same check resolve_tracker_credential (bindings.py) makes at
+        # dispatch, so a file that passes here cannot halt there for it.
+        raise ConfigError(
+            project.path, "tracker_credential",
+            f"{project.tracker_credential!r} is for site {site!r}, the project's site is "
+            f"{project.tracker_site!r}",
+        )
     if project.host_credential not in operator.host_credentials:
         fail("host_credential", project.host_credential, "host_credentials")
     elif (other := operator.host_credentials[project.host_credential].host) != project.host:

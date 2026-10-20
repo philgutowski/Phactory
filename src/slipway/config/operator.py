@@ -132,6 +132,25 @@ KNOWN = {
     "tracker_credentials", "host_credentials", "runner_repository", "runner_instances",
     "runner_read_api", "builder_workers", "webhook_secrets",
 }
+# The keys each nested table may hold. A key outside its set is refused by
+# its dotted name, so a typo such as tokn_env is named rather than ignored.
+IDENTITY_PROVIDER_KEYS = {"issuer", "client_id", "client_secret_env"}
+ACCOUNT_KEYS = {"kind", "env"}
+LANGFUSE_KEYS = {"public_key_env", "secret_key_env"}
+TRACKER_KEYS = {"site", "token_env", "email_env"}
+HOST_KEYS = {"host", "kind", "env"}
+RUNNER_REPOSITORY_KEYS = {"owner", "name", "default_branch", "version_file"}
+RUNNER_INSTANCE_KEYS = {"prefix", "labels", "host", "repositories"}
+REGISTRATION_KEYS = {"repository", "token_env", "previous_token_env"}
+WORKER_KEYS = {"label", "machine"}
+WEBHOOK_KEYS = {"repository", "env", "previous_env"}
+
+
+def checked(tables, known):
+    """Refuse an unknown key in each of tables, a dict or list of Readers; return tables."""
+    for table in tables.values() if isinstance(tables, dict) else tables:
+        table.refuse_unknown(known)
+    return tables
 
 
 def operator_path(root: Path | None = None) -> Path:
@@ -150,6 +169,7 @@ def parse_operator(path: Path, data: dict) -> Operator:
     top.refuse_unknown(KNOWN)
 
     idp = top.table("identity_provider")
+    idp.refuse_unknown(IDENTITY_PROVIDER_KEYS)
     identity_provider = IdentityProvider(
         issuer=idp.text("issuer"),
         client_id=idp.text("client_id"),
@@ -158,37 +178,38 @@ def parse_operator(path: Path, data: dict) -> Operator:
 
     accounts = {
         name: Account(name, t.choice("kind", AccountKind), t.env("env"))
-        for name, t in top.tables("accounts").items()
+        for name, t in checked(top.tables("accounts"), ACCOUNT_KEYS).items()
     }
     langfuse = {
         name: LangfuseProject(name, t.env("public_key_env"), t.env("secret_key_env"))
-        for name, t in top.tables("langfuse_projects").items()
+        for name, t in checked(top.tables("langfuse_projects"), LANGFUSE_KEYS).items()
     }
     trackers = {
         name: TrackerCredential(
             name, t.text("site"), t.env("token_env"), t.env("email_env", required=False)
         )
-        for name, t in top.tables("tracker_credentials").items()
+        for name, t in checked(top.tables("tracker_credentials"), TRACKER_KEYS).items()
     }
     hosts = {
         name: HostCredential(name, t.choice("host", Host), t.text("kind"), t.env("env"))
-        for name, t in top.tables("host_credentials").items()
+        for name, t in checked(top.tables("host_credentials"), HOST_KEYS).items()
     }
 
     runner_repository = None
     rr = top.table("runner_repository", required=False)
     if rr is not None:
+        rr.refuse_unknown(RUNNER_REPOSITORY_KEYS)
         runner_repository = RunnerRepository(
             rr.text("owner"), rr.text("name"), rr.text("default_branch"), rr.text("version_file")
         )
 
     instances = {}
-    for name, t in top.tables("runner_instances").items():
+    for name, t in checked(top.tables("runner_instances"), RUNNER_INSTANCE_KEYS).items():
         registrations = tuple(
             RunnerRegistration(
                 r.text("repository"), r.env("token_env"), r.env("previous_token_env", False)
             )
-            for r in t.array_of_tables("repositories")
+            for r in checked(t.array_of_tables("repositories"), REGISTRATION_KEYS)
         )
         instances[name] = RunnerInstance(
             name, t.text("prefix"), t.strs("labels", nonempty=True), t.text("host"), registrations
@@ -196,11 +217,11 @@ def parse_operator(path: Path, data: dict) -> Operator:
 
     workers = {
         name: BuilderWorker(name, t.text("label"), t.text("machine"))
-        for name, t in top.tables("builder_workers").items()
+        for name, t in checked(top.tables("builder_workers"), WORKER_KEYS).items()
     }
 
     secrets = {}
-    for t in top.array_of_tables("webhook_secrets"):
+    for t in checked(top.array_of_tables("webhook_secrets"), WEBHOOK_KEYS):
         entry = WebhookSecret(t.text("repository"), t.env("env"), t.env("previous_env", False))
         if entry.repository in secrets:
             t.fail("repository", f"{entry.repository!r} is listed twice")
