@@ -36,6 +36,14 @@ HOST_EVENT_SOURCES = frozenset({"webhook", "poll"})
 # normalised mapping is also stored as canonical JSON text.
 HOST_EVENT_FIELDS = ("host", "delivery_id", "repository", "pr_number", "kind",
                      "merge_commit", "head_commit")
+# The facts that make two polled events the same event (card #41). A poll
+# reads the host's current state, so two poll cycles that see one pull
+# request at one head with one outcome mint one identity and write one row.
+# A field that changes (a new head, a merge, a check that finished another
+# way) changes the identity, so the new state is a new row and a new wake up.
+POLL_IDENTITY_FIELDS = ("host", "repository", "pr_number", "kind", "head_commit",
+                        "merge_commit", "tested_commit", "tested_head", "check_name",
+                        "check_state")
 
 
 @dataclass(frozen=True)
@@ -218,38 +226,54 @@ def record_transition(conn, build_id: int, from_state: str, to_state: str, actor
         return Transition(True, to_state, seq)
 
 
+def poll_identity(normalised: dict) -> str:
+    """The stable identity of a polled host event (card #41).
+
+    A polled event has no delivery id, so this stands in for one: "poll:"
+    and the canonical JSON of POLL_IDENTITY_FIELDS, in that order, with a
+    missing field as null. JSON keeps the parts apart, so a check name that
+    holds a colon cannot make two different events look alike. The project
+    is not part of the text; the unique key pairs it with the project id.
+    """
+    return "poll:" + canonical_json([normalised.get(f) for f in POLL_IDENTITY_FIELDS])
+
+
 def ingest_host_event(conn, source: str, normalised: dict) -> Ingest:
     """Write one normalised host event, deduplicated (KTD10).
 
     The webhook endpoint and the poll path both call this, so the row depends
     only on the normalised mapping and the source. normalised carries
     project_id plus HOST_EVENT_FIELDS; delivery_id is None for a polled
-    event. An event already present by (host, delivery id), or by (project,
-    pull request, kind, merge commit), is not written again and the result
-    names the existing row.
+    event, and this function mints its poll_identity instead, so the poll
+    path supplies no identity of its own. An event already present by (host,
+    delivery id), by (project, pull request, kind, merge commit), or by
+    (project, poll identity) is not written again and the result names the
+    existing row.
     """
     if source not in HOST_EVENT_SOURCES:
         raise ValueError(f"unknown host event source {source!r}")
     event = {field: normalised.get(field) for field in HOST_EVENT_FIELDS}
     project_id = normalised["project_id"]
+    identity = poll_identity(normalised) if source == "poll" else None
     body = canonical_json(normalised)
     with conn.transaction():
         row = conn.execute(
             "INSERT INTO host_events (project_id, source, host, delivery_id, repository, "
-            "pr_number, kind, merge_commit, head_commit, normalised) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+            "pr_number, kind, merge_commit, head_commit, poll_identity, normalised) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
             "ON CONFLICT DO NOTHING RETURNING id",
             (project_id, source, event["host"], event["delivery_id"], event["repository"],
              event["pr_number"], event["kind"], event["merge_commit"], event["head_commit"],
-             body)).fetchone()
+             identity, body)).fetchone()
         if row:
             return Ingest(True, row[0])
         existing = conn.execute(
             "SELECT id FROM host_events WHERE (host = %s AND delivery_id = %s) "
             "OR (project_id = %s AND pr_number = %s AND kind = %s AND merge_commit = %s) "
+            "OR (project_id = %s AND poll_identity = %s) "
             "ORDER BY id LIMIT 1",
             (event["host"], event["delivery_id"], project_id, event["pr_number"],
-             event["kind"], event["merge_commit"])).fetchone()
+             event["kind"], event["merge_commit"], project_id, identity)).fetchone()
         return Ingest(False, existing[0])
 
 

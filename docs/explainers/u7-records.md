@@ -17,6 +17,7 @@ This card builds Slipway's memory: the Postgres tables every later unit writes t
 - **Migration.** A numbered SQL file that changes the schema. **Ledger.** The `schema_migrations` table, one row per applied file.
 - **Checksum.** The SHA 256 of a file's bytes. If one byte changes, the checksum changes.
 - **Schema (Postgres namespace).** A named folder of tables inside one database. The integration tests give each test its own.
+- **Poll identity.** The text that stands in for a delivery id on an event the poll path found, built from what the event says, so the same state polled twice is recognised as one event.
 - **Cursor.** The id of the last event a reader has seen. The next read asks for ids strictly greater than it.
 
 ## What each file does
@@ -25,6 +26,7 @@ This card builds Slipway's memory: the Postgres tables every later unit writes t
 |:-|:-|
 | `src/slipway/records/__init__.py` | Makes `records` a package. One docstring line. |
 | `src/slipway/records/schema/001_init.sql` | Every table KTD16 names, the state list with its page bucket, the allowed edges, the partial unique index, the trigger that guards a build's state, and the unique keys that make writes idempotent. |
+| `src/slipway/records/schema/002_poll_identity.sql` | Adds `host_events.poll_identity` and the unique key (project, poll identity), so a polled event seen on every poll cycle is one row (card #41). |
 | `src/slipway/records/migrate.py` | Finds the numbered files, compares them with the ledger, applies the new ones, refuses a changed one. Also runs as `python -m slipway.records.migrate DSN`. |
 | `src/slipway/records/store.py` | The writes: `ensure_project`, `claim`, `attach_run`, `record_transition`, `ingest_host_event`, `activate_runner_build`, `record_gate_run`. |
 | `src/slipway/records/queries.py` | The reads: `status_buckets`, `card_detail`, `events_since`, `in_flight_files`, `open_findings`, `stale_claims`, `latest_gate_run`, `runner_build_active_at`. |
@@ -112,7 +114,9 @@ Claim columns ride in the same transaction: `claims={"pr_number": 7}` sets `buil
 
 `attach_run(build, run_id)` is a compare and set on `run_id IS NULL`: the first run id stays, a second call gets the existing one back and exits as a no op.
 
-`ingest_host_event(source, normalised)` is the single entry for the webhook endpoint and the poll path. It stores the normalised mapping as canonical JSON text (sorted keys, no spaces) so the same event from either source is a byte equal row apart from `source`. Two unique keys dedupe: (host, delivery id) for webhook retries, and (project, pull request, kind, merge commit) so a merge seen first by webhook and later by poll is one row.
+`ingest_host_event(source, normalised)` is the single entry for the webhook endpoint and the poll path. It stores the normalised mapping as canonical JSON text (sorted keys, no spaces) so the same event from either source is a byte equal row apart from `source`. Two unique keys dedupe: (host, delivery id) for webhook retries, (project, pull request, kind, merge commit) so a merge seen first by webhook and later by poll is one row, and (project, poll identity) so a polled event seen again on the next cycle is one row.
+
+**The rule for polled events (card #41), which the poll path (U10) inherits.** A polled event has no delivery id, and a polled `pr.synchronize` or `pr.closed` has no merge commit. Postgres treats NULLs as distinct in a unique key, so without a third key every poll cycle inserted a fresh row and woke the workflow again. The poll path does not mint an identity itself: it calls `ingest_host_event("poll", normalised)` with `delivery_id` None, and the function sets `poll_identity` to `poll:` followed by the canonical JSON of `POLL_IDENTITY_FIELDS` (host, repository, pull request, kind, head commit, merge commit, tested commit, tested head, check name, check state). Two polls that see one pull request at one head with one outcome share it and write one row; a new head, a merge, or a check that finished another way is a new identity, a new row, and a new wake up. A webhook row leaves it NULL, because its delivery id already dedupes it. One consequence to know: a pull request pushed back to a head it had before is not a new polled row, so a wait that needs that wake up relies on its own re read of the pull request, which every event driven transition already does (KTD10). And a poll that finds a state a webhook already delivered is still its own row, since the two rows share neither a delivery id nor a poll identity; that is one extra wake up, never two per cycle.
 
 Runner builds: `activate_runner_build(instance, commit, at)` closes the active row at `at` and opens the new one at the same instant, so the intervals meet with no gap. `record_gate_run` stores the runner build whose interval contains the job's start, so a job that started a minute before a swap is attributed to the old binary even if it finished after.
 
@@ -144,6 +148,7 @@ A file that fails part way rolls back whole, ledger row included, so the next ru
 - `tests/integration/test_records.py` reads `SLIPWAY_TEST_DSN`. Each test creates a fresh Postgres schema with a random name, points its connections' `search_path` at it, runs `migrate.apply`, and drops the schema at the end, so tests share one database but no rows. Without the variable each test skips, and under `CI` `tests/_gate.py` turns that skip into a failure.
 - The cycle replay test walks a build round each cycle (the red gate and the halt), replays the lap one step with the seq it saw then, and checks that nothing is written, while a lap two step naming the current seq still goes through.
 - The race tests use real concurrency: the claim test holds one connection's transaction open while a second connection's claim runs in a thread and waits; the cursor test runs two writer threads on two connections while the main thread reads by cursor, then checks the ids it saw equal every id in the table, once each, in order.
+- The poll identity tests ingest the same polled `pr.synchronize` twice and expect one row, check that a new head, another check name, and another check state each make a new row, and check that the identity is per project and NULL on a webhook row.
 - The test connections ask for `client_encoding=utf8`, because a database created by `initdb` under the C locale is SQL_ASCII and psycopg would otherwise hand back bytes instead of text.
 
 ## Where this differs from the plan
@@ -153,7 +158,7 @@ A file that fails part way rolls back whole, ledger row included, so the next ru
 - **A trigger on `builds` in addition to the foreign key on `transitions`**, so the build row itself cannot skip the state machine.
 - **One extra edge, `dispatched -> returned_empty`,** for a provider error at session start (KTD22). The state diagram only shows `building -> returned_empty`.
 - **`landed` and `scored` are in a fifth page bucket, `done`.** The plan's bucket list leaves them out.
-- **The second host event key only dedupes events that carry a merge commit.** Events without one (opened, synchronize) compare as distinct under it and dedupe by delivery id only.
+- **The second host event key only dedupes events that carry a merge commit.** Events without one (opened, synchronize) compare as distinct under it. A webhook event dedupes by delivery id; a polled one, since card #41, by its poll identity (migration 002).
 - **The events floor is a column, `projects.events_floor`.** Nothing prunes yet, so `truncated` is false until a pruning step raises the floor.
 - **Writes for `attempts`, `scores`, `findings`, and `audit` are not in `store.py`.** Their tables exist; the units that produce those records (U12, U16, U23, U18) add the writes.
 - **The database guard is a name argument.** `apply(conn, database=...)` refuses any other database; the command line defaults it to `slipway`. Reading the connection string from configuration is U6's.

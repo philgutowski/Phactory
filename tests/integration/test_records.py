@@ -71,7 +71,7 @@ def _walk(conn, build_id, *states, actor="worker"):
 
 def test_ledger_holds_one_row_per_file_and_second_apply_is_a_no_op(connect):
     c = connect()
-    assert migrate.apply(c) == ["001"]
+    assert migrate.apply(c) == [m.version for m in migrate.discover()]
     assert migrate.apply(c) == []
     rows = c.execute("SELECT version, name, checksum FROM schema_migrations").fetchall()
     files = migrate.discover()
@@ -87,7 +87,8 @@ def test_modified_001_is_refused_with_the_checksum_named(connect, tmp_path):
         migrate.apply(c, schema_dir=tmp_path)
     recorded = migrate.discover()[0].checksum
     assert recorded in str(caught.value)
-    assert c.execute("SELECT count(*) FROM schema_migrations").fetchone()[0] == 1
+    applied = len(migrate.discover())
+    assert c.execute("SELECT count(*) FROM schema_migrations").fetchone()[0] == applied
 
 
 def test_no_transaction_file_builds_a_concurrent_index(connect, tmp_path):
@@ -299,6 +300,51 @@ def test_same_merged_event_twice_yields_one_row(conn, project):
     polled = store.ingest_host_event(conn, "poll", _merged(project, None))
     assert not polled.inserted and polled.event_id == first.event_id
     assert conn.execute("SELECT count(*) FROM host_events").fetchone()[0] == 1
+
+
+def _polled(project, kind, head, **fields):
+    return {"project_id": project, "host": "github", "delivery_id": None,
+            "repository": "owner/repo", "pr_number": 7, "kind": kind,
+            "merge_commit": None, "head_commit": head, **fields}
+
+
+def test_two_identical_poll_cycles_write_one_row(conn, project):
+    # A polled synchronize has neither a delivery id nor a merge commit, so
+    # only the poll identity can tell the second cycle it has been seen.
+    first = store.ingest_host_event(conn, "poll", _polled(project, "pr.synchronize", "b" * 40))
+    second = store.ingest_host_event(conn, "poll", _polled(project, "pr.synchronize", "b" * 40))
+    assert first.inserted and not second.inserted
+    assert second.event_id == first.event_id
+    assert conn.execute("SELECT count(*) FROM host_events").fetchone()[0] == 1
+
+
+def test_a_new_head_or_another_check_is_a_new_polled_row(conn, project):
+    events = [
+        _polled(project, "pr.synchronize", "b" * 40),
+        _polled(project, "pr.synchronize", "c" * 40),
+        _polled(project, "check.completed", "c" * 40, check_name="ci", check_state="success"),
+        _polled(project, "check.completed", "c" * 40, check_name="review",
+                check_state="success"),
+        _polled(project, "check.completed", "c" * 40, check_name="ci", check_state="failure"),
+    ]
+    for event in events:
+        assert store.ingest_host_event(conn, "poll", event).inserted
+    for event in events:
+        assert not store.ingest_host_event(conn, "poll", event).inserted
+    assert conn.execute("SELECT count(*) FROM host_events").fetchone()[0] == len(events)
+
+
+def test_poll_identity_is_per_project_and_webhooks_carry_none(conn, project):
+    other = store.ensure_project(conn, "other")
+    assert store.ingest_host_event(conn, "poll", _polled(project, "pr.closed", None)).inserted
+    assert store.ingest_host_event(conn, "poll", _polled(other, "pr.closed", None)).inserted
+    webhook = {**_polled(project, "pr.closed", None), "delivery_id": "d-9"}
+    assert store.ingest_host_event(conn, "webhook", webhook).inserted
+    identities = conn.execute(
+        "SELECT source, poll_identity FROM host_events ORDER BY id").fetchall()
+    assert [source for source, _ in identities] == ["poll", "poll", "webhook"]
+    assert identities[0][1] == identities[1][1] == store.poll_identity(webhook)
+    assert identities[2][1] is None
 
 
 def test_poll_path_writes_a_byte_equal_row(connect, project):
