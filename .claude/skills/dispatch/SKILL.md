@@ -67,7 +67,8 @@ gh api -X POST "repos/$REPO/issues/$N/comments" -F body=@"$S/handoff-$N.md"
 
 Creating the branch first is what marks the card dispatched for the next run, and the board workflow moves the card to In progress on it. Then start the builder with `create_session` from the claude-code-remote tools:
 
-- `prompt`: the handoff text, exactly as rendered.
+- `prompt`: the handoff text, exactly as rendered, plus any note the conductor adds (a recorded spike the card leans on, a file to read first).
+- `source_url`: `https://github.com/philgutowski/Slipway`, and `source_revision`: the branch name. An outcome branch needs a GitHub source, and starting on the branch saves the session a checkout.
 - `outcome_branch`: the branch name, so pushes land on it with no suffix.
 - `model`: `claude-opus-5-5` by default. Use `claude-fable-5-1` for the units whose correctness rests on concurrency, authorization, or a credential: U9, U14, U25, U18, U19, U22.
 - `title`: the card's title.
