@@ -69,6 +69,6 @@ The card's own `slipway` block (see `.github/ISSUE_TEMPLATE/card.md`) holds `goo
 ## The two checks on every pull request
 
 - `ci` runs the gate above.
-- `review` is a model review: `factory/review.py` hands the diff, the card, and `factory/review-brief.md` to a reviewer model and posts the verdict as a pull request review. A blocking finding turns the check red; fix it and push, and both checks run again. Answer an advisory finding in one line on the pull request. Never weaken a test, force push, or push an empty commit to get green.
+- `review` is a model review: `factory/review.py` hands the diff, the card, and `factory/review-brief.md` to a reviewer model (on the operator's subscription, through the `CLAUDE_CODE_OAUTH_TOKEN` secret) and posts the verdict as a pull request review. A blocking finding turns the check red; fix it and push, and both checks run again. Answer an advisory finding in one line on the pull request. Never weaken a test, force push, or push an empty commit to get green.
 
 Auto merge waits for both and for nothing else: the review check is the review, by the operator's decision of 2026-10-20. The explainer is `docs/explainers/build-loop.md`.

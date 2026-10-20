@@ -17,7 +17,9 @@ would be no check at all.
 Everything the script needs comes from the environment the workflow sets:
 
     REPO, PR_NUMBER, BASE_SHA, HEAD_SHA   the pull request
-    ANTHROPIC_API_KEY                     the reviewer's key, from a repository secret
+    CLAUDE_CODE_OAUTH_TOKEN               the reviewer's subscription token, from a
+                                          repository secret, or ANTHROPIC_API_KEY for
+                                          API billing; one of the two must be set
     GH_TOKEN                              the job's token, to read the card and post
     REVIEW_MODEL, REVIEW_EFFORT           the model and its effort (default the brief's)
     REVIEW_BUDGET_USD                     a cap on one review's spend
@@ -46,6 +48,8 @@ DEFAULT_EFFORT = "high"
 DEFAULT_BUDGET_USD = "8"
 DIFF_INLINE_LIMIT = 400_000  # bytes; a larger diff is left in a file for the model to read
 BRANCH_PREFIX = "slipway/"
+# One of these must be set: a subscription token from `claude setup-token`, or an API key.
+CREDENTIALS = ("CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY")
 
 # Read only. Bash is limited to the three git verbs a reviewer needs.
 ALLOWED_TOOLS = "Read,Glob,Grep,Bash(git diff:*),Bash(git log:*),Bash(git show:*)"
@@ -319,9 +323,10 @@ def run_review(env: dict) -> int:
     work = Path(env.get("RUNNER_TEMP") or env.get("TMPDIR") or "/tmp") / "slipway-review"
     work.mkdir(parents=True, exist_ok=True)
 
-    if not env.get("ANTHROPIC_API_KEY", "").strip():
-        verdict = Verdict("block", "the review could not run: the ANTHROPIC_API_KEY secret "
-                          "is not set on this repository", ())
+    if not any(env.get(name, "").strip() for name in CREDENTIALS):
+        verdict = Verdict("block", "the review could not run: neither the "
+                          "CLAUDE_CODE_OAUTH_TOKEN secret nor ANTHROPIC_API_KEY is set on "
+                          "this repository", ())
         return _finish(verdict, model, repo, number, head, post, run_url, env)
 
     pull = _gh(f"repos/{repo}/pulls/{number}")

@@ -87,7 +87,7 @@ Three things would change this choice, and each is a one line change: `SLIPWAY_R
 
 ## Setup, once, by the operator
 
-1. Add the repository secret `ANTHROPIC_API_KEY` with a key from the Claude Console. Until it exists, the review check is red on every pull request, including the one that adds it.
+1. Add the repository secret `CLAUDE_CODE_OAUTH_TOKEN`, a subscription token printed by `claude setup-token` on a machine signed in to the operator's Claude account, so the reviewer runs on the subscription. `ANTHROPIC_API_KEY` is the alternative for API billing. Until one exists, the review check is red on every pull request, including the one that adds it.
 2. Add `review` to the ruleset's required status checks beside `ci` (Settings, Rules, `main`, Require status checks to pass), and turn off "Require review from Code Owners" on the same ruleset. From that moment auto merge waits for the model review on every pull request and for no person.
 3. Optionally set the variables `SLIPWAY_REVIEW_MODEL`, `SLIPWAY_REVIEW_EFFORT`, `SLIPWAY_REVIEW_BUDGET`, and `SLIPWAY_REVIEW_RUNS_ON`.
 

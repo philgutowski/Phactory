@@ -290,7 +290,7 @@ def test_workflow_names_the_script_and_keeps_the_two_step_shape():
     assert "python3 factory/review.py" in text
     assert text.count("- uses:") == 1 and text.count("- name:") == 1
     assert "pull-requests: write" in text
-    assert "secrets.ANTHROPIC_API_KEY" in text
+    assert "secrets.CLAUDE_CODE_OAUTH_TOKEN" in text and "secrets.ANTHROPIC_API_KEY" in text
 
 
 def test_brief_names_every_blocking_rule_and_the_schema_fields():
