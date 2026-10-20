@@ -1,10 +1,15 @@
-"""Read only git calls verify needs (KTD8).
+"""The git calls verify needs, read only toward the project (KTD8).
 
 Trimmed from native-relay's skills/relay/scripts/relay/gitread.py. That
 repository is not in this checkout, so the lifted names (run, GitError,
 rev_parse, fetch, log_oneline, log_messages, default_branch) are rewritten to
 the behaviour the plan names. tree_of, is_ancestor, merge_tree, and the cache
 helpers are new Slipway code.
+
+Nothing here writes to the project's remote. The only writes are to
+Slipway's own bare cache: fetched objects, branch refs mirrored from the
+remote, and the held refs under HELD_REF_PREFIX that keep a confirmed head
+alive after the host deletes its branch.
 
 A tree is git's snapshot of every file at a commit, identified by its own
 hash, so two commits with different hashes can carry the same tree. That is
@@ -33,6 +38,10 @@ _SAFE = ("-c", "core.hooksPath=" + os.devnull)
 _ENV = {"GIT_TERMINAL_PROMPT": "0", "GIT_ASKPASS": "true"}
 
 _HEX = re.compile(r"[0-9a-f]{40}([0-9a-f]{24})?")
+
+# A namespace in the cache that mirrors nothing on the remote, so a fetch
+# with prune never deletes what lives under it.
+HELD_REF_PREFIX = "refs/slipway/held/"
 
 
 @dataclass
@@ -139,10 +148,15 @@ def default_branch(repo: Path) -> str:
     raise GitError(("symbolic-ref",), 1, "no default branch is recorded")
 
 
-def fetch(repo: Path, remote: str, *refspecs: str) -> None:
-    """Fetch refspecs (branch refspecs or bare commit ids) from remote into repo."""
+def fetch(repo: Path, remote: str, *refspecs: str, prune: bool = False) -> None:
+    """Fetch refspecs (branch refspecs, remote ref names, or bare commit ids) into repo.
+
+    With prune, a local ref that a refspec's destination pattern covers and
+    the remote no longer has is deleted, so branches deleted on merge do not
+    pile up in the cache.
+    """
     run(repo, "fetch", "--quiet", "--no-tags", "--no-write-fetch-head",
-        remote, *refspecs, timeout=FETCH_TIMEOUT_SECONDS)
+        *(("--prune",) if prune else ()), remote, *refspecs, timeout=FETCH_TIMEOUT_SECONDS)
 
 
 def cache_path(home: Path, project: str) -> Path:
@@ -150,13 +164,24 @@ def cache_path(home: Path, project: str) -> Path:
     return Path(home) / "cache" / "git" / f"{project}.git"
 
 
-def refresh(cache: Path, remote: str, commits=()) -> str:
+def refresh(cache: Path, remote: str, commits=(), refs=()) -> str:
     """Bring a bare cache up to date with remote and return its default branch.
 
-    The first call clones bare. Later calls fetch every branch. A commit in
-    commits not yet present (a confirmed head whose branch was deleted on
-    merge, say) is fetched by id. A GitError means the repository could not
-    be read, which the caller records as git_unreadable.
+    The first call clones bare. Later calls fetch every branch with prune, so
+    a branch the host deleted leaves the cache too. A commit in commits not
+    yet present, such as a confirmed head whose branch was deleted on merge,
+    is looked for in two more places, in this order:
+
+    1. refs: remote ref names the host still advertises for the pull request
+       after its branch is gone. The ref layout belongs to the host, so the
+       caller passes it in from a host adapter; this module names none. They
+       are fetched for their objects only and stored under no local ref.
+    2. The commit's bare id. A host that refuses an id it does not advertise
+       fails this fetch.
+
+    A commit still missing after both raises GitError, which the caller
+    records as git_unreadable. hold, called at confirm time, avoids needing
+    either: it pins the head while its branch still exists.
     """
     cache = Path(cache)
     if not (cache / "HEAD").is_file():
@@ -164,11 +189,53 @@ def refresh(cache: Path, remote: str, commits=()) -> str:
         run(cache.parent, "clone", "--quiet", "--bare", "--no-tags", remote, cache.name,
             timeout=FETCH_TIMEOUT_SECONDS)
     else:
-        fetch(cache, remote, "+refs/heads/*:refs/heads/*")
-    missing = [c for c in commits if c and not _present(cache, c)]
+        fetch(cache, remote, "+refs/heads/*:refs/heads/*", prune=True)
+    missing = _missing(cache, commits)
+    if missing and refs:
+        try:
+            fetch(cache, remote, *refs)
+        except GitError:
+            pass  # the id fetch below is the last word, and raises if it fails too
+        missing = _missing(cache, missing)
     if missing:
         fetch(cache, remote, *missing)
     return default_branch(cache)
+
+
+def hold(cache: Path, remote: str, branch: str, commit: str) -> str:
+    """Refresh the cache at confirm time, pin commit there, and return the held ref.
+
+    The workflow calls this when it confirms a branch head, while the branch
+    still exists on the remote. The refresh fetches that branch with every
+    other, so commit arrives as an advertised object, which every host
+    serves. A ref under HELD_REF_PREFIX then keeps it in the cache after the
+    host deletes the branch on merge: refresh's prune only touches
+    refs/heads/, and garbage collection never drops a commit a ref points
+    at. A later refresh finds it present and fetches nothing by id.
+
+    Holding the same branch again moves the ref to the new head. release
+    drops it once the card is finished.
+    """
+    refresh(cache, remote)
+    if not _present(cache, commit):
+        raise GitError(("hold", branch), 1, f"{commit} is not on the remote after a refresh")
+    ref = HELD_REF_PREFIX + branch
+    run(cache, "update-ref", ref, commit)
+    return ref
+
+
+def release(cache: Path, branch: str) -> None:
+    """Drop the held ref for branch; a branch never held is not an error."""
+    ref = HELD_REF_PREFIX + branch
+    try:
+        run(cache, "rev-parse", "--verify", "--quiet", ref)
+    except GitError:
+        return
+    run(cache, "update-ref", "-d", ref)
+
+
+def _missing(repo: Path, commits) -> list[str]:
+    return [c for c in commits if c and not _present(repo, c)]
 
 
 def _present(repo: Path, commit: str) -> bool:
