@@ -84,8 +84,17 @@ class Credential:
     print. The value is never printed: repr and str show the name only, and
     refresh drops the old value before it returns, so nothing on the object
     still holds it. mint is called with no arguments and returns the new
-    value and its expiry; for a GitHub App installation token that is one
-    hour, and the adapter refreshes it on a fifty minute cadence.
+    value and its expiry.
+
+    The refresh rule (follow up #54). An adapter calls refresh only when due
+    says so. A rotating credential has an expiry: a GitHub App installation
+    token lives one hour, due turns true ten minutes before that, so it is
+    refreshed on a fifty minute cadence, and a refresh that mints the value
+    it replaces raises, because the old value is about to stop working. A
+    static credential has no expiry: a Bitbucket repository access token
+    (KTD6) does not rotate, so due is never true for it. If refresh is called
+    on one anyway, the same value back is fine and is kept, so a static
+    credential survives any refresh cycle without an error.
     """
 
     __slots__ = ("name", "_mint", "_value", "expires_at")
@@ -105,7 +114,8 @@ class Credential:
         value, expires_at = self._mint()
         if not value:
             raise CredentialError(f"credential {self.name} minted an empty value")
-        if value == old:
+        static = self.expires_at is None and expires_at is None
+        if value == old and not static:
             raise CredentialError(f"credential {self.name} minted the value it replaces")
         self._value, self.expires_at = value, expires_at
         return value
