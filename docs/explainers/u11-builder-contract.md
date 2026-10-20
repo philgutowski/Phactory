@@ -28,9 +28,9 @@ Slipway does not write code. A builder does: a Claude Managed Agents session (U1
 |:-|:-|
 | `src/slipway/builders/base.py` | The `Builder` protocol, the primitive table (in the docstring and as `PRIMITIVES`), `Schedule`, `Credential`, `BuilderResult`, `SessionStatus`, and `check_base`, the base validation. |
 | `src/slipway/builders/handoff.py` | `render(project, card, base, branch, in_flight, rules, closing)` returns a `Handoff`, the fixed document plus the fields an adapter needs. `in_flight_files` computes the in flight list. `TOOLS` is the fixed tool list. |
-| `src/slipway/trace/shape.py` | The five shape records, `Trace` (the span builder), the OTLP JSON writer, JSON lines read and write, and the side reference convention: `side_reference(key)`, the file names, the commit message. |
+| `src/slipway/trace/shape.py` | The five shape records, `Trace` (the span builder), the OTLP JSON writer, JSON lines read and write, `scrubbed` (the shared redaction seam for records), and the side reference convention: `side_reference(key)`, the file names, the commit message. |
 | `tests/unit/test_handoff.py` | The golden handoff, in flight files, the base check, the primitive table, the protocol, and the credential. |
-| `tests/unit/test_shape.py` | Spans with GenAI names, a structural OTLP check, events on their tool call, JSON lines, the side reference, and the import rule for `builders` and `trace`. |
+| `tests/unit/test_shape.py` | Spans with GenAI names, a structural OTLP check, events on their tool call, the root's cost and its start and end, `scrubbed` over every string field of every record type, JSON lines, the side reference, and the import rule for `builders` and `trace`. |
 | `tests/fixtures/handoff/EX-12.txt` | The golden handoff, rendered from the U6 fixture project. The example below is this file. |
 
 ## The six primitives and their carriers
@@ -174,7 +174,7 @@ An adapter never builds spans. Its mapper turns the provider's own events into s
 | `Command` | event `slipway.command` | `process.command_line`, `process.exit.code` |
 | `Connection` | event `slipway.connection` | `server.address`, `server.port`, `url.full` |
 
-One root span, `invoke_agent <builder>`, parents every other span. It carries `slipway.card.key`, the branch as `vcs.ref.head.name`, the base as `vcs.ref.base.revision`, and, after `finish`, the pushed commit as `vcs.ref.head.revision` and the diff counts as `slipway.diff.files_changed`, `slipway.diff.insertions`, and `slipway.diff.deletions`. Its start and end cover every child and event. An event carries the `tool_call_id` of the tool call that caused it and lands on that span; with no tool call, it lands on the root.
+One root span, `invoke_agent <builder>`, parents every other span. It carries `slipway.card.key`, the branch as `vcs.ref.head.name`, the base as `vcs.ref.base.revision`, and, after `finish`, the pushed commit as `vcs.ref.head.revision`, the diff counts as `slipway.diff.files_changed`, `slipway.diff.insertions`, and `slipway.diff.deletions`, and the build's spend as `slipway.cost.usd` (a decimal number of US dollars, `BuilderResult.cost`) and again as `gen_ai.usage.cost`, the key Langfuse reads as cost, so the exported trace shows what the build cost and not only its token counts. Whether Langfuse rolls that key up from a root `invoke_agent` span, rather than only from a generation, is checked live in U15. A cost that is not a finite number is refused, because the export body must be valid JSON. `finish` takes the session's own `start_ns` and `end_ns`. The root's start and end cover those and every child and event, so a session that left no records still gets a root with real times, which the OTLP check requires (a span may not start at zero). A session that ends before it starts is refused, and so is a start or end at or before zero, since that would stretch the root back to 1970. An event carries the `tool_call_id` of the tool call that caused it and lands on that span; with no tool call, it lands on the root.
 
 Span ids come from a hash of the trace id and a counter, so the same records always give the same spans, which keeps tests and a replay stable. A trace id is 32 hex characters; one is drawn at random when none is given.
 
@@ -191,9 +191,10 @@ tool_use edit id tool_2               ->  ToolCall tool_2       ->  span  execut
   wrote src/hello.py                  ->  FileChange tool_2     ->        event slipway.file_change
 tool_use bash id tool_3, error        ->  ToolCall tool_3       ->  span  execute_tool bash (error)
   fetched pypi.org:443                ->  Connection tool_3     ->        event slipway.connection
-session end, branch tip               ->  Trace.finish(commit)  ->  root  invoke_agent cli
+session end, branch tip, cost         ->  Trace.finish(...)     ->  root  invoke_agent cli
                                                                           card key, branch, base,
-                                                                          commit, diff counts
+                                                                          commit, diff counts,
+                                                                          start, end, cost
 ```
 
 The Managed Agents mapper (U12) reads `agent.tool_use` and model events from the session's event list into the same five records.
@@ -213,11 +214,13 @@ Every build's records also live in git on the project's repository, so the trace
 | `transcript.jsonl` | The raw transcript, when the builder has one (the CLI builder does). |
 | Message | `slipway log <card key> build <build id>` from `log_commit_message`. |
 
-Each line is one record as JSON with its type under `type` (`model_request`, `tool_call`, `file_change`, `command`, `connection`), written by `dump_jsonl` and read by `load_jsonl`, which refuses an unknown type or field. When a provider returns no event log after a session ends, the trace is built from `actions.jsonl` (AE5). Records are written after redaction (KTD24); this module never scrubs.
+Each line is one record as JSON with its type under `type` (`model_request`, `tool_call`, `file_change`, `command`, `connection`), written by `dump_jsonl` and read by `load_jsonl`, which refuses an unknown type or field. When a provider returns no event log after a session ends, the trace is built from `actions.jsonl` (AE5).
+
+Redaction (KTD24). `dump_jsonl` and `otlp()` write tool arguments, tool results, and command lines exactly as they are, and any of those can hold a token the builder echoed. So records pass through `scrubbed(records, injected_values)` before either is called. It hands every string field of every record type to `redact.scrub` with the credential values Slipway injected into the session; `scrub` also removes every known token shape. It finds the string fields by type at run time rather than from a list, so a field typed `str` added to a record later is covered with no change to it, and a test builds every record type with a secret in every string field to hold that. It does not reach strings inside a list or dict, so a second test refuses any record field typed as a container until `scrubbed` is extended. This is the seam the adapters and the exporter (U12, U13, U15) share, instead of each remembering every field. Today `builders/cli.py` still carries its own `scrub_record`, which selects the same fields the same way, until a follow up switches it to `scrubbed`.
 
 ## Imports
 
-`builders` imports `cards` (the block parser), `trackers` (`ClosingReference`), `config` (`ResolvedBinding`), and `trace`. `trace` imports only the standard library. Neither imports `service`, `workflow`, `records`, or a surface; a test in `test_shape.py` holds that. The in flight state list is repeated rather than imported from `records` for that reason, with a test holding the two equal.
+`builders` imports `cards` (the block parser), `trackers` (`ClosingReference`), `config` (`ResolvedBinding`), and `trace`. `trace` imports the standard library and `redact` (for `scrubbed`), nothing else. Neither imports `service`, `workflow`, `records`, or a surface; a test in `test_shape.py` holds that. The in flight state list is repeated rather than imported from `records` for that reason, with a test holding the two equal.
 
 ## Where this differs from the plan
 

@@ -24,7 +24,9 @@ builds the spans from those records:
     Connection    an event slipway.connection on its tool call span, else the root
 
 and one root span "invoke_agent <builder>" holds them all, carrying the card
-key, the branch, the base and pushed commits, and the diff counts.
+key, the branch, the base and pushed commits, the diff counts, and the
+build's cost. finish takes the session's start and end, so the root has real
+times even when the session left no records.
 
 The action log side reference. Every build's records also live in git, on
 a reference on the project's repository, so the trace lasts as long as the
@@ -47,15 +49,23 @@ here so the handoff, both adapters, and the exporter agree:
 When a provider returns no event log, the trace is built from actions.jsonl
 (AE5). Records are never part of the card's branch.
 
-Records are written after redaction (KTD24); this module never scrubs.
+Redaction (KTD24). Tool arguments, tool results, and command lines are
+written verbatim by dump_jsonl and otlp, so records are scrubbed before
+either is called. scrubbed(records, injected_values) is the one place that
+happens: it passes every string field of every record type through
+redact.scrub, so the adapters and the exporter (U12, U13, U15) share one seam
+instead of each remembering every field.
 """
 
 import hashlib
 import json
+import math
 import re
 import secrets
 from collections.abc import Iterable
-from dataclasses import asdict, dataclass, field, fields
+from dataclasses import asdict, dataclass, field, fields, replace
+
+from slipway.redact import scrub
 
 SIDE_REFERENCE_PREFIX = "refs/slipway/log/"
 ACTIONS_FILE = "actions.jsonl"
@@ -172,6 +182,26 @@ def from_json_line(line: str) -> Record:
     return cls(**data)
 
 
+def scrubbed(records: Iterable[Record], injected_values: Iterable[str] = ()) -> list[Record]:
+    """The records with every string field passed through redact.scrub.
+
+    injected_values are the exact credential values Slipway put into the
+    session; scrub also removes every known token shape. The fields are found
+    by type at run time, not listed, so a field typed str added to a record
+    type later is scrubbed without a change here. A container field (a list
+    or dict of strings) is not reached, and a test refuses any record field
+    typed as one, so whoever adds one extends this first. Call this before
+    dump_jsonl and before Trace.add.
+    """
+    values = tuple(injected_values)
+    out = []
+    for record in records:
+        changes = {f.name: scrub(value, values) for f in fields(record)
+                   if isinstance(value := getattr(record, f.name), str)}
+        out.append(replace(record, **changes))
+    return out
+
+
 def dump_jsonl(records: Iterable[Record]) -> str:
     """The trace.jsonl text for the side reference."""
     return "".join(to_json_line(r) + "\n" for r in records)
@@ -247,10 +277,11 @@ class Trace:
 
     builder names the adapter (managed_agents, cli). card_key, branch, and
     base come from the handoff. Call add for every record in the order the
-    adapter yields them, finish with the pushed commit and diff counts, then
-    otlp for the export body. trace_id is 32 hex characters; a random one is
-    drawn when none is given. Span ids are derived from the trace id and a
-    counter, so the same records always give the same spans.
+    adapter yields them, finish with the session's start and end, the pushed
+    commit, the diff counts, and the cost, then otlp for the export body.
+    trace_id is 32 hex characters; a random one is drawn when none is given.
+    Span ids are derived from the trace id and a counter, so the same records
+    always give the same spans.
     """
 
     def __init__(self, builder: str, card_key: str, branch: str, base: str,
@@ -340,11 +371,27 @@ class Trace:
 
     def finish(self, commit: str | None = None, files_changed: int | None = None,
                insertions: int | None = None, deletions: int | None = None,
-               error: str | None = None) -> None:
-        """Close the root span over its children and set the diff and branch attributes."""
+               error: str | None = None, start_ns: int | None = None,
+               end_ns: int | None = None, cost: float | None = None) -> None:
+        """Close the root span and set the diff, branch, and cost attributes.
+
+        start_ns and end_ns are when the session started and ended. The root
+        covers them and every child and event, so a session that left no
+        records still gets a real span. cost is the provider's reported spend
+        in US dollars (BuilderResult.cost), so the exported trace carries it
+        beside the token counts. It is written under Slipway's own key and
+        under gen_ai.usage.cost, the key Langfuse reads as cost.
+        """
+        if any(t is not None and t <= 0 for t in (start_ns, end_ns)):
+            raise ValueError("session start and end must be real times, after the epoch")
+        if start_ns is not None and end_ns is not None and end_ns < start_ns:
+            raise ValueError("a session cannot end before it starts")
+        if cost is not None and not math.isfinite(cost):
+            raise ValueError("cost must be a finite number")
         children = self.spans[1:]
         times = [t for s in children for t in (s.start_ns, s.end_ns)]
         times += [e.time_ns for s in self.spans for e in s.events]
+        times += [t for t in (start_ns, end_ns) if t is not None]
         if times:
             self.root.start_ns, self.root.end_ns = min(times), max(times)
         self.root.attributes.update({
@@ -352,6 +399,8 @@ class Trace:
             "slipway.diff.files_changed": files_changed,
             "slipway.diff.insertions": insertions,
             "slipway.diff.deletions": deletions,
+            "slipway.cost.usd": None if cost is None else float(cost),
+            "gen_ai.usage.cost": None if cost is None else float(cost),
         })
         self.root.error = error
 
