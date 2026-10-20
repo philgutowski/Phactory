@@ -155,6 +155,42 @@ def test_replayed_transition_is_already_past(conn, project):
     assert count == 1
 
 
+_TO_GATE = ("dispatched", "building", "returned", "pr_open", "awaiting_approval", "queued",
+            "gate_running")
+
+
+@pytest.mark.parametrize(("lead", "step", "back"), [
+    # A red gate, then the host queues the build again and the gate reruns.
+    (_TO_GATE, ("gate_running", "gate_red"), ("queued", "gate_running")),
+    # A halt during verify, then the operator sends the build back to verifying.
+    (_TO_GATE + ("merged", "verifying"), ("verifying", "halted"), ("verifying",)),
+], ids=["gate_cycle", "halt_cycle"])
+def test_replayed_transition_inside_a_cycle_is_refused_by_expected_seq(conn, project, lead,
+                                                                       step, back):
+    build = store.claim(conn, project, "C-1", "watch").build_id
+    _walk(conn, build, *lead)
+    seen = conn.execute("SELECT last_seq FROM builds WHERE id = %s", (build,)).fetchone()[0]
+    # Lap one: the step is recorded, then the worker crashes before it reports back.
+    first = store.record_transition(conn, build, *step, "worker", expected_seq=seen)
+    assert first.recorded and first.seq == seen + 1
+    # The build goes round the cycle and is back in the step's from state.
+    _walk(conn, build, *back)
+    lap_two = conn.execute("SELECT state, last_seq FROM builds WHERE id = %s",
+                           (build,)).fetchone()
+    assert lap_two == (step[0], seen + 1 + len(back))
+    # The engine replays the lap one step. from_state matches, the seq does not.
+    replay = store.record_transition(conn, build, *step, "worker", expected_seq=seen)
+    assert replay.already_past and replay.state == step[0] and replay.seq is None
+    assert conn.execute("SELECT state, last_seq FROM builds WHERE id = %s",
+                        (build,)).fetchone() == lap_two
+    count = conn.execute("SELECT count(*) FROM transitions WHERE build_id = %s AND "
+                         "from_state = %s AND to_state = %s", (build, *step)).fetchone()[0]
+    assert count == 1
+    # A genuine lap two step, naming the seq it actually saw, still goes through.
+    fresh = store.record_transition(conn, build, *step, "worker", expected_seq=lap_two[1])
+    assert fresh.recorded and fresh.seq == lap_two[1] + 1
+
+
 def test_unknown_claim_column_is_refused(conn, project):
     build = store.claim(conn, project, "C-1", "watch").build_id
     with pytest.raises(ValueError, match="state"):
