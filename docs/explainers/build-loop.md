@@ -49,7 +49,13 @@ Two details are worth knowing:
 
 The conductor is a procedure, not a program, because the step that starts a cloud session is a Claude Code tool (`create_session`), reachable from a session and not from a shell. The skill tells a session exactly what to run and in what order, with two caps: at most three cards in flight and at most two new dispatches per run. The caps are there for one reason. Each in flight card holds its declared files, and each pull request that lands moves `main` under the others, so more in flight means more held files and more rebases, not faster landing.
 
-A scheduled task runs the skill in a fresh session on a cadence. Pausing the task pauses the factory; the branches, pull requests, and sessions already started carry on.
+A scheduled task runs the skill on a cadence. It fires into a standing conductor session rather than a fresh one, because a fresh session started by a scheduled task has neither the `create_session` tool nor GitHub access to the repository; the first live run on 2026-10-20 stopped at step 0 for that reason. Pausing the task pauses the factory; the branches, pull requests, and sessions already started carry on.
+
+Two more things the first live runs taught. The ruleset requires a branch to be up to date with `main`, so each landing puts every other open pull request behind; the builder merges `main` into its branch and pushes, and the conductor updates the branch of any idle builder's pull request, at the cost of one more review run each time. And the ready rule checks a card only against cards already in flight, so the conductor checks the two cards it picks in one run against each other.
+
+## Asking the operator
+
+The operator is one person, and a factory that stops to ask is a factory that waits. So every session follows the rule in `CLAUDE.md`: decide what you can and write the decision down, keep working on everything that does not need the operator, and when only the operator can supply something (a credential, a device, a paid account, a setting behind the operator's login), ask for that one thing in a single step, as multiple choice with a recommendation first when the answer is one of a few options.
 
 ## The review check, `.github/workflows/review.yml` and `factory/review.py`
 
