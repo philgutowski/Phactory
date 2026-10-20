@@ -8,7 +8,9 @@ webhook secrets. It never holds a secret value. Every credential is named
 here by the environment variable that holds it, and a project file refers
 to these entries by name only.
 
-The file is read on the worker (KTD28); it is absent from the app.
+The file is read on the worker and, mounted read only, on the app (KTD28,
+deploy/README.md); since it holds no values, each service learns only the
+variable names, and its environment carries only its own values.
 """
 
 from dataclasses import dataclass, field
