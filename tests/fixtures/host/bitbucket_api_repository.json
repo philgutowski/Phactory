@@ -1,0 +1,25 @@
+{
+  "type": "repository",
+  "name": "example-app",
+  "full_name": "example-ws/example-app",
+  "uuid": "{7dd600e6-0d9c-4801-9ec3-2f1a8f6e7b10}",
+  "is_private": true,
+  "links": {
+    "html": {
+      "href": "https://bitbucket.org/example-ws/example-app"
+    }
+  },
+  "workspace": {
+    "slug": "example-ws",
+    "name": "Example"
+  },
+  "project": {
+    "key": "EX",
+    "name": "Example"
+  },
+  "mainbranch": {
+    "type": "branch",
+    "name": "main"
+  },
+  "scm": "git"
+}

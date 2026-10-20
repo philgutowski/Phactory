@@ -1,0 +1,6 @@
+{
+  "type": "error",
+  "error": {
+    "message": "BRANCH_ALREADY_EXISTS: A branch with name 'slipway/u9-EX-12-host-adapters' already exists."
+  }
+}

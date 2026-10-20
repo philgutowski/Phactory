@@ -1,0 +1,11 @@
+{
+  "type": "build",
+  "key": "slipway/landing",
+  "name": "slipway/landing",
+  "state": "FAILED",
+  "url": "https://slipway.example.test/p/example/cards/EX-12",
+  "description": "commit_mismatch",
+  "commit": {
+    "hash": "7b9c1d2e3f405162738495a6b7c8d9e0f1a2b3c4"
+  }
+}

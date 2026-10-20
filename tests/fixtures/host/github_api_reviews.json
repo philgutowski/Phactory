@@ -1,0 +1,50 @@
+[
+  {
+    "id": 1,
+    "user": {
+      "login": "reviewer-one"
+    },
+    "state": "APPROVED",
+    "submitted_at": "2026-10-20T10:10:00Z"
+  },
+  {
+    "id": 2,
+    "user": {
+      "login": "reviewer-two"
+    },
+    "state": "CHANGES_REQUESTED",
+    "submitted_at": "2026-10-20T10:11:00Z"
+  },
+  {
+    "id": 3,
+    "user": {
+      "login": "reviewer-two"
+    },
+    "state": "APPROVED",
+    "submitted_at": "2026-10-20T10:20:00Z"
+  },
+  {
+    "id": 4,
+    "user": {
+      "login": "reviewer-three"
+    },
+    "state": "APPROVED",
+    "submitted_at": "2026-10-20T10:21:00Z"
+  },
+  {
+    "id": 5,
+    "user": {
+      "login": "reviewer-three"
+    },
+    "state": "DISMISSED",
+    "submitted_at": "2026-10-20T10:22:00Z"
+  },
+  {
+    "id": 6,
+    "user": {
+      "login": "commenter"
+    },
+    "state": "COMMENTED",
+    "submitted_at": "2026-10-20T10:23:00Z"
+  }
+]

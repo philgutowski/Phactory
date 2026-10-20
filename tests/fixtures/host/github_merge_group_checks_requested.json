@@ -1,0 +1,43 @@
+{
+  "action": "checks_requested",
+  "merge_group": {
+    "head_sha": "ec26c3e57ca3a959ca5aad62de7213c562f8c821",
+    "head_ref": "refs/heads/gh-readonly-queue/main/pr-104-1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d",
+    "base_sha": "da38e6c2ec96b89748d4f34ae3cf5b07e5824f7e",
+    "base_ref": "refs/heads/main",
+    "head_commit": {
+      "id": "ec26c3e57ca3a959ca5aad62de7213c562f8c821",
+      "tree_id": "4d890030000000000000000000000000000000ab",
+      "message": "Merge pull request #104 from example-org/slipway/u9-host-adapters-webhooks\n\nU9: Host adapters and webhooks",
+      "timestamp": "2026-10-20T11:05:00Z",
+      "author": {
+        "name": "GitHub",
+        "email": "noreply@github.com"
+      },
+      "committer": {
+        "name": "GitHub",
+        "email": "noreply@github.com"
+      }
+    }
+  },
+  "repository": {
+    "id": 1296269,
+    "node_id": "R_kgDOExample",
+    "name": "example-app",
+    "full_name": "example-org/example-app",
+    "private": true,
+    "owner": {
+      "login": "example-org",
+      "type": "Organization"
+    },
+    "html_url": "https://github.com/example-org/example-app",
+    "default_branch": "main"
+  },
+  "organization": {
+    "login": "example-org"
+  },
+  "sender": {
+    "login": "github-merge-queue[bot]",
+    "type": "Bot"
+  }
+}

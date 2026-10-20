@@ -1,0 +1,8 @@
+{
+  "type": "branch",
+  "name": "slipway/u9-EX-12-host-adapters",
+  "target": {
+    "type": "commit",
+    "hash": "0123456789abcdef0123456789abcdef01234567"
+  }
+}
