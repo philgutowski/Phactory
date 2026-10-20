@@ -81,10 +81,15 @@ ResolvedBinding(role, account, model, effort, time_budget_minutes)
 
 `scrub(text, injected_values)` does two passes:
 
-1. **Exact values.** Every credential Slipway injected into a session is passed in. Each one, and its percent encoded form (how a value looks inside a URL), is replaced by `[redacted]`, longest first so a value that contains another is removed whole. Values shorter than eight characters are skipped, because removing every `main` from a transcript protects nothing.
+1. **Exact values.** Every credential Slipway injected into a session is passed in. Values shorter than eight characters are skipped, because removing every `main` from a transcript protects nothing. Each remaining value is found in three forms:
+   - **Raw and percent encoded.** Percent encoding is how a value looks inside a URL: each unsafe byte becomes `%` and two hex digits, so `/` becomes `%2F`. The match is a regular expression (a pattern language for text) that lets each character appear raw or encoded, with the hex in either case, so `%2F`, `%2f`, and a bare `/` all match.
+   - **Base64.** Base64 is a way of writing any bytes as letters, digits, `+`, and `/`, four characters for every three bytes; HTTP Basic authorization uses it. Because of that three byte grouping, the characters a value turns into depend on how many bytes sit in front of it. `scrub` works out, for each of the three possible offsets, the run of characters that depends on the value alone, in the standard alphabet and the URL safe one (`-` and `_` in place of `+` and `/`). That catches a token encoded inside a longer string such as `x-access-token:<token>`, minus one or two edge characters that also carry a neighbouring byte.
+   - **Composed Basic credentials.** The Jira adapter passes both its email and its token, and its header is `Basic base64(email:token)`. A token's own base64 is not a plain substring of that, so `scrub` also encodes every `a:b` pair of two injected values and removes that encoding whole, padding included. The header comes out as `Basic [redacted]`.
+
+   Every form is searched for in the original text first, then overlapping or touching matches merge into one `[redacted]`. Replacing one form at a time could break a second form's match halfway through and leave part of it behind.
 2. **Known shapes.** Every match of `TOKEN_PATTERNS` is replaced: GitHub, Anthropic, Langfuse, Atlassian, Bitbucket, AWS, and Slack token prefixes, JSON Web Tokens, PEM private keys, and a password written into a URL as `user:password@`.
 
-Anything else passes through. A customer secret a test printed is not caught, by design (KTD24); the per project `trace_detail` switch exists for that case.
+Anything else passes through. A customer secret a test printed is not caught, by design (KTD24); the per project `trace_detail` switch exists for that case. Other encodings of an injected value also pass: hex, JSON escapes, base64 wrapped across lines, and a Basic pair whose user part was never passed in (only the secret's own base64 characters go, less their edges).
 
 `refusal_record(value, reason)` is how a refused value is remembered, for example an onboard answer that looked like a token: the reason, the SHA 256 hash, and the length. The value itself is never stored.
 

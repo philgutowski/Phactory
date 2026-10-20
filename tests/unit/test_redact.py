@@ -1,5 +1,6 @@
 """U6 test scenarios for the redaction module (KTD24)."""
 
+import base64
 import dataclasses
 
 import pytest
@@ -22,6 +23,57 @@ def test_scrub_removes_the_percent_encoded_form_inside_a_url():
     out = scrub(text, [INJECTED])
     assert "s3cr3t" not in out
     assert out.endswith("&page=2")
+
+
+def test_scrub_removes_the_lowercase_percent_encoded_form():
+    text = "GET https://api.example.test/?key=s3cr3t%2fvalue%2bwith%3dsymbols&page=2"
+    out = scrub(text, [INJECTED])
+    assert "s3cr3t" not in out
+    assert out == f"GET https://api.example.test/?key={MARK}&page=2"
+
+
+def test_scrub_removes_a_mixed_raw_and_encoded_form_in_either_case():
+    # quote(safe="/") leaves the slash raw; hex case differs between escapes.
+    text = "path s3cr3t/value%2bwith%3Dsymbols done"
+    assert scrub(text, [INJECTED]) == f"path {MARK} done"
+
+
+@pytest.mark.parametrize("lead", [b"", b"u", b"us", b"user:"])
+def test_scrub_removes_the_base64_form_at_every_byte_offset(lead):
+    # Base64 maps 3 bytes to 4 characters, so the value encodes differently
+    # depending on how many bytes come before it. Each lead covers an offset.
+    trail = b"@host"
+    encoded = base64.b64encode(lead + INJECTED.encode() + trail).decode()
+    out = scrub(f"header {encoded} end", [INJECTED])
+    assert out.count(MARK) == 1
+    left = out.index(MARK) - len("header ")
+    right = len(out) - out.index(MARK) - len(MARK) - len(" end")
+    # What stays is only the characters that carry a bit of lead or trail
+    # (6 bits each, one of them shared with the value), plus "=" padding.
+    assert left <= -(-8 * len(lead) // 6)
+    assert right <= -(-8 * len(trail) // 6) + 1 + 2
+
+
+def test_scrub_removes_the_url_safe_base64_form():
+    encoded = base64.urlsafe_b64encode(b"\xff\xfe" + INJECTED.encode()).decode()
+    assert "-" in encoded or "_" in encoded
+    out = scrub(f"cursor={encoded}", [INJECTED])
+    assert out.startswith("cursor=") and MARK in out
+    assert len(out) <= len("cursor=") + 3 + len(MARK) + 1 + 2
+
+
+def test_scrub_removes_a_jira_basic_authorization_header_whole():
+    # Built the way trackers/jira.py builds it, scrubbed with what it passes.
+    email, token = "builder@example.test", "ATAT-not-a-real-token-0123456789"
+    header = "Basic " + base64.b64encode(f"{email}:{token}".encode()).decode("ascii")
+    text = f"request failed, Authorization: {header}"
+    assert scrub(text, (token, email)) == f"request failed, Authorization: Basic {MARK}"
+    assert scrub(text, (email, token)) == f"request failed, Authorization: Basic {MARK}"
+
+
+def test_scrub_removes_two_partly_overlapping_values_whole():
+    out = scrub("key=abcdefgh12345678wxyz end", ["abcdefgh12345678", "12345678wxyz"])
+    assert out == f"key={MARK} end"
 
 
 def test_scrub_removes_an_injected_value_inside_a_command_line():

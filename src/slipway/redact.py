@@ -8,19 +8,39 @@ the finding is written.
 scrub removes two things and nothing more:
 
 1. The exact credential values Slipway injected into a session, which the
-   caller passes in. Their percent encoded form is removed too, because a
-   value placed inside a URL is often encoded.
+   caller passes in, in three forms:
+   a. The raw value and its percent encoded form (how a value looks inside
+      a URL, each unsafe byte written as % and two hex digits). A match may
+      mix raw and encoded characters and write the hex in either case, so
+      %2F, %2f, and a bare / all match.
+   b. Its base64 form. Base64 writes every 3 bytes as 4 characters, so the
+      characters a value becomes depend on where it starts inside the
+      encoded text. scrub removes the characters that depend only on the
+      value, at each of the three possible starting positions, in the
+      standard and the URL safe alphabet. A value encoded inside a longer
+      string, such as "x-access-token:<token>", is caught this way, but the
+      one or two characters at each edge that also carry a neighbouring
+      byte stay.
+   c. The whole base64 form, with padding, of the value and of every
+      "a:b" pair of two injected values. HTTP Basic authorization sends
+      base64(user:secret), and the Jira adapter passes both its email and
+      its token, so its header value is removed whole, edges included.
 2. Text matching one of TOKEN_PATTERNS, the token shapes the configuration
    validator also refuses in a project file.
 
-A customer secret that matches neither passes through. That limit is
-deliberate and is why a project has its trace detail switch.
+A customer secret that matches neither passes through, and so does any other
+encoding of an injected value: hex, JSON escapes, base64 wrapped across
+lines, or a Basic pair whose user part was not passed in or is shorter than
+MIN_INJECTED_LENGTH (the secret's own base64 characters are still removed,
+less its edges). That limit is deliberate and is why a project has its trace
+detail switch.
 
 refusal_record is how a refused value is kept: the reason, a SHA 256 hash
 (a fixed length fingerprint that cannot be turned back into the value), and
 the length. Never the value itself.
 """
 
+import base64
 import hashlib
 import re
 from dataclasses import dataclass
@@ -61,16 +81,78 @@ def find_token(text: str) -> str | None:
     return None
 
 
+_URLSAFE = str.maketrans("+/", "-_")
+
+
+def _percent_pattern(value: str) -> str:
+    """A regex matching value with any of its characters percent encoded, hex in either case.
+
+    quote leaves letters, digits, and "_.-~" alone, so those match only
+    themselves. Every other character matches itself or its UTF 8 bytes
+    written as %XX, each X upper or lower case.
+    """
+    parts = []
+    for char in value:
+        encoded = quote(char, safe="")
+        if encoded == char:
+            parts.append(re.escape(char))
+            continue
+        hex_digits = encoded.replace("%", "")
+        escapes = "".join(
+            "%" + "".join(f"[{d.upper()}{d.lower()}]" if d.isalpha() else d
+                          for d in hex_digits[i:i + 2])
+            for i in range(0, len(hex_digits), 2)
+        )
+        parts.append(f"(?:{re.escape(char)}|{escapes})")
+    return "".join(parts)
+
+
+def _base64_forms(value: str) -> set[str]:
+    """value's whole base64 encoding, and the characters that depend on value alone at each
+    of the three byte offsets it can start at, in both alphabets.
+
+    Each base64 character carries 6 bits. With value starting `offset` bytes
+    into a 3 byte group, character i depends only on value when its bits,
+    6i to 6i + 6, fall inside value's bits, 8 * offset to 8 * (offset + n).
+    The filler bytes in front never reach those characters, so their
+    content does not matter.
+    """
+    data = value.encode("utf-8")
+    forms = {base64.b64encode(data).decode("ascii")}
+    for offset in range(3):
+        encoded = base64.b64encode(b"\0" * offset + data).decode("ascii")
+        start = -(-8 * offset // 6)  # ceiling division
+        end = 8 * (offset + len(data)) // 6
+        forms.add(encoded[start:end])
+    return forms | {form.translate(_URLSAFE) for form in forms}
+
+
 def scrub(text: str, injected_values=()) -> str:
-    """Return text with every injected value and every known token shape removed."""
-    forms = set()
-    for value in injected_values:
-        if value and len(value) >= MIN_INJECTED_LENGTH:
-            forms.add(value)
-            forms.add(quote(value, safe=""))
-    # Longest first, so a value that contains another is removed whole.
-    for form in sorted(forms, key=len, reverse=True):
-        text = text.replace(form, MARK)
+    """Return text with every injected value, in the forms the module docstring lists, and
+    every known token shape removed."""
+    values = list(dict.fromkeys(
+        v for v in injected_values if v and len(v) >= MIN_INJECTED_LENGTH))
+    literals = set()
+    for value in values:
+        literals |= _base64_forms(value)
+        for other in values:
+            if other != value:
+                literals |= _base64_forms(f"{value}:{other}")
+    patterns = [_percent_pattern(v) for v in values] + [re.escape(f) for f in literals]
+
+    # Find every match in the original text first, then merge spans that
+    # overlap or touch, so removing one form never breaks the match of
+    # another and a value that contains another is removed whole.
+    spans = sorted((m.start(), m.end()) for p in patterns for m in re.finditer(p, text))
+    merged: list[list[int]] = []
+    for start, end in spans:
+        if merged and start <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], end)
+        else:
+            merged.append([start, end])
+    for start, end in reversed(merged):
+        text = text[:start] + MARK + text[end:]
+
     for pattern in TOKEN_PATTERNS.values():
         text = pattern.sub(MARK, text)
     return text
