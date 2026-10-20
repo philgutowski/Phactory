@@ -2,10 +2,14 @@
 
 import json
 import re
+import typing
+from dataclasses import fields
 
 import pytest
 
+from slipway.redact import MARK
 from slipway.trace.shape import (
+    RECORD_TYPES,
     SIDE_REFERENCE_PREFIX,
     SPAN_KIND_CLIENT,
     SPAN_KIND_INTERNAL,
@@ -14,12 +18,14 @@ from slipway.trace.shape import (
     Connection,
     FileChange,
     ModelRequest,
+    Record,
     ToolCall,
     Trace,
     dump_jsonl,
     from_json_line,
     load_jsonl,
     log_commit_message,
+    scrubbed,
     side_reference,
     trace_of,
 )
@@ -181,15 +187,86 @@ def test_a_trace_draws_a_random_id_when_none_is_given():
         Trace("cli", "1", "b", "a", trace_id="0" * 32)
 
 
-def test_an_empty_trace_is_still_valid_otlp():
-    trace = trace_of("managed_agents", "12", "slipway/12-x", "a" * 40, [])
-    trace.root.start_ns = trace.root.end_ns = 1
-    check_otlp(trace.otlp())
+def test_an_empty_session_gives_a_valid_root_from_its_start_and_end():
+    trace = trace_of("managed_agents", "12", "slipway/12-x", "a" * 40, [],
+                     start_ns=5 * S, end_ns=9 * S)
+    root, = check_otlp(trace.otlp())["resourceSpans"][0]["scopeSpans"][0]["spans"]
+    assert (root["startTimeUnixNano"], root["endTimeUnixNano"]) == (str(5 * S), str(9 * S))
+
+
+def test_the_root_covers_the_session_and_every_child():
+    trace = trace_of("cli", "EX-12", "b", "a" * 40, RECORDS, trace_id=TRACE_ID,
+                     start_ns=5 * S, end_ns=25 * S)
+    assert (trace.root.start_ns, trace.root.end_ns) == (5 * S, 25 * S)
+    late = trace_of("cli", "EX-12", "b", "a" * 40, RECORDS, trace_id=TRACE_ID,
+                    start_ns=11 * S, end_ns=12 * S)
+    assert (late.root.start_ns, late.root.end_ns) == (10 * S, 19 * S)
+
+
+def test_a_session_that_ends_before_it_starts_is_refused():
+    with pytest.raises(ValueError):
+        trace_of("cli", "1", "b", "a", [], start_ns=2 * S, end_ns=S)
+
+
+def test_the_root_carries_the_cost():
+    trace = trace_of("cli", "EX-12", "b", "a" * 40, RECORDS, trace_id=TRACE_ID, cost=0.42)
+    root = check_otlp(trace.otlp())["resourceSpans"][0]["scopeSpans"][0]["spans"][0]
+    assert attrs(root)["slipway.cost.usd"] == 0.42
+    assert {"key": "slipway.cost.usd", "value": {"doubleValue": 0.42}} in root["attributes"]
+    whole = trace_of("cli", "EX-12", "b", "a" * 40, [], start_ns=1, end_ns=2, cost=3)
+    assert attrs(whole.otlp()["resourceSpans"][0]["scopeSpans"][0]["spans"][0])[
+        "slipway.cost.usd"] == 3.0
+    assert "slipway.cost.usd" not in attrs(build().otlp()["resourceSpans"][0]
+                                           ["scopeSpans"][0]["spans"][0])
 
 
 def test_a_non_record_is_refused():
     with pytest.raises(TypeError):
         Trace("cli", "1", "b", "a", trace_id=TRACE_ID).add({"type": "tool_call"})
+
+
+# The one scrub seam (KTD24).
+
+INJECTED = "injected-credential-value-1234"
+TOKEN = "ghp_" + "A" * 36
+
+
+def _takes_str(hint) -> bool:
+    return hint is str or str in typing.get_args(hint)
+
+
+def _full_record(cls):
+    """An instance of cls with every field set, each string carrying both secrets."""
+    hints = typing.get_type_hints(cls)
+    return cls(**{name: f"{name} {INJECTED} {TOKEN}" if _takes_str(hint) else 1
+                  for name, hint in hints.items()})
+
+
+def test_every_record_type_is_in_the_record_union():
+    assert set(RECORD_TYPES.values()) == set(typing.get_args(Record))
+
+
+@pytest.mark.parametrize("cls", list(RECORD_TYPES.values()), ids=list(RECORD_TYPES))
+def test_scrubbed_covers_every_string_field_of_every_record_type(cls):
+    record = _full_record(cls)
+    strings = [f.name for f in fields(cls) if _takes_str(typing.get_type_hints(cls)[f.name])]
+    assert strings, cls
+    clean, = scrubbed([record], [INJECTED])
+    assert type(clean) is cls
+    for name in strings:
+        assert getattr(clean, name) == f"{name} {MARK} {MARK}", name
+    for f in fields(cls):
+        if f.name not in strings:
+            assert getattr(clean, f.name) == getattr(record, f.name)
+    text = dump_jsonl([clean])
+    trace = trace_of("cli", "1", "b", "a" * 40, [clean], start_ns=1, end_ns=2)
+    for out in (text, json.dumps(trace.otlp())):
+        assert INJECTED not in out and TOKEN not in out
+
+
+def test_scrubbed_leaves_clean_records_alone():
+    assert scrubbed(RECORDS, [INJECTED]) == RECORDS
+    assert scrubbed(iter(RECORDS)) == RECORDS
 
 
 # JSON lines for the side reference.
@@ -230,4 +307,4 @@ def test_builders_and_trace_import_only_cards_trackers_config_redact_and_each_ot
             for edge in edges_of(SRC, path):
                 assert layer(edge.imported) in may, str(edge)
     for path in sorted((SRC / "slipway" / "trace").rglob("*.py")):
-        assert all(layer(e.imported) == "trace" for e in edges_of(SRC, path))
+        assert all(layer(e.imported) in ("trace", "redact") for e in edges_of(SRC, path))
