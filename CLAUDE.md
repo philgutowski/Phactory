@@ -60,6 +60,15 @@ A cloud card's starting comment carries, in this order:
 2. Branch: `slipway/u<n>-<slug>`, where `<n>` is the unit number and the issue is titled `U<n>: ...`. The board workflow finds the card from this name.
 3. Rules: this file, plus "define jargon on first use and write the explainer under `docs/explainers/`".
 4. Files other open cards declare, which this card must not touch.
-5. Done line: tests, ruff, and the import test green, pull request opened with `Closes #<issue>` in the body.
+5. Done line: tests, ruff, and the import test green, pull request opened with `Closes #<issue>` in the body, auto merge on, and the pull request watched until it merges.
 
 The card's own `slipway` block (see `.github/ISSUE_TEMPLATE/card.md`) holds `good`, `paths`, `test`, and `lane`. Its `paths` is the file list, and its `good` is the definition of done.
+
+`factory/handoff.py` renders this shape from the board, and the `dispatch` skill (`.claude/skills/dispatch/SKILL.md`) is the procedure that posts it and starts the session.
+
+## The two checks on every pull request
+
+- `ci` runs the gate above.
+- `review` is a model review: `factory/review.py` hands the diff, the card, and `factory/review-brief.md` to a reviewer model and posts the verdict as a pull request review. A blocking finding turns the check red; fix it and push, and both checks run again. Answer an advisory finding in one line on the pull request. Never weaken a test, force push, or push an empty commit to get green.
+
+Auto merge waits for both, and for the operator's approval on a `CODEOWNERS` path. The explainer is `docs/explainers/build-loop.md`.

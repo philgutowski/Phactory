@@ -4,6 +4,7 @@
 # code owner review, so these lines are the review rule.
 
 /.github/                   @philgutowski
+/factory/                   @philgutowski
 /deploy/                    @philgutowski
 /src/slipway/config/       @philgutowski
 /src/slipway/auth.py       @philgutowski
