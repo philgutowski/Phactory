@@ -6,13 +6,17 @@ hand_landing are rewritten to the behaviour the plan names (KTD8, U10).
 
 Verify runs after the host says a pull request merged. The host's event is a
 wake up, never evidence (KTD10), so verify reads the repository itself and
-takes the card's tracker status from the caller. Three checks decide:
+takes the card's tracker status from the caller. These checks decide, each
+recorded under a name no other check shares:
 
 1. new_commit_since_baseline: the merged commit is on the branch, after the
    commit the build started from.
-2. confirmed_landed: the merged commit relates to the commit Slipway
-   confirmed when it opened the pull request, by the relation of the landing
-   path (below). Commit equality alone is never the test.
+2. The merged commit relates to the commit Slipway confirmed when it opened
+   the pull request, by the relation of the landing path (below). Commit
+   equality alone is never the test. A queue path records two checks,
+   merged_equals_tested and tested_head_equals_confirmed (the second is a
+   skip when the first fails); every other path records one,
+   confirmed_landed.
 3. card_terminal: the tracker shows the card done.
 
 hand_landing, a commit between baseline and merged whose message names the
@@ -62,6 +66,12 @@ QUEUE_PATHS = frozenset({MERGE_QUEUE, BITBUCKET_QUEUE})
 LANDING_PATHS = QUEUE_PATHS | {AUTO_MERGE_STRICT, PLAIN_MERGE}
 
 PASS, FAIL, SKIP = "pass", "fail", "skip"
+
+# The names of the checks that relate the confirmed commit to the merged one.
+# A queue path takes two, every other path one; no name appears twice.
+MERGED_EQUALS_TESTED = "merged_equals_tested"
+TESTED_HEAD_EQUALS_CONFIRMED = "tested_head_equals_confirmed"
+CONFIRMED_LANDED = "confirmed_landed"
 
 LANDED = "landed"
 PARTIAL_LANDING = "partial_landing"
@@ -151,7 +161,8 @@ def verify(repo, baseline, confirmed, tested, merged, card_key,
            branch=None) -> Verdict:
     """Decide landed, partial landing, or halt for one merged pull request.
 
-    repo is a bare cache already refreshed by gitread.refresh. tested and
+    repo is a bare cache already refreshed by gitread.refresh, holding the
+    confirmed commit (gitread.hold pins it at confirm time). tested and
     tested_head are the queue's tested commit and the pull request head
     recorded with it (KTD7); both are None off a queue path. branch defaults
     to the repository's default branch.
@@ -194,13 +205,18 @@ def _commits(repo, run, baseline, confirmed, tested, tested_head, merged, tip,
                expected=f"a commit on {branch} after {baseline}", found=merged)
 
     if landing_path in QUEUE_PATHS:
-        if run._check("confirmed_landed", merged == tested,
+        # Two checks, each under its own name, so reading a check by name
+        # can never find a pass that sits beside the failure that halted.
+        if run._check(MERGED_EQUALS_TESTED, merged == tested,
                       f"merged {merged}, tested {tested}",
-                      relation="merged_equals_tested", expected=tested, found=merged):
-            run._check("confirmed_landed", tested_head == confirmed,
+                      relation=MERGED_EQUALS_TESTED, expected=tested, found=merged):
+            run._check(TESTED_HEAD_EQUALS_CONFIRMED, tested_head == confirmed,
                        f"tested pull request head {tested_head}, confirmed {confirmed}",
-                       relation="tested_head_equals_confirmed", expected=confirmed,
+                       relation=TESTED_HEAD_EQUALS_CONFIRMED, expected=confirmed,
                        found=tested_head)
+        else:
+            run._skip(TESTED_HEAD_EQUALS_CONFIRMED,
+                      f"not checked: merged {merged} is not the tested commit")
         return
 
     merged_tree = gitread.tree_of(repo, merged)
@@ -212,6 +228,6 @@ def _commits(repo, run, baseline, confirmed, tested, tested_head, merged, tip,
         parent = gitread.first_parent(repo, merged)
         expected = parent and gitread.merge_tree(repo, parent, confirmed)
     run.evidence.update(merged_tree=merged_tree, expected_tree=expected)
-    run._check("confirmed_landed", merged_tree == expected,
+    run._check(CONFIRMED_LANDED, merged_tree == expected,
                f"tree of {merged} is {merged_tree}, expected {expected}",
                relation=relation, expected=expected, found=merged_tree)
