@@ -117,6 +117,13 @@ The handoff never carries a value: `render` takes no credential argument. The ac
 
 Refresh follows follow up #54. `refresh_if_due` refreshes only when the credential has an expiry and `Credential.due` says it ends within ten minutes, which for a one hour installation token is a fifty minute cadence. A credential with no expiry, such as a static Bitbucket repository access token, is never refreshed, so it never raises in the middle of a build.
 
+A refresh can still fail for a rotating credential: `Credential.refresh` raises `CredentialError` when the mint hands back an empty value or the value it replaces, because the old token is about to stop working. Follow up #67 makes that failure end the build once, with its reason, on both paths:
+
+- **The laptop.** `refresh_if_due` runs on `keep_fresh`, a background thread (a second line of work inside the same process). An exception there would end only that thread, printed through `threading.excepthook` (Python's handler for an exception nothing caught on a thread), and the build would run on until its push failed for no clear reason. So `keep_fresh` catches `CredentialError`, keeps it, and stops. When the session exits, `start` finishes it as a halt: `returned_empty`, halt class `builder_failed`, and the reason `credential refresh failed: <the error>; session exited with code <n>`. A branch the session pushed does not count, because a session that lost its credential cannot be trusted to have finished.
+- **The container.** `poll` refreshes on each tick while the container runs. After a failed refresh the credential still holds the old value and `due` is still true, so the next tick would raise again, and every tick after it. Instead `poll` records the same halt in `state.json` before it raises, so the error reaches the workflow once and every later `poll` answers from the record without asking Docker.
+
+The session itself is not stopped early on either path: the laptop session runs until it exits, and the container runs until `release` removes it.
+
 Every value the adapter injected into a session (the account token and every git token it ever wrote) is kept in memory for that session so redaction can remove it, then forgotten at `release`.
 
 ## How the transcript becomes shape records
