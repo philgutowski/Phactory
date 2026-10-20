@@ -35,7 +35,7 @@ Method: WebFetch/WebSearch summaries. x.ai/bot, x.ai/grok, x.ai/news returned HT
 - Consumer Grok memory: PRIMARY x.ai/grok lists memory across chats. No Projects or Workspaces feature found in any fetched primary page; per-project memory/connector separation: UNVERIFIED, likely absent. Date checked 2026-10-14.
 - Org level: PRIMARY connectors docs: Business/Enterprise admin provisions connectors for members. No per-project scope. Grok Build CLI memory is an on/off setting (PRIMARY, changelog, via search).
 - API side not checked for per-key/team separation (console.x.ai teams). UNVERIFIED.
-- Implication for Phactory: for per-customer isolation, use separate accounts or API keys, not multiple Bots in one account.
+- Implication for Slipway: for per-customer isolation, use separate accounts or API keys, not multiple Bots in one account.
 
 ## Sources
 - https://docs.x.ai/grok-bot/overview

@@ -1,13 +1,13 @@
 # U6 explainer: project and operator configuration, redaction
 
-Phactory may not know anything about any one project (R1). Every project specific value lives in a configuration file outside any repository, and every secret lives in an environment variable that a file only names. This card builds the code that reads those files, checks them, turns a role into an account, and the one module that removes secrets from text before it leaves Phactory.
+Slipway may not know anything about any one project (R1). Every project specific value lives in a configuration file outside any repository, and every secret lives in an environment variable that a file only names. This card builds the code that reads those files, checks them, turns a role into an account, and the one module that removes secrets from text before it leaves Slipway.
 
 ## Words used below
 
 - **TOML.** A plain text format of `key = value` lines and `[table]` headings. Python reads it with the standard library's `tomllib`.
-- **Operator.** The one person who runs Phactory and holds the accounts it spends.
+- **Operator.** The one person who runs Slipway and holds the accounts it spends.
 - **Slug.** A project's short name, used in its file name and its MCP URL.
-- **Subject.** The stable user id an identity provider puts in a login token. Phactory decides who may act by subject.
+- **Subject.** The stable user id an identity provider puts in a login token. Slipway decides who may act by subject.
 - **Role.** A job a model does for a project: `builder`, `judge`, or an optional helper (R13).
 - **Binding.** The project's pairing of a role with an operator account, a model, an effort, and a time budget.
 - **Halt class.** One of the fixed reasons a build stops (KTD11). This card raises one of them, `binding_invalid`.
@@ -17,24 +17,24 @@ Phactory may not know anything about any one project (R1). Every project specifi
 ## Where the files live
 
 ```
-$PHACTORY_HOME                      default ~/.phactory
+$SLIPWAY_HOME                      default ~/.slipway
   operator.toml                     one per operator (R3)
   projects/
     <slug>.toml                     one per project (R2)
 ```
 
-Neither file is ever in a repository. The test suite points `PHACTORY_HOME` at a temporary directory and `HOME` at an empty one, so no test can read the real home directory.
+Neither file is ever in a repository. The test suite points `SLIPWAY_HOME` at a temporary directory and `HOME` at an empty one, so no test can read the real home directory.
 
 ## What each file does
 
 | File | What it does |
 |:-|:-|
-| `src/phactory/config/__init__.py` | Finds `PHACTORY_HOME`, reads TOML, and holds `ConfigError` and `Reader`, a small typed reader that names the dotted key (for example `roles.builder.account`) in every failure. Also the secret scan both files share. |
-| `src/phactory/config/operator.py` | The `Operator` dataclass and its loader: the operator's subject, accounts (each a `subscription` or an `api_key` with its variable name), the identity provider, Langfuse projects, tracker and host credentials, the runner repository and instances, the runner read API, builder workers, and webhook secrets with a rotation pair. Every credential is a variable name, checked to look like one. |
-| `src/phactory/config/project.py` | The `Project` dataclass with every R2 field, the `LandingPath`, `MergeMethod`, `Tracker`, and `TraceDetail` enums, the loader, and `check_names`, which refuses any name the operator file does not define. |
-| `src/phactory/config/bindings.py` | `resolve_binding(slug, role)` and `resolve_tracker_credential(slug)`. Both read both files on every call and raise `BindingInvalid` (halt class `binding_invalid`) on any failure. |
-| `src/phactory/redact.py` | `scrub(text, injected_values)`, `refusal_record(value, reason)`, and `TOKEN_PATTERNS`, the token shapes both redaction and configuration validation use. |
-| `deploy/README.md` | The KTD28 table: which compose service receives which variables, the `PHACTORY_HOME` mounts, and the published ports. |
+| `src/slipway/config/__init__.py` | Finds `SLIPWAY_HOME`, reads TOML, and holds `ConfigError` and `Reader`, a small typed reader that names the dotted key (for example `roles.builder.account`) in every failure. Also the secret scan both files share. |
+| `src/slipway/config/operator.py` | The `Operator` dataclass and its loader: the operator's subject, accounts (each a `subscription` or an `api_key` with its variable name), the identity provider, Langfuse projects, tracker and host credentials, the runner repository and instances, the runner read API, builder workers, and webhook secrets with a rotation pair. Every credential is a variable name, checked to look like one. |
+| `src/slipway/config/project.py` | The `Project` dataclass with every R2 field, the `LandingPath`, `MergeMethod`, `Tracker`, and `TraceDetail` enums, the loader, and `check_names`, which refuses any name the operator file does not define. |
+| `src/slipway/config/bindings.py` | `resolve_binding(slug, role)` and `resolve_tracker_credential(slug)`. Both read both files on every call and raise `BindingInvalid` (halt class `binding_invalid`) on any failure. |
+| `src/slipway/redact.py` | `scrub(text, injected_values)`, `refusal_record(value, reason)`, and `TOKEN_PATTERNS`, the token shapes both redaction and configuration validation use. |
+| `deploy/README.md` | The KTD28 table: which compose service receives which variables, the `SLIPWAY_HOME` mounts, and the published ports. |
 | `tests/fixtures/config/` | One complete operator file and one complete project file with invented values. |
 | `tests/unit/test_config.py`, `tests/unit/test_redact.py` | The card's test scenarios, plus a few more for the edges. |
 
@@ -58,8 +58,8 @@ Each workflow step resolves the binding when it runs, so swapping a model is a f
 resolve_binding(slug, role)
   |
   v
-PHACTORY_HOME set?  yes -> that directory
-                    no  -> ~/.phactory
+SLIPWAY_HOME set?  yes -> that directory
+                    no  -> ~/.slipway
   |
   v
 read projects/<slug>.toml now, validate      fail -> BindingInvalid(field)
@@ -81,7 +81,7 @@ ResolvedBinding(role, account, model, effort, time_budget_minutes)
 
 `scrub(text, injected_values)` does two passes:
 
-1. **Exact values.** Every credential Phactory injected into a session is passed in. Each one, and its percent encoded form (how a value looks inside a URL), is replaced by `[redacted]`, longest first so a value that contains another is removed whole. Values shorter than eight characters are skipped, because removing every `main` from a transcript protects nothing.
+1. **Exact values.** Every credential Slipway injected into a session is passed in. Each one, and its percent encoded form (how a value looks inside a URL), is replaced by `[redacted]`, longest first so a value that contains another is removed whole. Values shorter than eight characters are skipped, because removing every `main` from a transcript protects nothing.
 2. **Known shapes.** Every match of `TOKEN_PATTERNS` is replaced: GitHub, Anthropic, Langfuse, Atlassian, Bitbucket, AWS, and Slack token prefixes, JSON Web Tokens, PEM private keys, and a password written into a URL as `user:password@`.
 
 Anything else passes through. A customer secret a test printed is not caught, by design (KTD24); the per project `trace_detail` switch exists for that case.

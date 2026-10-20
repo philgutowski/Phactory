@@ -2,9 +2,9 @@
 
 import pytest
 
-from phactory import halts
-from phactory.halts import Halt, HaltError, Kind, halt
-from phactory.trackers import base
+from slipway import halts
+from slipway.halts import Halt, HaltError, Kind, halt
+from slipway.trackers import base
 
 SEVEN = {
     "merged_card_not_moved", "commit_mismatch", "tracker_unreadable", "git_unreadable",

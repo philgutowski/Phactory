@@ -1,7 +1,7 @@
-# Spec flow analysis: Phactory first version
+# Spec flow analysis: Slipway first version
 
 Written 2026-10-14 against the contract at
-`/Users/pgutowski/Documents/PhilAI/Phactory/docs/plans/2026-10-14-1730-feat-phactory-first-version-plan.md`,
+`/Users/pgutowski/Documents/PhilAI/Slipway/docs/plans/2026-10-14-1730-feat-slipway-first-version-plan.md`,
 grounded on the carried rules in `docs/ideation/2026-10-14-software-factory.md`, the landing research in
 `docs/research/2026-10-14-brainstorm/research-landing.md`, and the earlier runner's behaviour in
 `docs/research/2026-10-14-brainstorm/grounding.md`. The codebase is empty, so every default below is drawn
@@ -18,38 +18,38 @@ MCP. The operator is Phillip, approving pull requests in the host app and readin
 
 Every state a card can occupy from filing to scoring, the event that moves it, and who or what causes the
 event. States are written as `snake_case` names so the planner can lift them straight into a workflow
-definition. "A5" means Phactory itself; the other actor codes are the plan's.
+definition. "A5" means Slipway itself; the other actor codes are the plan's.
 
 ### 1.1 The happy path (F1)
 
 1. `filed`. Card exists on the tracker with a lane label and a definition of good. Event: the manager agent
-   (A2) or the operator (A1) files it. Phactory has not seen it.
-2. `eligible`. Phactory's watch cycle reads the card as ready: lane label present, card in the project's
-   ready status, no Phactory workflow already owns this card key. Event: a watch cycle or an explicit
+   (A2) or the operator (A1) files it. Slipway has not seen it.
+2. `eligible`. Slipway's watch cycle reads the card as ready: lane label present, card in the project's
+   ready status, no Slipway workflow already owns this card key. Event: a watch cycle or an explicit
    `dispatch` call (A5, caused by A2 or A1). The contract does not say whether a labelled card dispatches
    itself or waits for the verb; see gap C2.
 3. `waiting_for_slot`. The project's cap is full. Event: the cap check (A5). See Part 1.6.
 4. `dispatched`. Handoff written (base commit, branch name, rules, in flight files, done line), builder
    session started in a fresh environment, role binding (account, model, effort) and caller identity
    recorded. Event: a slot frees or is free (A5).
-5. `building`. The builder session is running. Phactory has no view inside it until it ends, except what the
+5. `building`. The builder session is running. Slipway has no view inside it until it ends, except what the
    provider streams. Event: none; this is a wait.
 6. `returned`. The session ended and a branch at a commit exists on the remote. Event: the builder (A3)
    finishes. Trace export (R21, R23) belongs here, before landing, so a card that never lands still has a
    trace.
 7. `pr_open`. One pull request titled with the card key, carrying the host's closing reference, opened
-   against the default branch. Event: Phactory (A5), or the builder (A3); the contract says both, see gap C1.
+   against the default branch. Event: Slipway (A5), or the builder (A3); the contract says both, see gap C1.
 8. `awaiting_approval`. The pull request sits with its head CI run and waits for a human approval, or, with
    auto merge on, for green. Event: none; this is the long wait. On both hosts approval precedes the queue,
    not the other way round; see gap C3.
 9. `queued`. The pull request is in the host's native merge queue. Event: the host (A4) after approval and
    required checks on GitHub; the operator or an API call pressing "Add to merge queue" after merge checks
    pass on Bitbucket. Who presses it on Bitbucket is unspecified; see gap C3.
-10. `gate_running`. The queue runs the project's CI plus Phactory's deterministic checks on the merge
+10. `gate_running`. The queue runs the project's CI plus Slipway's deterministic checks on the merge
     result. Event: the host (A4).
-11. `merged`. The queue merged. Event: the host (A4). Phactory records approved by whom, or auto merge
+11. `merged`. The queue merged. Event: the host (A4). Slipway records approved by whom, or auto merge
     (R19), read from the host.
-12. `verifying`. Phactory reads git and the tracker. Event: a host event reaching Phactory, or a poll. The
+12. `verifying`. Slipway reads git and the tracker. Event: a host event reaching Slipway, or a poll. The
     contract names neither; see gap I2.
 13. `landed`. Merged commit equals the tested commit and the tracker moved the card to the project's landed
     status by its own automation. Event: verify (A5).
@@ -69,7 +69,7 @@ branch states below that carry a human action. The contract does not state the m
   and the runner "resumes at the first task that did not land").
 * Consequence without a rule: a watch cycle sees the card still labelled and still ready, and dispatches it
   again, every cycle, at full builder cost. This is the loop the runner avoided with its state file keyed on
-  task id, which Phactory has deliberately given up.
+  task id, which Slipway has deliberately given up.
 * Default: `returned_empty` is terminal for that workflow, shown under needs you with the trace. The card
   is not re dispatched until a re dispatch trigger named in gap C2 fires.
 
@@ -80,15 +80,15 @@ branch states below that carry a human action. The contract does not state the m
 * The pull request stays open and red. The operator has already approved it (see gap C3), so this is a
   second visit to the same card.
 * Earlier runner: "a nonzero exit strands the branch." No automatic rebuild, no second dispatch.
-* Default: `gate_red` is shown under needs you with the link into the host and the gate log. Phactory does
-  not re dispatch, since Phactory does not build and has no feedback channel to a builder whose session is
+* Default: `gate_red` is shown under needs you with the link into the host and the gate log. Slipway does
+  not re dispatch, since Slipway does not build and has no feedback channel to a builder whose session is
   gone. The operator either fixes by hand on the branch (the queue then retries when re added) or closes the
   pull request (Part 1.6 below). A later version may offer "rebuild with the gate log as a comment," which
   is a re dispatch under gap C2's trigger.
 
 ### 1.4 F1 branch: the pull request sits unapproved for days
 
-* The card stays in `awaiting_approval`. Nothing in Phactory times out, and nothing should: the durable
+* The card stays in `awaiting_approval`. Nothing in Slipway times out, and nothing should: the durable
   engine exists so this wait costs nothing.
 * Three things do change while it waits. The base moves, which the queue handles by testing the merge
   result. The builder session is long gone, so no builder can respond to review comments. And the card holds
@@ -104,7 +104,7 @@ branch states below that carry a human action. The contract does not state the m
   in the body, the title is not enough, and the project item moves only through the "item closed" workflow).
 * New state `halted` with class `merged_card_not_moved`. Event: verify (A5). This is F3 and AE2.
 * Default: as the contract says, needs you with evidence. The repair is the operator moving the card by hand
-  (the one tracker write Phactory is allowed to cause, since a person does it) and then resuming. How
+  (the one tracker write Slipway is allowed to cause, since a person does it) and then resuming. How
   resume is triggered is gap I1. The prevention is the per host closing reference form carried in the pull
   request at open time, which the runner's adapter interface already models as `closing_reference(id, ref)`;
   the contract's "titled with the card's key" is sufficient for Jira and insufficient for GitHub.
@@ -118,14 +118,14 @@ branch states below that carry a human action. The contract does not state the m
   A textual conflict fails B's queue run; B goes to `gate_red` (Part 1.3). A semantic conflict is caught
   only if the gate covers it.
 * Default: inform, do not block, exactly as the lanes did. The queue is the arbiter. Gap C5 covers how
-  Phactory knows A's files at all before A has pushed anything.
+  Slipway knows A's files at all before A has pushed anything.
 
 ### 1.7 F1 branch: the operator closes the pull request without merging
 
 * From `pr_open`, `awaiting_approval`, or `gate_red`, the pull request closes unmerged.
-* New state `abandoned`. Event: the operator (A1) in the host app, observed by Phactory through the same
+* New state `abandoned`. Event: the operator (A1) in the host app, observed by Slipway through the same
   channel as merges (gap I2).
-* The card on the tracker keeps its lane label and its status, because Phactory never writes the tracker and
+* The card on the tracker keeps its lane label and its status, because Slipway never writes the tracker and
   no automation fires on a closed pull request. So the card is still "ready" to a watch cycle.
 * Default: `abandoned` is terminal for that workflow. The card is not re dispatched until gap C2's trigger
   fires. The page shows it under needs you once, with the action "move or relabel the card, or re dispatch
@@ -142,7 +142,7 @@ branch states below that carry a human action. The contract does not state the m
 * Options: cancel the builder session (saves cost, loses a possibly good branch), or finish the build and
   stop at the next step boundary (open no pull request if the card no longer carries the lane label or is
   closed).
-* Default: re read the card at every state transition Phactory causes (dispatch, pr_open, enqueue, verify).
+* Default: re read the card at every state transition Slipway causes (dispatch, pr_open, enqueue, verify).
   If the card is no longer ready at a boundary, move to `abandoned` with the reason and do not take the
   step. Do not cancel a running session in the first version; cancellation per provider is adapter work
   under R11 and can come later. A label changed to a different lane counts as not ready for this workflow
@@ -158,18 +158,18 @@ branch states below that carry a human action. The contract does not state the m
 3. `checking_properties`. The four properties are checked. Two are mechanical: durable state (the tracker
    and board exist and are readable with the given credentials) and an external gate (required checks
    exist in the ruleset or merge checks, the queue is on, a workflow or pipeline triggers on the queue's
-   event). Two are attestations Phactory cannot test: independent tasks and a written definition of
+   event). Two are attestations Slipway cannot test: independent tasks and a written definition of
    verification. Default: ask for the file path of the written definition and store it; ask the operator to
    confirm tasks are independent and record who confirmed.
-4. `property_failed`. One property fails. Event: the check (A5). Phactory states what is missing and offers
+4. `property_failed`. One property fails. Event: the check (A5). Slipway states what is missing and offers
    the fix as the next single step (AE6). The operator leaves to add CI, a ruleset, a board.
-5. Re entry (R32): the operator runs onboard again. Phactory loads the saved file, re checks every stored
+5. Re entry (R32): the operator runs onboard again. Slipway loads the saved file, re checks every stored
    answer that can go stale (repo reachable, board exists, gate command present, accounts still in the
    operator file), asks only what is missing or false, and runs the property check again. "No longer
    true" is not defined in the contract; the default list above is the one the planner should write down.
-6. `trivial_card_pending`. R31 requires landing one trivial card. Phactory never writes the tracker, so
-   Phactory cannot file this card. The operator or manager agent must file it, and Phactory must tell them
-   exactly what to file. What the card changes is project specific, so Phactory cannot choose it either.
+6. `trivial_card_pending`. R31 requires landing one trivial card. Slipway never writes the tracker, so
+   Slipway cannot file this card. The operator or manager agent must file it, and Slipway must tell them
+   exactly what to file. What the card changes is project specific, so Slipway cannot choose it either.
    Default: onboard asks "which file may the trivial card append one line to" as an intake question, then
    says "file a card labelled X with this good block" and waits for it to appear.
 7. `trivial_card_in_flight`. The trivial card runs the whole of Part 1.1, including `awaiting_approval`,
@@ -178,7 +178,7 @@ branch states below that carry a human action. The contract does not state the m
 8. `onboarded`. Trivial card reached `scored`. The project file is marked verified. Event: eval (A5).
 
 Branch worth naming: the project is already fed by the old runner or the lanes script (Cratekit,
-support-workbench). Onboarding it into Phactory while the old system still runs is the exact failure the
+support-workbench). Onboarding it into Slipway while the old system still runs is the exact failure the
 carried rules call the worst one, two systems landing the same card. See gap I5.
 
 ### 1.10 F3 halt and resume
@@ -188,7 +188,7 @@ carried rules call the worst one, two systems landing the same card. See gap I5.
   `tracker_unreadable` and `git_unreadable`. The runner kept halt classes as a closed set in one file; the
   default is to do the same.
 * Who resumes: the operator (A1), after repairing by hand. The contract says "the workflow resumes at
-  verify" but names no trigger. Options: Phactory polls the tracker until the card moves (then the
+  verify" but names no trigger. Options: Slipway polls the tracker until the card moves (then the
   operator does nothing but move the card), the operator calls a verb (`land` or a `resume` argument on
   it), or the engine exposes a signal. See gap I1.
 * From which state: `halted` back to `verifying`, never earlier. The code is already on main. A halted card
@@ -214,13 +214,13 @@ carried rules call the worst one, two systems landing the same card. See gap I5.
 
 ### 1.12 The in flight files fact (R10)
 
-How Phactory knows which files another build is editing before that build has pushed anything. There are
+How Slipway knows which files another build is editing before that build has pushed anything. There are
 exactly two sources and the contract uses one of them without saying so.
 
 * Declared paths. R24's deterministic score checks "diff inside declared paths," so a card declares the
   paths it will touch. The union of declared paths across every card from `dispatched` to `merged` is the
   pre push in flight files fact. This is the only pre push source possible, since a sandbox or laptop
-  worktree is invisible to Phactory until a push.
+  worktree is invisible to Slipway until a push.
 * Actual diff. Once a card reaches `returned`, its real diff is known and replaces its declared paths in
   the fact. From then until `merged`, the fact is exact.
 * A card with no declared paths contributes nothing until it pushes. The lanes script had the same blind
@@ -242,7 +242,7 @@ Default: the fact is declared paths until push, actual diff after, scoped to car
 * Default: the cap counts builder sessions, `dispatched` to `returned`. The in flight files fact counts
   `dispatched` to `merged`. These are two sets and should be two names in the plan.
 * The lifted lease. The carried rule is "one lease per repository, two runs never merge into the same
-  repository at once." The host's queue now serialises merges, and Phactory never merges, so the lease as
+  repository at once." The host's queue now serialises merges, and Slipway never merges, so the lease as
   written guards nothing. What still needs serialising per repository is the push and the pull request open
   (one pusher per repository, from the lanes rules), and what needs counting per project is the cap. Default:
   the lease becomes two engine concurrency keys, one per project for the cap and one per repository for the
@@ -262,27 +262,27 @@ the runner, and one question with stakes.
 ### Critical
 
 **C1. Who pushes the branch, and with what credential.**
-What is missing: R17 says "Phactory pushes each returned branch and opens one pull request." F1's steps say
+What is missing: R17 says "Slipway pushes each returned branch and opens one pull request." F1's steps say
 "the builder pushes a branch and opens a pull request titled with the card key." R10 says the builder
 "returns a branch at a commit." These cannot all be true. The physical constraint decides it: a hosted
 builder's sandbox is destroyed when the session ends, so the commit has to leave the sandbox before then,
-and the only party inside the sandbox is the builder. Either the builder pushes, or Phactory pulls from a
-live sandbox before letting it end, or the builder pushes to a staging remote Phactory owns.
+and the only party inside the sandbox is the builder. Either the builder pushes, or Slipway pulls from a
+live sandbox before letting it end, or the builder pushes to a staging remote Slipway owns.
 Why it matters: it decides which credential enters every sandbox (a customer repo write token in a Managed
 Agents session and in a subscription CLI sandbox), what "one pusher per repository" means, how R22's action
-log reaches Phactory, and whether R16 holds. It also shapes the Managed Agents spike, which should test the
+log reaches Slipway, and whether R16 holds. It also shapes the Managed Agents spike, which should test the
 push path, not only the event log.
 Default: the builder pushes its own branch under a credential scoped to that branch namespace and nothing
-else (a deploy key or fine grained token limited to `refs/heads/phactory/*`), Phactory confirms the commit
-exists on the remote, Phactory opens the pull request and holds the only credential that can do so. The
-queue is the only writer to main. R17's prose becomes "Phactory opens one pull request per returned
+else (a deploy key or fine grained token limited to `refs/heads/slipway/*`), Slipway confirms the commit
+exists on the remote, Slipway opens the pull request and holds the only credential that can do so. The
+queue is the only writer to main. R17's prose becomes "Slipway opens one pull request per returned
 branch."
-Question: does the builder push its branch, or does Phactory extract it? Stakes: credential scope in every
+Question: does the builder push its branch, or does Slipway extract it? Stakes: credential scope in every
 sandbox and the shape of the Managed Agents adapter.
 
 **C2. Card ownership, terminal states, and the re dispatch trigger.**
-What is missing: Phactory cannot mark the tracker, and the runner's state file is gone by decision. Nothing
-in the contract says how Phactory remembers it already owns a card, or what makes an owned card eligible
+What is missing: Slipway cannot mark the tracker, and the runner's state file is gone by decision. Nothing
+in the contract says how Slipway remembers it already owns a card, or what makes an owned card eligible
 again. Every branch in Part 1 that ends short of `landed` (`returned_empty`, `gate_red`, `abandoned`,
 `halted`) leaves a card that still looks ready to a watch cycle. Separately, the contract does not say
 whether a labelled card dispatches itself on a watch cycle or waits for an explicit `dispatch` call; the
@@ -310,16 +310,16 @@ may show the same card again as red. The operator's expectation from the contrac
 result) is not what either host offers. And if nobody presses enqueue on Bitbucket, every Bitbucket card
 stalls at `awaiting_approval` forever with approvals present.
 Default: the needs you entry says "approve, the queue will test the merge after." Head CI on the pull
-request is treated as the first signal and shown. On Bitbucket, Phactory enqueues by API once approvals are
+request is treated as the first signal and shown. On Bitbucket, Slipway enqueues by API once approvals are
 present (spike two covers whether the API exists; if not, the operator presses it and the needs you entry
-says so). Phactory's deterministic checks run as a required check so they gate before approval where the
+says so). Slipway's deterministic checks run as a required check so they gate before approval where the
 host allows.
 Question: does the operator approve before or after the merge result is tested, and who enqueues on
 Bitbucket? Stakes: the shape of the approval wait step the engine spike is built around.
 
 **C4. What a slot is, what the in flight set is, and what the lifted lease guards.**
 What is missing: Part 1.13. "Builds in flight" has two readings with opposite operational consequences.
-The lease the Dependencies say will be lifted guards a merge Phactory no longer performs.
+The lease the Dependencies say will be lifted guards a merge Slipway no longer performs.
 Why it matters: with the wide reading a slow approver starves builds; with the narrow reading the in flight
 files fact must be defined separately or it drops cards the moment they return. The lease question decides
 whether a runner module is lifted for no purpose.
@@ -359,8 +359,8 @@ are a closed set in one file, as the runner kept them.
 Question: can the operator accept a mismatch with a recorded reason, or is revert the only exit? Stakes: a
 halt the page can never clear.
 
-**I2. How host events reach Phactory.**
-Missing: whether Phactory learns of merges, closes, and gate results by webhook or by polling. "Remote
+**I2. How host events reach Slipway.**
+Missing: whether Slipway learns of merges, closes, and gate results by webhook or by polling. "Remote
 builders never poll" is a rule about builders, not the control plane, but the hosted and unattended decision
 means a webhook endpoint is a public surface with its own auth, and polling two hosts for every open card
 has a cost and a lag. The deferred question about the laptop builder receiving a handoff without polling
@@ -383,14 +383,14 @@ session while nobody watches.
 **I4. R22's action log on the branch pollutes R24's diff.**
 Missing: if the builder commits its action log to the pull request branch, the log is in the diff the judge
 reads, trips "diff inside declared paths," and lands on the customer's main.
-Default: the log is committed on a separate ref the builder also pushes (`refs/phactory/log/<key>`), or
+Default: the log is committed on a separate ref the builder also pushes (`refs/slipway/log/<key>`), or
 in a path the project file names and the deterministic check excludes, and the judge receives the diff
 minus that path. The first is cleaner and needs the branch scoped credential from C1 to cover two refs.
 Question: where does the fallback action log live so it never reaches main or the judge? Stakes: AE5 and
 every subscription CLI build, since the CLI's transcript is the common case for R22.
 
 **I5. Onboarding is a workflow with waits, and the trivial card has a hand on it.**
-Missing: Part 1.9 items 2, 6, 7 and the already owned project branch. Phactory cannot file the trivial card
+Missing: Part 1.9 items 2, 6, 7 and the already owned project branch. Slipway cannot file the trivial card
 (it never writes the tracker), cannot choose what it changes (project agnostic), and the card waits for a
 human approval unless auto merge is on, so onboarding spans at least two sittings. Re entry needs a saved
 partial file, which the contract does not require. Onboarding a project the runner or lanes script still
@@ -412,7 +412,7 @@ Question: which of these are per project configuration and which are fixed by th
 a field the adapter hard codes is the first place a never seen project fails.
 
 **I7. Mid build label removal and card closure.**
-Missing: Part 1.8. Default: re read the card at every Phactory caused transition and stop at the boundary;
+Missing: Part 1.8. Default: re read the card at every Slipway caused transition and stop at the boundary;
 no cancellation in the first version. Question: finish or cancel a build whose card was closed? Stakes:
 builder cost versus a lost branch, and a provider cancel API per adapter.
 

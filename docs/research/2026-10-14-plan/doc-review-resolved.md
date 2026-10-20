@@ -1,6 +1,6 @@
 # Document review, resolved (2026-10-14)
 
-Reviewed: `docs/plans/2026-10-14-1730-feat-phactory-first-version-plan.md` after the deepening pass. Mode non interactive. Team: coherence (11 findings), feasibility (17), scope guardian (2), security lens (11), adversarial (12). Cross model pass skipped by live user prohibition: Phillip's standing rule forbids sending content to an outside service without his explicit approval, and the pass would send the full plan to another provider; each judgment lens kept its in process reviewer. No persona output was malformed. Dropped at anchors 0 and 25: none. Edit authority: the planning session's grant to correct the implementation and verification sections to satisfy the Product Contract, plus the author's own confirmation of the synthesis; two Product Contract wordings (R20, R37) were corrected because the plan's own mechanism contradicted them, and both are recorded in the preservation note.
+Reviewed: `docs/plans/2026-10-14-1730-feat-slipway-first-version-plan.md` after the deepening pass. Mode non interactive. Team: coherence (11 findings), feasibility (17), scope guardian (2), security lens (11), adversarial (12). Cross model pass skipped by live user prohibition: Phillip's standing rule forbids sending content to an outside service without his explicit approval, and the pass would send the full plan to another provider; each judgment lens kept its in process reviewer. No persona output was malformed. Dropped at anchors 0 and 25: none. Edit authority: the planning session's grant to correct the implementation and verification sections to satisfy the Product Contract, plus the author's own confirmation of the synthesis; two Product Contract wordings (R20, R37) were corrected because the plan's own mechanism contradicted them, and both are recorded in the preservation note.
 
 Phillip added R42 (live board status) during the review; it is integrated with KTD27 and AE13 and was not a reviewer finding.
 
@@ -40,7 +40,7 @@ Phillip added R42 (live board status) during the review; it is integrated with K
 32. Hatchet default timeouts cancel long children and queued laptop builds (feasibility 7). KTD22, U4, U14.
 33. U15 and U16 did not depend on U14 (scope 1, feasibility 13); U1 did not depend on U2 (feasibility 14). Unit index and cards.
 34. Transcript path ignored the empty configuration directory (feasibility 15). Fixed in U13.
-35. Phactory's repository must be public for the runner (feasibility 16). The ideation note already decided it; recorded in KTD19 and Dependencies.
+35. Slipway's repository must be public for the runner (feasibility 16). The ideation note already decided it; recorded in KTD19 and Dependencies.
 36. Langfuse read back lags asynchronous ingestion (feasibility 17, anchor 50). Bounded retry in KTD17 and U15, folded in by the author.
 37. Project delete, pruning, and extra CLI commands exceeded any requirement (scope 2, anchor 50). Moved to Considered and not built and Deferred to Follow-Up Work by the author; cascade keys kept.
 38. Postgres as the record past Langfuse's thirty day window (the applicable half of adversarial 6). Attempts carry account, model, effort, cost; scores carry the rubric result; KTD16, KTD17, U15.
@@ -51,7 +51,7 @@ Phillip added R42 (live board status) during the review; it is integrated with K
 
 ## Residual concerns kept
 
-- Postgres runs one instance with two databases; roles per database, encryption at rest, and backup of the `phactory` database and the environment file are not specified, and a backup of the environment file is a second copy of every credential (security).
+- Postgres runs one instance with two databases; roles per database, encryption at rest, and backup of the `slipway` database and the environment file are not specified, and a backup of the environment file is a second copy of every credential (security).
 - The Claude app and Grok hold connectors at account level, so tokens for several customer projects sit in one client account; isolation between manager agents is client side discipline (adversarial).
 - The Dagger engine on the VPS needs a listener a runner container without a Docker socket can reach, and it runs job steps with engine privileges (feasibility).
 - A week long wait replays a long durable event log on resume; Hatchet documents no cap and U4 waits through one hour, not seven days (adversarial).

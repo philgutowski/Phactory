@@ -1,6 +1,6 @@
 # U11 explainer: builder contract, handoff, trace shape
 
-Phactory does not write code. A builder does: a Claude Managed Agents session (U12) or a headless Claude Code CLI session in a container or on the laptop (U13). This card writes the contract both of those adapters implement, the one document every builder receives, the result a builder returns, and the trace shape every adapter turns its session log into. It builds no adapter.
+Slipway does not write code. A builder does: a Claude Managed Agents session (U12) or a headless Claude Code CLI session in a container or on the laptop (U13). This card writes the contract both of those adapters implement, the one document every builder receives, the result a builder returns, and the trace shape every adapter turns its session log into. It builds no adapter.
 
 ## Words used below
 
@@ -13,12 +13,12 @@ Phactory does not write code. A builder does: a Claude Managed Agents session (U
 - **Handoff.** The one message that starts a build. Every builder gets the same fixed shape.
 - **In flight files.** The files other builds of the same project are editing right now, which this card must not touch.
 - **Machine bound test.** A test that needs hardware a remote builder lacks, such as a USB device. The handoff names them so a remote builder never tries to run them (R16).
-- **Side reference.** A git reference outside `refs/heads`, so it is not a branch. Phactory keeps each card's action log on one.
+- **Side reference.** A git reference outside `refs/heads`, so it is not a branch. Slipway keeps each card's action log on one.
 - **Action log.** The list of what a builder did: tool calls, file changes, commands, and outside connections.
 - **Trace.** The record of one build as OpenTelemetry spans.
 - **OpenTelemetry, span, event, attribute.** OpenTelemetry is the standard wire format for traces. A span is one timed operation, an event is one instant inside a span, and an attribute is a key and value pair on either.
 - **OTLP.** OpenTelemetry's own protocol. This card writes its JSON form, which Langfuse accepts (U15 sends it).
-- **GenAI semantic conventions.** OpenTelemetry's agreed attribute names for model calls and tool calls, such as `gen_ai.request.model` and `gen_ai.usage.input_tokens`, so any OpenTelemetry viewer reads the spans without a Phactory plugin.
+- **GenAI semantic conventions.** OpenTelemetry's agreed attribute names for model calls and tool calls, such as `gen_ai.request.model` and `gen_ai.usage.input_tokens`, so any OpenTelemetry viewer reads the spans without a Slipway plugin.
 - **Shape record.** One of the five small types an adapter's mapper produces from a provider's log: `ModelRequest`, `ToolCall`, `FileChange`, `Command`, `Connection`.
 - **JSON lines.** A text file with one JSON object per line.
 
@@ -26,9 +26,9 @@ Phactory does not write code. A builder does: a Claude Managed Agents session (U
 
 | File | What it does |
 |:-|:-|
-| `src/phactory/builders/base.py` | The `Builder` protocol, the primitive table (in the docstring and as `PRIMITIVES`), `Schedule`, `Credential`, `BuilderResult`, `SessionStatus`, and `check_base`, the base validation. |
-| `src/phactory/builders/handoff.py` | `render(project, card, base, branch, in_flight, rules, closing)` returns a `Handoff`, the fixed document plus the fields an adapter needs. `in_flight_files` computes the in flight list. `TOOLS` is the fixed tool list. |
-| `src/phactory/trace/shape.py` | The five shape records, `Trace` (the span builder), the OTLP JSON writer, JSON lines read and write, and the side reference convention: `side_reference(key)`, the file names, the commit message. |
+| `src/slipway/builders/base.py` | The `Builder` protocol, the primitive table (in the docstring and as `PRIMITIVES`), `Schedule`, `Credential`, `BuilderResult`, `SessionStatus`, and `check_base`, the base validation. |
+| `src/slipway/builders/handoff.py` | `render(project, card, base, branch, in_flight, rules, closing)` returns a `Handoff`, the fixed document plus the fields an adapter needs. `in_flight_files` computes the in flight list. `TOOLS` is the fixed tool list. |
+| `src/slipway/trace/shape.py` | The five shape records, `Trace` (the span builder), the OTLP JSON writer, JSON lines read and write, and the side reference convention: `side_reference(key)`, the file names, the commit message. |
 | `tests/unit/test_handoff.py` | The golden handoff, in flight files, the base check, the primitive table, the protocol, and the credential. |
 | `tests/unit/test_shape.py` | Spans with GenAI names, a structural OTLP check, events on their tool call, JSON lines, the side reference, and the import rule for `builders` and `trace`. |
 | `tests/fixtures/handoff/EX-12.txt` | The golden handoff, rendered from the U6 fixture project. The example below is this file. |
@@ -43,7 +43,7 @@ KTD26 maps each primitive to exactly one carrier. A primitive with no row is not
 | Environment | `poll`, `release`, `delete`, `events`, `schedule` | Where the session runs and what it leaves. `poll(session_ref)` returns a `SessionStatus`; a terminal one carries the `BuilderResult`. `release` archives a provider session or removes a container. `delete` removes the provider's record, only after the trace is read back (KTD17). `events` yields shape records from the adapter's own mapper, or `None` when the provider keeps no log. `schedule` is `remote_session` (the workflow polls) or `worker_process` (the task runs on a labelled worker and blocks). |
 | Tools | `Handoff.tools` | The fixed tool list: shell, file read, file edit, git. Each adapter grants its own tools that provide these and nothing else. |
 | Skills | `Handoff.rules` | The operator's rules text for the project, plus the project's machine bound tests. |
-| Credentials | `Credential` | A refreshable secret scoped as KTD6 says: a repository wide machine identity, with the host's ruleset enforcing the `phactory/` branch namespace. The adapter injects it; the handoff names it and never prints it. |
+| Credentials | `Credential` | A refreshable secret scoped as KTD6 says: a repository wide machine identity, with the host's ruleset enforcing the `slipway/` branch namespace. The adapter injects it; the handoff names it and never prints it. |
 | Schedule | `ResolvedBinding.time_budget_minutes` | The role's time budget. The workflow (U14) enforces it as a deadline from the moment the build child starts (KTD22). No adapter method waits or counts time. |
 
 ### The credential
@@ -58,7 +58,7 @@ KTD26 maps each primitive to exactly one carrier. A primitive with no row is not
 |:-|:-|
 | Title line | the card's key and title |
 | 1. Base | the caller: the commit on the base branch the branch was created at |
-| 2. Branch | the caller: the branch Phactory created at dispatch (KTD27) |
+| 2. Branch | the caller: the branch Slipway created at dispatch (KTD27) |
 | 3. Rules | the `rules` argument (the operator's rules text), then the project file's `machine_bound_tests` |
 | 4. Tools | `TOOLS` |
 | 5. In flight files | `in_flight_files(in_flight, exclude_key=card.key)` |
@@ -93,12 +93,12 @@ sorted union, this card's own key excluded
 This is `tests/fixtures/handoff/EX-12.txt` byte for byte, and a test checks that it is. It is rendered from the U6 fixture project (a Jira project whose host credential is named `example-app`, gate command `make check`, one machine bound test), the card `EX-12`, three other builds (`EX-9` building and declaring `src/nav.py`; `EX-10` at `pr_open`, declaring `src/old.py` but having pushed `src/footer.py` and `src/nav.py`; `EX-7` already `scored`), and two lines of rules.
 
 ````text
-Phactory handoff for card EX-12: Add the hello page
+Slipway handoff for card EX-12: Add the hello page
 
 1. Base: 0123456789abcdef0123456789abcdef01234567
-   Start from this commit. Phactory created the branch below at it.
+   Start from this commit. Slipway created the branch below at it.
 
-2. Branch: phactory/EX-12-hello-page
+2. Branch: slipway/EX-12-hello-page
    Push your commits to this branch and to no other branch.
 
 3. Rules:
@@ -115,22 +115,22 @@ Phactory handoff for card EX-12: Add the hello page
    * src/footer.py
    * src/nav.py
 
-6. Done: The hello page renders the visitor's name. The card's test, tests/test_hello.py, passes. The project's gate command, make check, would pass. Every commit is pushed to phactory/EX-12-hello-page. Do not open a pull request; Phactory opens it.
+6. Done: The hello page renders the visitor's name. The card's test, tests/test_hello.py, passes. The project's gate command, make check, would pass. Every commit is pushed to slipway/EX-12-hello-page. Do not open a pull request; Slipway opens it.
 
 7. Credential: git pushes with the credential named example-app, already configured.
    Never print it, and never write it to a file or a commit.
 
-8. Side reference: refs/phactory/log/EX-12
+8. Side reference: refs/slipway/log/EX-12
    Keep an action log in actions.jsonl: one JSON object per line, with its type under "type",
    for each tool call, file change, command, and outside connection.
-   Before you finish, push it as the only file of a commit to refs/phactory/log/EX-12.
+   Before you finish, push it as the only file of a commit to refs/slipway/log/EX-12.
    Never commit it to the branch.
 
 The card:
 
 Add a hello page that greets the visitor by name.
 
-```phactory
+```slipway
 {"good": "The hello page renders the visitor's name.", "paths": ["src/hello.py", "tests/test_hello.py"], "test": "tests/test_hello.py", "lane": "cloud"}
 ```
 ````
@@ -153,7 +153,7 @@ Add a hello page that greets the visitor by name.
 
 `outcome` is `returned` when there is a commit and `returned_empty` when there is none.
 
-`check_base(result, base, is_ancestor)` is the base validation (KTD22). `is_ancestor(base, commit)` answers from the project's repository; the workflow passes gitread's (U10), and the test passes `git merge-base --is-ancestor` on a throwaway repository. A commit that descends from the base passes unchanged. A commit that does not, or a branch still at the base (Phactory created the branch there, so it means nothing was pushed), becomes `returned_empty` with the reason, halt class `builder_failed`, and the cost, model, and account kept, so the spend is still recorded.
+`check_base(result, base, is_ancestor)` is the base validation (KTD22). `is_ancestor(base, commit)` answers from the project's repository; the workflow passes gitread's (U10), and the test passes `git merge-base --is-ancestor` on a throwaway repository. A commit that descends from the base passes unchanged. A commit that does not, or a branch still at the base (Slipway created the branch there, so it means nothing was pushed), becomes `returned_empty` with the reason, halt class `builder_failed`, and the cost, model, and account kept, so the spend is still recorded.
 
 ## The trace shape
 
@@ -163,11 +163,11 @@ An adapter never builds spans. Its mapper turns the provider's own events into s
 |:-|:-|:-|
 | `ModelRequest` | span `chat <model>`, kind client | `gen_ai.operation.name` chat, `gen_ai.provider.name`, `gen_ai.request.model`, `gen_ai.response.model`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, the two cache token counts |
 | `ToolCall` | span `execute_tool <name>`, kind internal | `gen_ai.operation.name` execute_tool, `gen_ai.tool.name`, `gen_ai.tool.call.id`, `gen_ai.tool.call.arguments`, `gen_ai.tool.call.result`; an error sets the span status |
-| `FileChange` | event `phactory.file_change` | `phactory.file.path`, `phactory.file.action` |
-| `Command` | event `phactory.command` | `process.command_line`, `process.exit.code` |
-| `Connection` | event `phactory.connection` | `server.address`, `server.port`, `url.full` |
+| `FileChange` | event `slipway.file_change` | `slipway.file.path`, `slipway.file.action` |
+| `Command` | event `slipway.command` | `process.command_line`, `process.exit.code` |
+| `Connection` | event `slipway.connection` | `server.address`, `server.port`, `url.full` |
 
-One root span, `invoke_agent <builder>`, parents every other span. It carries `phactory.card.key`, the branch as `vcs.ref.head.name`, the base as `vcs.ref.base.revision`, and, after `finish`, the pushed commit as `vcs.ref.head.revision` and the diff counts as `phactory.diff.files_changed`, `phactory.diff.insertions`, and `phactory.diff.deletions`. Its start and end cover every child and event. An event carries the `tool_call_id` of the tool call that caused it and lands on that span; with no tool call, it lands on the root.
+One root span, `invoke_agent <builder>`, parents every other span. It carries `slipway.card.key`, the branch as `vcs.ref.head.name`, the base as `vcs.ref.base.revision`, and, after `finish`, the pushed commit as `vcs.ref.head.revision` and the diff counts as `slipway.diff.files_changed`, `slipway.diff.insertions`, and `slipway.diff.deletions`. Its start and end cover every child and event. An event carries the `tool_call_id` of the tool call that caused it and lands on that span; with no tool call, it lands on the root.
 
 Span ids come from a hash of the trace id and a counter, so the same records always give the same spans, which keeps tests and a replay stable. A trace id is 32 hex characters; one is drawn at random when none is given.
 
@@ -179,11 +179,11 @@ provider log (CLI transcript jsonl)       shape records             spans and ev
 assistant message, usage 1200 / 340   ->  ModelRequest          ->  span  chat model-large
 tool_use bash id tool_1               ->  ToolCall tool_1       ->  span  execute_tool bash
   tool_result "3 passed"                    (joined by id)
-  ran "pytest -q", exit 0             ->  Command tool_1        ->        event phactory.command
+  ran "pytest -q", exit 0             ->  Command tool_1        ->        event slipway.command
 tool_use edit id tool_2               ->  ToolCall tool_2       ->  span  execute_tool edit
-  wrote src/hello.py                  ->  FileChange tool_2     ->        event phactory.file_change
+  wrote src/hello.py                  ->  FileChange tool_2     ->        event slipway.file_change
 tool_use bash id tool_3, error        ->  ToolCall tool_3       ->  span  execute_tool bash (error)
-  fetched pypi.org:443                ->  Connection tool_3     ->        event phactory.connection
+  fetched pypi.org:443                ->  Connection tool_3     ->        event slipway.connection
 session end, branch tip               ->  Trace.finish(commit)  ->  root  invoke_agent cli
                                                                           card key, branch, base,
                                                                           commit, diff counts
@@ -199,12 +199,12 @@ Every build's records also live in git on the project's repository, so the trace
 
 | Part | Convention |
 |:-|:-|
-| Reference | `refs/phactory/log/<card key>`. Outside `refs/heads`, so it is no branch and never shows on the board. The host ruleset (KTD6) names it beside `refs/heads/phactory/**` for the machine identity. A key that cannot name a git reference is refused. |
+| Reference | `refs/slipway/log/<card key>`. Outside `refs/heads`, so it is no branch and never shows on the board. The host ruleset (KTD6) names it beside `refs/heads/slipway/**` for the machine identity. A key that cannot name a git reference is refused. |
 | Commits | One per build attempt and writer, each the child of the reference's previous tip, so the history is the attempt list. |
 | `actions.jsonl` | The builder's own action log, which the handoff's section 8 asks it to keep and push. |
 | `trace.jsonl` | The shape records the adapter mapped from the provider's log, written before the session is released (KTD17). |
 | `transcript.jsonl` | The raw transcript, when the builder has one (the CLI builder does). |
-| Message | `phactory log <card key> build <build id>` from `log_commit_message`. |
+| Message | `slipway log <card key> build <build id>` from `log_commit_message`. |
 
 Each line is one record as JSON with its type under `type` (`model_request`, `tool_call`, `file_change`, `command`, `connection`), written by `dump_jsonl` and read by `load_jsonl`, which refuses an unknown type or field. When a provider returns no event log after a session ends, the trace is built from `actions.jsonl` (AE5). Records are written after redaction (KTD24); this module never scrubs.
 
@@ -216,11 +216,11 @@ Each line is one record as JSON with its type under `type` (`model_request`, `to
 
 - **`render` takes two more arguments.** `rules`, the operator's rules text, because the project file has no rules field and this card does not change config. `closing`, the tracker's closing reference, so a branch missing the tracker's branch token is refused before dispatch.
 - **The handoff has a Tools section and the card's own text.** KTD26 says the handoff names the fixed tool list, and a builder needs the card it is building. The six sections the test scenario names keep their order.
-- **The side reference has no excluded path alternative.** The plan offers an excluded path the project file names; the project file has no such field, so the reference is always `refs/phactory/log/<key>`.
+- **The side reference has no excluded path alternative.** The plan offers an excluded path the project file names; the project file has no such field, so the reference is always `refs/slipway/log/<key>`.
 - **The builder pushes its own action log.** R22 and AE5 say the trace is built from the action log the builder pushed when the provider returns none, so section 8 asks for `actions.jsonl` on the side reference, beside the adapter's `trace.jsonl`.
-- **`BuilderResult` has `halt_class`,** and `check_base` sets it to `builder_failed`. A branch still at the base is also `returned_empty`, since Phactory created the branch there.
+- **`BuilderResult` has `halt_class`,** and `check_base` sets it to `builder_failed`. A branch still at the base is also `returned_empty`, since Slipway created the branch there.
 - **`check_base` takes `is_ancestor` as a callable** instead of calling git, because `builders` may not import gitread and U10 owns it.
 - **No OpenTelemetry library.** `pyproject.toml` is not this card's to change, so `Trace` writes the OTLP JSON mapping with the standard library and the test checks it by structure, not with the protobuf schema.
 - **The in flight state list is repeated** from `records.queries`, held equal by a test, because `builders` may not import `records`.
 - **The plan's pattern, `lanes.py` `cmd_handoff`, is not in this checkout.** The shape follows the plan's list and this repository's own handoff shape in `CLAUDE.md`.
-- **Extra files.** `src/phactory/builders/__init__.py`, `src/phactory/trace/__init__.py`, and the golden fixture `tests/fixtures/handoff/EX-12.txt`.
+- **Extra files.** `src/slipway/builders/__init__.py`, `src/slipway/trace/__init__.py`, and the golden fixture `tests/fixtures/handoff/EX-12.txt`.

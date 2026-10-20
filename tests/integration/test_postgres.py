@@ -1,6 +1,6 @@
 """The integration suite's first member: the local Postgres answers.
 
-Every later integration test reads the same PHACTORY_TEST_DSN. It skips when
+Every later integration test reads the same SLIPWAY_TEST_DSN. It skips when
 the variable or psql is missing, and tests/_gate.py turns that skip into a
 failure under CI, so the gate never passes without a database.
 """
@@ -14,9 +14,9 @@ import pytest
 
 @pytest.fixture
 def dsn() -> str:
-    value = os.environ.get("PHACTORY_TEST_DSN", "")
+    value = os.environ.get("SLIPWAY_TEST_DSN", "")
     if not value:
-        pytest.skip("PHACTORY_TEST_DSN is not set")
+        pytest.skip("SLIPWAY_TEST_DSN is not set")
     if shutil.which("psql") is None:
         pytest.skip("psql is not installed")
     return value

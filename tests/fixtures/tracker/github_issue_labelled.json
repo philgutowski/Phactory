@@ -1,7 +1,7 @@
 {
   "number": 12,
   "title": "Add the brief renderer",
-  "body": "Render the brief.\n\n```phactory\n{\"good\": \"The brief renders.\", \"paths\": [\"src/brief.py\"], \"test\": \"tests/test_brief.py\", \"lane\": \"cloud\"}\n```\n",
+  "body": "Render the brief.\n\n```slipway\n{\"good\": \"The brief renders.\", \"paths\": [\"src/brief.py\"], \"test\": \"tests/test_brief.py\", \"lane\": \"cloud\"}\n```\n",
   "state": "OPEN",
   "labels": [{"id": "LA_1", "name": "cloud", "description": "", "color": "0e8a16"}, {"id": "LA_2", "name": "docs", "description": "", "color": "cccccc"}]
 }

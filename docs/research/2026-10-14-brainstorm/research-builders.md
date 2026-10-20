@@ -1,4 +1,4 @@
-# Hosted coding agent builders as Phactory adapters (2026-10-14)
+# Hosted coding agent builders as Slipway adapters (2026-10-14)
 
 Method: about 17 searches/fetches. Many vendor docs were not reachable, so several cells are UNVERIFIED. Third party pricing is marked (3P) and conflicts often.
 
@@ -50,11 +50,11 @@ ai.engineer/nyc sponsor list [1]: builders there: Factory (Gold, Droids), Source
 
 12. Warp Oz (Gold sponsor) [17]: cloud agent platform with CLI, REST API and SDKs, runs on Warp cloud or a self hosted worker, scheduled or manual start; agents authenticate with an agent API key. Repo/branch input, PR output, transcript API, Bitbucket, parallel cap: UNVERIFIED. Cost (3P): credits; Build $18, Business $45, Max $180 per month. NEXT ADAPTER candidate once docs confirm branch and PR fields.
 13. Blitzy (supporting partner) [18]: enterprise autonomous platform, delivers PRs, repos from GitHub, GitLab, Azure DevOps (no Bitbucket found). No public API found; contracts reportedly start at $500K per year (3P). NOT YET, wrong scale for a solo operator.
-14. Entire (supporting partner) [19]: NOT a builder. Open source (MIT) CLI that stores each agent session (transcript, prompts, tool calls, token usage) on an entire/checkpoints/v1 git branch, linked by a commit trailer. Supports Claude Code, Gemini CLI, Cursor, Copilot CLI, Factory. Relevant to Phactory as a trace source that travels with the branch, host agnostic. Evaluate as a tracing helper, not an adapter.
+14. Entire (supporting partner) [19]: NOT a builder. Open source (MIT) CLI that stores each agent session (transcript, prompts, tool calls, token usage) on an entire/checkpoints/v1 git branch, linked by a commit trailer. Supports Claude Code, Gemini CLI, Cursor, Copilot CLI, Factory. Relevant to Slipway as a trace source that travels with the branch, host agnostic. Evaluate as a tracing helper, not an adapter.
 15. Sonar (platinum) and Qodo, Greptile (gold): review and verification tools, not builders; candidates for the CI gate or scoring step, outside this brief. Zed: editor, no hosted builder found.
 
 ## Verdicts
-- Claude Managed Agents (+ Agent SDK): FIRST ADAPTER. Cleanest session API, full event log with per tool call detail and cost, host agnostic so Bitbucket works if Phactory pushes the branch itself.
+- Claude Managed Agents (+ Agent SDK): FIRST ADAPTER. Cleanest session API, full event log with per tool call detail and cost, host agnostic so Bitbucket works if Slipway pushes the branch itself.
 - OpenHands Cloud: NEXT ADAPTER. Documented start API, Bitbucket confirmed, open source fallback. Gaps: branch param, PR and trace retrieval.
 - Jules: NEXT ADAPTER. Documented API with branch and auto PR, 15 concurrent at $20 (3P). GitHub only, thin trace.
 - Cursor cloud agents: NEXT ADAPTER if its official docs confirm the 3P account.
@@ -65,8 +65,8 @@ ai.engineer/nyc sponsor list [1]: builders there: Factory (Gold, Droids), Source
 - Claude Code web: NOT YET (routine fire only, experimental). Codegen: NOT YET. Amp: NOT YET.
 
 ## Recommendation (5 lines)
-1. Drive Claude Managed Agents first; the fixed handoff maps to an agent system prompt plus a session, and the event history gives Phactory its trace and cost for free.
-2. Phactory should own git (clone, branch, push, PR), so Bitbucket and GitHub both work and no builder needs repo integrations.
+1. Drive Claude Managed Agents first; the fixed handoff maps to an agent system prompt plus a session, and the event history gives Slipway its trace and cost for free.
+2. Slipway should own git (clone, branch, push, PR), so Bitbucket and GitHub both work and no builder needs repo integrations.
 3. Add OpenHands Cloud second (Bitbucket native, open source), then Jules or Cursor for GitHub only repos.
 4. None of these does the whole loop: card in from a tracker, CI gate, verify landing from git and tracker, per task score. The best partial are Copilot (issue to PR) and Devin/Cursor (PR out), all stop at the PR.
 5. So the control plane is not redundant for a solo operator running multi vendor parallel builds; it is redundant only if he commits to GitHub plus Copilot alone and accepts no scoring.

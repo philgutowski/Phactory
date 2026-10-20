@@ -1,4 +1,4 @@
-# Phactory research: durable workflow engines and agent sandboxes (2026-10-14)
+# Slipway research: durable workflow engines and agent sandboxes (2026-10-14)
 
 Conference sponsor page (ai.engineer/nyc) lists in scope: Temporal (Gold), Daytona (Gold), Modal (Gold), Cloudflare (Silver), Union (Silver, unassessed), Runpod/Browserbase (not relevant). Inngest, Trigger.dev, Restate, Hatchet, DBOS, E2B, Runloop, Blaxel are not listed sponsors. [1]
 Method: 15 fetches of vendor pricing/doc pages. "Not verified" means the page did not state it. Hourly figures marked (calc) are my arithmetic from the per-second or per-hour rates.

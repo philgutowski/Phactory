@@ -1,17 +1,17 @@
 # U7 explainer: the records store, transition integrity, migrations
 
-This card builds Phactory's memory: the Postgres tables every later unit writes to and every surface reads from, the rules that keep a build's history honest even when two workers race, and the small command that creates and upgrades those tables. Nothing here talks to a host, a tracker, or the engine. It is the floor the workflow (U14), the verbs (U25), and the status page (U20) stand on.
+This card builds Slipway's memory: the Postgres tables every later unit writes to and every surface reads from, the rules that keep a build's history honest even when two workers race, and the small command that creates and upgrades those tables. Nothing here talks to a host, a tracker, or the engine. It is the floor the workflow (U14), the verbs (U25), and the status page (U20) stand on.
 
 ## Words used below
 
-- **Record.** A row Phactory writes about something that happened. The engine's own history is never the record (KTD16): if Hatchet's database were lost, Postgres alone would still say what every card did.
+- **Record.** A row Slipway writes about something that happened. The engine's own history is never the record (KTD16): if Hatchet's database were lost, Postgres alone would still say what every card did.
 - **Build.** One attempt to build one card. A card can have several builds over its life (a re dispatch starts a new one), but only one at a time owns it.
 - **State.** Where a build is right now, such as `building` or `pr_open`. **Transition.** One move from one state to another, written as a row with who did it and why.
 - **Edge.** A pair (from state, to state) the state machine allows.
 - **Ownership terminal set.** The states `scored`, `abandoned`, and `returned_empty`. A build in one of them no longer owns its card (KTD3).
 - **Compare and set.** An update that only happens if a column still holds the value the caller expects, written as `UPDATE ... WHERE state = expected`. If someone else changed it first, zero rows update and the caller learns it lost.
 - **Row lock.** Postgres locks a row while a transaction updates it; a second transaction updating the same row waits until the first commits.
-- **Advisory lock.** A lock on a number rather than a row, which Postgres holds for you and never interprets. Phactory locks the number pair (project space, project id) so writes for one project take turns.
+- **Advisory lock.** A lock on a number rather than a row, which Postgres holds for you and never interprets. Slipway locks the number pair (project space, project id) so writes for one project take turns.
 - **Partial unique index.** A uniqueness rule that only applies to rows matching a condition. Here: unique (project, card key) only among builds outside the ownership terminal set.
 - **Claim column.** A column on `builds` that records a side effect has happened (a branch created, a pull request opened). A step writes it in the same transaction as its transition, and skips the side effect next time when the column is already set ("claim before act").
 - **Migration.** A numbered SQL file that changes the schema. **Ledger.** The `schema_migrations` table, one row per applied file.
@@ -23,11 +23,11 @@ This card builds Phactory's memory: the Postgres tables every later unit writes 
 
 | File | What it does |
 |:-|:-|
-| `src/phactory/records/__init__.py` | Makes `records` a package. One docstring line. |
-| `src/phactory/records/schema/001_init.sql` | Every table KTD16 names, the state list with its page bucket, the allowed edges, the partial unique index, the trigger that guards a build's state, and the unique keys that make writes idempotent. |
-| `src/phactory/records/migrate.py` | Finds the numbered files, compares them with the ledger, applies the new ones, refuses a changed one. Also runs as `python -m phactory.records.migrate DSN`. |
-| `src/phactory/records/store.py` | The writes: `ensure_project`, `claim`, `attach_run`, `record_transition`, `ingest_host_event`, `activate_runner_build`, `record_gate_run`. |
-| `src/phactory/records/queries.py` | The reads: `status_buckets`, `card_detail`, `events_since`, `in_flight_files`, `open_findings`, `stale_claims`, `latest_gate_run`, `runner_build_active_at`. |
+| `src/slipway/records/__init__.py` | Makes `records` a package. One docstring line. |
+| `src/slipway/records/schema/001_init.sql` | Every table KTD16 names, the state list with its page bucket, the allowed edges, the partial unique index, the trigger that guards a build's state, and the unique keys that make writes idempotent. |
+| `src/slipway/records/migrate.py` | Finds the numbered files, compares them with the ledger, applies the new ones, refuses a changed one. Also runs as `python -m slipway.records.migrate DSN`. |
+| `src/slipway/records/store.py` | The writes: `ensure_project`, `claim`, `attach_run`, `record_transition`, `ingest_host_event`, `activate_runner_build`, `record_gate_run`. |
+| `src/slipway/records/queries.py` | The reads: `status_buckets`, `card_detail`, `events_since`, `in_flight_files`, `open_findings`, `stale_claims`, `latest_gate_run`, `runner_build_active_at`. |
 | `tests/unit/test_migrate.py` | The ledger rules without a database: ordering, naming, duplicate versions, skip when applied, refuse when changed, the no transaction marker. |
 | `tests/integration/test_records.py` | U7's test scenarios against the local Postgres. |
 | `pyproject.toml` | Gains the one runtime dependency, `psycopg[binary]`, and ships the `.sql` files inside the package. |
@@ -117,7 +117,7 @@ Runner builds: `activate_runner_build(instance, commit, at)` closes the active r
 ## How migrations run
 
 ```
-apply(conn, database="phactory")
+apply(conn, database="slipway")
   |
   +== current_database() is not the expected name?  -> refuse (WrongDatabase)
   +== take a session advisory lock (one migrator at a time)
@@ -129,7 +129,7 @@ apply(conn, database="phactory")
   |      not in ledger, normal file    -> BEGIN; SET LOCAL lock_timeout = '5s';
   |                                       run file; insert ledger row; COMMIT
   |      not in ledger, first line is  -> run each statement on its own (no transaction,
-  |      /* phactory: no transaction */   which CREATE INDEX CONCURRENTLY needs), then
+  |      /* slipway: no transaction */   which CREATE INDEX CONCURRENTLY needs), then
   |                                       insert ledger row
   +== release the advisory lock
 ```
@@ -139,7 +139,7 @@ A file that fails part way rolls back whole, ledger row included, so the next ru
 ## How migrations and the store are tested
 
 - `tests/unit/test_migrate.py` drives `discover` and `pending` over small files in a temporary directory: order, bad names, duplicate versions, skip when applied, refuse when changed (the message names both checksums), and the marker.
-- `tests/integration/test_records.py` reads `PHACTORY_TEST_DSN`. Each test creates a fresh Postgres schema with a random name, points its connections' `search_path` at it, runs `migrate.apply`, and drops the schema at the end, so tests share one database but no rows. Without the variable each test skips, and under `CI` `tests/_gate.py` turns that skip into a failure.
+- `tests/integration/test_records.py` reads `SLIPWAY_TEST_DSN`. Each test creates a fresh Postgres schema with a random name, points its connections' `search_path` at it, runs `migrate.apply`, and drops the schema at the end, so tests share one database but no rows. Without the variable each test skips, and under `CI` `tests/_gate.py` turns that skip into a failure.
 - The race tests use real concurrency: the claim test holds one connection's transaction open while a second connection's claim runs in a thread and waits; the cursor test runs two writer threads on two connections while the main thread reads by cursor, then checks the ids it saw equal every id in the table, once each, in order.
 - The test connections ask for `client_encoding=utf8`, because a database created by `initdb` under the C locale is SQL_ASCII and psycopg would otherwise hand back bytes instead of text.
 
@@ -153,6 +153,6 @@ A file that fails part way rolls back whole, ledger row included, so the next ru
 - **The second host event key only dedupes events that carry a merge commit.** Events without one (opened, synchronize) compare as distinct under it and dedupe by delivery id only.
 - **The events floor is a column, `projects.events_floor`.** Nothing prunes yet, so `truncated` is false until a pruning step raises the floor.
 - **Writes for `attempts`, `scores`, `findings`, and `audit` are not in `store.py`.** Their tables exist; the units that produce those records (U12, U16, U23, U18) add the writes.
-- **The database guard is a name argument.** `apply(conn, database=...)` refuses any other database; the command line defaults it to `phactory`. Reading the connection string from configuration is U6's.
+- **The database guard is a name argument.** `apply(conn, database=...)` refuses any other database; the command line defaults it to `slipway`. Reading the connection string from configuration is U6's.
 - **`records/__init__.py` is an extra file**, needed for the package, and `pyproject.toml` gains `psycopg[binary]` and the package data line for the `.sql` files.
 - **`stale_claims` is an extra query** for KTD3's "a claimed row with no run id older than one watch interval is retried by watch".

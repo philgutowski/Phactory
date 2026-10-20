@@ -11,14 +11,14 @@ About 15 lookups. The WebFetch tool returns summaries, not raw pages, so quotes 
 - Custom MCP in voice mode specifically: no source confirms or denies it. UNVERIFIED.
 - The undated "connectors do not work in mobile apps or voice mode" review: I could not find it. The nearest candidate (MyClaw, dated 2026-08-12) makes no such claim; it says only that some capabilities vary by platform. THIRD PARTY [S4]. Verdict: the claim is unsupported, and it is contradicted for mobile by [S1] and for built in connectors in voice by [S2]. Custom connectors in voice remain untested.
 - Server must be reachable on the public internet. Custom connectors may need a paid tier (a 2026-07-15 blog says so; the docs say connectors are open to all users, a conflict). [S3] PRIMARY, [S5] THIRD PARTY
-- Auth: a GitHub issue dated 2026-09-06 reportedly says Grok only does OAuth with PKCE plus dynamic client registration, and one sign in failed at registration over a callback address. That matches Phactory's design but shows a failure mode. Seen only in a search summary, link not retrieved. THIRD PARTY, UNVERIFIED
+- Auth: a GitHub issue dated 2026-09-06 reportedly says Grok only does OAuth with PKCE plus dynamic client registration, and one sign in failed at registration over a callback address. That matches Slipway's design but shows a failure mode. Seen only in a search summary, link not retrieved. THIRD PARTY, UNVERIFIED
 
 ## 2. Per project or per customer separation in Grok
 
 - No official source on Projects, workspaces, or per project memory found. UNVERIFIED
 - A review (anuma.ai, undated) says Grok has no project based memory separation and memory is inconsistent across web, iOS, Android. THIRD PARTY [S6]
 - Another review says the mobile apps lack project support (search summary only). THIRD PARTY, UNVERIFIED
-- Connectors are account wide per [S1] and [S3], so one bot seeing one customer cannot come from connector scoping. Isolation would have to live in the Phactory side (one token or URL per customer) or in separate bots.
+- Connectors are account wide per [S1] and [S3], so one bot seeing one customer cannot come from connector scoping. Isolation would have to live in the Slipway side (one token or URL per customer) or in separate bots.
 
 ## 3. Screenshots in the same conversation as voice
 
@@ -57,7 +57,7 @@ About 15 lookups. The WebFetch tool returns summaries, not raw pages, so quotes 
 1. Best surface today by evidence: the Claude app, because it is the only one with a primary source for connector tools in mobile voice. Grok is plausible but unproven for custom MCP in voice.
 2. Cursor is a dispatch surface for coding agents, not the manager. Keep it out of this role.
 3. The xAI Voice Agent API ($0.08 per minute, remote MCP, no images) is the fallback if consumer apps fail, at the cost of building your own client and memory.
-4. Spike (about 2 hours): register a stub Phactory MCP with OAuth PKCE plus DCR on both Claude and Grok (grok.com/connectors). On a phone, in voice, call a read tool, then attach a screenshot mid conversation, then add a second customer stub and check one bot cannot see the other.
+4. Spike (about 2 hours): register a stub Slipway MCP with OAuth PKCE plus DCR on both Claude and Grok (grok.com/connectors). On a phone, in voice, call a read tool, then attach a screenshot mid conversation, then add a second customer stub and check one bot cannot see the other.
 5. Decide on the three results: tool call in voice works, screenshot works, isolation works. Pick the app that passes all three, else the API fallback.
 
 ## Sources

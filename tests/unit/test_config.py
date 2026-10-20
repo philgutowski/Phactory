@@ -1,8 +1,8 @@
 """U6 test scenarios for the project file, the operator file, and bindings.
 
-Every test runs against a temporary PHACTORY_HOME built from the fixtures in
+Every test runs against a temporary SLIPWAY_HOME built from the fixtures in
 tests/fixtures/config. HOME itself points at an empty temporary directory, so
-a test that fell back to ~/.phactory would find nothing rather than read the
+a test that fell back to ~/.slipway would find nothing rather than read the
 real home directory.
 """
 
@@ -11,14 +11,14 @@ from pathlib import Path
 
 import pytest
 
-from phactory.config import ConfigError, home
-from phactory.config.bindings import (
+from slipway.config import ConfigError, home
+from slipway.config.bindings import (
     BindingInvalid,
     resolve_binding,
     resolve_tracker_credential,
 )
-from phactory.config.operator import AccountKind, Host, load_operator
-from phactory.config.project import (
+from slipway.config.operator import AccountKind, Host, load_operator
+from slipway.config.project import (
     LandingPath,
     MergeMethod,
     TraceDetail,
@@ -45,11 +45,11 @@ def isolated_home(tmp_path, monkeypatch):
     fake_user_home = tmp_path / "user"
     fake_user_home.mkdir()
     monkeypatch.setenv("HOME", str(fake_user_home))
-    root = tmp_path / "phactory"
+    root = tmp_path / "slipway"
     (root / "projects").mkdir(parents=True)
     shutil.copy(FIXTURES / "operator.toml", root / "operator.toml")
     shutil.copy(FIXTURES / "project.toml", root / "projects" / f"{SLUG}.toml")
-    monkeypatch.setenv("PHACTORY_HOME", str(root))
+    monkeypatch.setenv("SLIPWAY_HOME", str(root))
     return root
 
 
@@ -71,13 +71,13 @@ def failure(call) -> ConfigError:
 
 # Where the files live.
 
-def test_home_reads_phactory_home(isolated_home):
+def test_home_reads_slipway_home(isolated_home):
     assert home() == isolated_home
 
 
 def test_home_defaults_under_the_user_home(monkeypatch, tmp_path):
-    monkeypatch.delenv("PHACTORY_HOME")
-    assert home() == tmp_path / "user" / ".phactory"
+    monkeypatch.delenv("SLIPWAY_HOME")
+    assert home() == tmp_path / "user" / ".slipway"
 
 
 # Loading.
@@ -182,7 +182,7 @@ def test_name_absent_from_operator_file_names_the_key(isolated_home):
 
 
 def test_operator_file_refuses_a_secret_value(isolated_home):
-    edit(isolated_home / "operator.toml", 'env = "PHACTORY_ACCOUNT_MAX_SUB"',
+    edit(isolated_home / "operator.toml", 'env = "SLIPWAY_ACCOUNT_MAX_SUB"',
          'env = "ghp_' + "Z" * 36 + '"')
     assert failure(load_operator).field == "accounts.max-sub.env"
 
@@ -202,7 +202,7 @@ def test_invalid_slug_is_refused(isolated_home):
 def test_binding_resolves_account_model_effort_budget(isolated_home):
     binding = resolve_binding(SLUG, "builder")
     assert binding.account.name == "max-sub"
-    assert binding.account.env == "PHACTORY_ACCOUNT_MAX_SUB"
+    assert binding.account.env == "SLIPWAY_ACCOUNT_MAX_SUB"
     assert (binding.model, binding.effort, binding.time_budget_minutes) == (
         "model-large", "high", 90,
     )
@@ -262,7 +262,7 @@ def test_unset_tracker_token_is_binding_invalid(isolated_home):
 
 def test_env_name_refusal_does_not_echo_the_value(tmp_path):
     """KTD24: a pasted credential in an env slot is reported by hash and length only."""
-    from phactory.config import ConfigError, Reader
+    from slipway.config import ConfigError, Reader
 
     secret = "hunter2-app-password-from-bitbucket"
     reader = Reader(tmp_path / "operator.toml", {"token_env": secret}, "")

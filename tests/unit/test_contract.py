@@ -1,10 +1,10 @@
-"""U8 test scenarios for the card contract: the phactory block and the ready rule."""
+"""U8 test scenarios for the card contract: the slipway block and the ready rule."""
 
 from dataclasses import dataclass
 
 import pytest
 
-from phactory.cards.contract import FIELDS, parse, ready
+from slipway.cards.contract import FIELDS, parse, ready
 
 
 @dataclass(frozen=True)
@@ -25,7 +25,7 @@ class FakeCard:
 
 
 def block(text: str) -> str:
-    return f"Some prose first.\n\n```phactory\n{text}\n```\n\nSome prose after.\n"
+    return f"Some prose first.\n\n```slipway\n{text}\n```\n\nSome prose after.\n"
 
 
 COMPLETE = block(
@@ -87,7 +87,7 @@ def test_a_malformed_block_is_an_error_not_an_absence(text, words):
 def test_two_blocks_are_an_error():
     parsed = parse(COMPLETE + COMPLETE)
     assert not parsed.ok
-    assert "2 phactory blocks" in parsed.error
+    assert "2 slipway blocks" in parsed.error
 
 
 def test_a_block_in_another_language_is_not_read():
@@ -146,7 +146,7 @@ def test_a_ready_card_in_another_lane_is_not_ready_and_silent():
 def test_a_ready_card_with_a_malformed_block_is_not_ready_with_the_reason():
     answer = ready(FakeCard(body=block("{oops")), PROJECT)
     assert not answer.ready
-    assert answer.reason.startswith("card 12: the phactory block is not valid JSON")
+    assert answer.reason.startswith("card 12: the slipway block is not valid JSON")
 
 
 def test_a_block_naming_another_lane_is_not_ready_with_the_reason():
@@ -165,6 +165,6 @@ def test_a_block_with_crlf_line_endings_parses():
 
 def test_a_fence_indented_up_to_three_spaces_parses():
     """CommonMark allows a fence behind one to three spaces."""
-    indented = COMPLETE.replace("```phactory", "  ```phactory").replace("\n```\n", "\n  ```\n")
+    indented = COMPLETE.replace("```slipway", "  ```slipway").replace("\n```\n", "\n  ```\n")
     parsed = parse(indented)
     assert parsed.ok and parsed.absent == ()

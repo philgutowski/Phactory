@@ -1,7 +1,7 @@
-# Phactory's own gate (KTD19). Written inside the runner's v0 subset: one
+# Slipway's own gate (KTD19). Written inside the runner's v0 subset: one
 # checkout step and one run step, so the same file works on GitHub hosted
 # runners now and on a zig-actions-runner instance once the repository
-# variable PHACTORY_RUNS_ON names that instance's label.
+# variable SLIPWAY_RUNS_ON names that instance's label.
 #
 # The job is named ci because that name is the required status check.
 # There is no merge_group trigger: this repository has no merge queue (U2).
@@ -18,7 +18,7 @@ permissions:
 
 jobs:
   ci:
-    runs-on: ${{ vars.PHACTORY_RUNS_ON || 'ubuntu-latest' }}
+    runs-on: ${{ vars.SLIPWAY_RUNS_ON || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
       - name: Python, local Postgres, ruff, pytest
@@ -35,11 +35,11 @@ jobs:
           # than as a service container because the runner subset has none.
           PG_BIN=$(ls -d /usr/lib/postgresql/*/bin | sort -V | tail -n 1)
           PG_DIR="$RUNNER_TEMP/pg"
-          "$PG_BIN/initdb" -D "$PG_DIR/data" -A trust -U phactory > /dev/null
+          "$PG_BIN/initdb" -D "$PG_DIR/data" -A trust -U slipway > /dev/null
           "$PG_BIN/pg_ctl" -D "$PG_DIR/data" -l "$PG_DIR/log" -w \
             -o "-k $PG_DIR -p 54329 -c listen_addresses=127.0.0.1" start
-          "$PG_BIN/createdb" -h 127.0.0.1 -p 54329 -U phactory phactory_test
-          export PHACTORY_TEST_DSN="postgresql://phactory@127.0.0.1:54329/phactory_test"
+          "$PG_BIN/createdb" -h 127.0.0.1 -p 54329 -U slipway slipway_test
+          export SLIPWAY_TEST_DSN="postgresql://slipway@127.0.0.1:54329/slipway_test"
 
           python3.12 -m venv .venv
           . .venv/bin/activate

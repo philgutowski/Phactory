@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from phactory.records import migrate
-from phactory.records.migrate import (
+from slipway.records import migrate
+from slipway.records.migrate import (
     NO_TRANSACTION_MARKER,
     ChecksumMismatch,
     MigrationError,

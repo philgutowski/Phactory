@@ -10,10 +10,10 @@ After the host says a pull request merged, someone has to check that what reache
 - **Merge method.** How the host builds the landed commit: a merge commit (two parents), a squash (one new commit holding all changes), or a rebase (each branch commit replayed on top of the base).
 - **Tree.** Git's snapshot of every file at a commit, with its own hash. Two commits with different hashes can carry the same tree.
 - **Baseline.** The commit on `main` the build started from.
-- **Confirmed commit.** The branch head Phactory confirmed on the remote when it opened the pull request (KTD6).
+- **Confirmed commit.** The branch head Slipway confirmed on the remote when it opened the pull request (KTD6).
 - **Tested commit.** On a queue path, the commit the queue built and ran CI against, recorded with the pull request head the queue reported for it (KTD7).
 - **Merged commit.** The commit the host says it landed (`merge_commit_sha` on GitHub).
-- **Bare cache.** A git repository with no working checkout, only the object store. Phactory keeps one per project under `$PHACTORY_HOME/cache/git/`.
+- **Bare cache.** A git repository with no working checkout, only the object store. Slipway keeps one per project under `$SLIPWAY_HOME/cache/git/`.
 - **Halt.** A stop a person must look at, with a class from a closed set and the evidence that explains it.
 - **Partial landing.** The commit landed but the card did not move to done.
 
@@ -21,9 +21,9 @@ After the host says a pull request merged, someone has to check that what reache
 
 | File | What it does |
 |:-|:-|
-| `src/phactory/gitread.py` | Read only git calls: `run`, `GitError`, `rev_parse`, `fetch`, `log_oneline`, `log_messages`, `default_branch` (rewritten from native-relay's names), and the new `tree_of`, `is_ancestor`, `merge_tree`, `first_parent`, `cache_path`, `refresh`. |
-| `src/phactory/verify.py` | `verify(...)` returns a `Verdict`: the outcome, the checks, the evidence, and a `Halt` when one applies. Also `hand_landing` and `key_pattern`. |
-| `src/phactory/halts.py` | The seven halt classes, each with its kind, the evidence keys it requires, and its needs you line. `Halt` refuses a class outside the set and missing evidence when it is built. |
+| `src/slipway/gitread.py` | Read only git calls: `run`, `GitError`, `rev_parse`, `fetch`, `log_oneline`, `log_messages`, `default_branch` (rewritten from native-relay's names), and the new `tree_of`, `is_ancestor`, `merge_tree`, `first_parent`, `cache_path`, `refresh`. |
+| `src/slipway/verify.py` | `verify(...)` returns a `Verdict`: the outcome, the checks, the evidence, and a `Halt` when one applies. Also `hand_landing` and `key_pattern`. |
+| `src/slipway/halts.py` | The seven halt classes, each with its kind, the evidence keys it requires, and its needs you line. `Halt` refuses a class outside the set and missing evidence when it is built. |
 | `tests/unit/test_verify.py` | Every landing path and outcome on real git in temporary repositories, plus the `gitread` calls. |
 | `tests/unit/test_halts.py` | The set is exactly seven, each one is produced and renders its line, and the kinds split as KTD11 says. |
 
@@ -94,4 +94,4 @@ A verify halt is a wait: the workflow sits in `halted`, posts a failing landing 
 
 - `verify` imports `gitread`, `halts`, and `trackers.base` (for `TrackerStatus`). `gitread` imports `redact`. `halts` imports only the standard library. None of them imports `service`, `workflow`, or a surface (KTD23).
 - U9's `probe_landing` decides the landing path; U14 passes it in with the confirmed and tested commits from the build row, and the tracker status from the U8 adapter.
-- U14 turns the verdict into a transition: `landed` to `landed`; any halt, or `blocked` with the tracker status's `tracker_unreadable`, to `halted` with the needs you line on the `phactory/landing` check.
+- U14 turns the verdict into a transition: `landed` to `landed`; any halt, or `blocked` with the tracker status's `tracker_unreadable`, to `halted` with the needs you line on the `slipway/landing` check.

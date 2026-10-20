@@ -1,4 +1,4 @@
-# Phactory research: trace storage and evals (2026-10-14)
+# Slipway research: trace storage and evals (2026-10-14)
 
 Caveat: the sponsor page is first party. Most pricing and licence claims come from third party aggregators and a few official docs pages, and several conflict. Verify prices on vendor pages before committing.
 
@@ -64,8 +64,8 @@ Terms: OTel = OpenTelemetry, the standard wire format for sending traces. Span =
 
 ## Recommendation
 1. Adopt Langfuse (self hosted or Hobby cloud) as the trace store for stage one; send each task as an OTel trace, diff and transcript as span attributes.
-2. Keep the deterministic eval (gate passed, diff inside declared paths, named test exists) in Phactory code; it reads git and CI, no vendor knows those facts.
-3. Run the judged eval through Langfuse's custom judge, or a thin Phactory function (fresh model, rubric file, diff in, rubric JSON out) that writes its score back as a Langfuse score; both stay swappable.
+2. Keep the deterministic eval (gate passed, diff inside declared paths, named test exists) in Slipway code; it reads git and CI, no vendor knows those facts.
+3. Run the judged eval through Langfuse's custom judge, or a thin Slipway function (fresh model, rubric file, diff in, rubric JSON out) that writes its score back as a Langfuse score; both stay swappable.
 4. Do not build a trace folder or dashboard UI; do build the Claude Code session to OTel exporter, the tracker, git and CI landing verifier, and the builder and model comparison view keyed by builder name.
 5. Risk: Claude Code cloud transcripts may not expose every tool call over a clean API; test that capture first, because the store matters less than what you can ingest.
 

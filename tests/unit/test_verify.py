@@ -14,9 +14,9 @@ import pytest
 
 from _nonet import NetworkReached
 from _repo import make_repo
-from phactory import gitread, verify
-from phactory.halts import COMMIT_MISMATCH, GIT_UNREADABLE, MERGED_CARD_NOT_MOVED
-from phactory.trackers.base import TRACKER_UNREADABLE, TrackerStatus, skipped
+from slipway import gitread, verify
+from slipway.halts import COMMIT_MISMATCH, GIT_UNREADABLE, MERGED_CARD_NOT_MOVED
+from slipway.trackers.base import TRACKER_UNREADABLE, TrackerStatus, skipped
 
 DONE = TrackerStatus("Done", True)
 IN_PROGRESS = TrackerStatus("In progress", False)
@@ -31,10 +31,10 @@ class Landing:
         self.cache = gitread.cache_path(tmp_path / "home", "demo")
         self.baseline = self.repo.git("rev-parse", "HEAD")
         r = self.repo
-        r.git("checkout", "-q", "-b", "phactory/u13-demo")
+        r.git("checkout", "-q", "-b", "slipway/u13-demo")
         r.commit("src/a.py", "a = 1\n", "add a")
         self.confirmed = r.commit("src/b.py", "b = 2\n", "add b")
-        r.git("push", "-q", "origin", "phactory/u13-demo")
+        r.git("push", "-q", "origin", "slipway/u13-demo")
         r.git("checkout", "-q", "main")
         if behind:
             r.commit("other.txt", "someone else landed\n", "sibling card")
@@ -45,16 +45,16 @@ class Landing:
         """Merge the branch on main by method, push main, delete the branch."""
         r = self.repo
         if method == "merge":
-            r.git("merge", "-q", "--no-ff", "-m", "Merge pull request #7", "phactory/u13-demo")
+            r.git("merge", "-q", "--no-ff", "-m", "Merge pull request #7", "slipway/u13-demo")
         elif method == "squash":
-            r.git("merge", "-q", "--squash", "phactory/u13-demo")
+            r.git("merge", "-q", "--squash", "slipway/u13-demo")
             r.git("commit", "-q", "-m", "U13 demo (#7)")
         elif method == "rebase":
             # The host replays the commits with itself as committer, so the
             # replayed commits get new ids even when nothing landed meanwhile.
             os.environ["GIT_COMMITTER_DATE"] = "2001-01-01T00:00:00Z"
             try:
-                r.git("cherry-pick", "main..phactory/u13-demo")
+                r.git("cherry-pick", "main..slipway/u13-demo")
             finally:
                 del os.environ["GIT_COMMITTER_DATE"]
         else:
@@ -75,7 +75,7 @@ class Landing:
     def _push(self) -> str:
         r = self.repo
         r.git("push", "-q", "origin", "main")
-        r.git("push", "-q", "origin", ":phactory/u13-demo")
+        r.git("push", "-q", "origin", ":slipway/u13-demo")
         return r.git("rev-parse", "main")
 
     def verify(self, merged, status=DONE, path=verify.AUTO_MERGE_STRICT, **kw):
@@ -128,7 +128,7 @@ def test_queue_path_merged_differs_from_tested(tmp_path):
 def test_queue_path_tested_head_differs_from_confirmed(tmp_path):
     card = Landing(tmp_path)
     r = card.repo
-    r.git("checkout", "-q", "phactory/u13-demo")
+    r.git("checkout", "-q", "slipway/u13-demo")
     later = r.commit("src/c.py", "c = 3\n", "pushed after confirm")
     r.git("checkout", "-q", "main")
     merged = card.queue(head=later)
@@ -210,9 +210,9 @@ def test_unknown_commit_is_git_unreadable(tmp_path):
 
 def test_hand_landing_is_evidence_when_a_message_names_the_card(tmp_path):
     card = Landing(tmp_path)
-    card.repo.git("checkout", "-q", "phactory/u13-demo")
+    card.repo.git("checkout", "-q", "slipway/u13-demo")
     card.confirmed = card.repo.commit("src/d.py", "d = 4\n", "finish\n\nCloses #13")
-    card.repo.git("push", "-q", "origin", "phactory/u13-demo")
+    card.repo.git("push", "-q", "origin", "slipway/u13-demo")
     card.repo.git("checkout", "-q", "main")
     merged = card.land("rebase")
     v = card.verify(merged)

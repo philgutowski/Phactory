@@ -24,9 +24,9 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_package_imports():
-    import phactory
+    import slipway
 
-    assert phactory.__version__
+    assert slipway.__version__
 
 
 # The network guard.
@@ -84,7 +84,7 @@ _SKIPPING_SUITE = """
 import pytest
 
 def test_needs_database():
-    pytest.skip("PHACTORY_TEST_DSN is not set")
+    pytest.skip("SLIPWAY_TEST_DSN is not set")
 """
 
 
@@ -130,8 +130,8 @@ def test_fake_run_matches_longest_prefix_and_records_calls():
 # board item, is observed on the board when this card's branch is pushed with
 # the secret set. Here the workflow's own shell script runs against a fake gh.
 
-TEMPLATE = ROOT / "templates" / "phactory-board.yml"
-OWN_COPY = ROOT / ".github" / "workflows" / "phactory-board.yml"
+TEMPLATE = ROOT / "templates" / "slipway-board.yml"
+OWN_COPY = ROOT / ".github" / "workflows" / "slipway-board.yml"
 
 
 def _run_block(workflow: Path) -> str:
@@ -182,7 +182,7 @@ def _board(tmp_path, **env):
         "FAKE_GH_LOG": str(log),
         "GH_TOKEN": "token", "BOARD_OWNER": "owner", "BOARD_NUMBER": "11",
         "STATUS_FIELD": "Status", "IN_PROGRESS": "In progress", "IN_REVIEW": "In review",
-        "REPO": "owner/repo", "PR_BODY": "", "BRANCH": "phactory/u5-scaffold",
+        "REPO": "owner/repo", "PR_BODY": "", "BRANCH": "slipway/u5-scaffold",
         "EVENT_NAME": "create",
     }
     result = subprocess.run(
@@ -240,12 +240,12 @@ def test_pull_request_without_keyword_falls_back_to_branch(tmp_path):
 def test_missing_secret_is_a_notice_not_a_failure(tmp_path):
     result, calls = _board(tmp_path, GH_TOKEN="")
     assert result.returncode == 0
-    assert "PHACTORY_BOARD_TOKEN is not set" in result.stdout
+    assert "SLIPWAY_BOARD_TOKEN is not set" in result.stdout
     assert calls == []
 
 
 def test_unknown_branch_is_a_notice_not_a_failure(tmp_path):
-    result, calls = _board(tmp_path, BRANCH="phactory/no-card")
+    result, calls = _board(tmp_path, BRANCH="slipway/no-card")
     assert result.returncode == 0
     assert "no issue found" in result.stdout
     assert calls == []

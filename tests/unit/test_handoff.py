@@ -11,8 +11,8 @@ from pathlib import Path
 import pytest
 
 from _repo import make_repo
-from phactory.builders import base as base_module
-from phactory.builders.base import (
+from slipway.builders import base as base_module
+from slipway.builders.base import (
     BUILDER_FAILED,
     PRIMITIVES,
     PROTOCOL_MEMBERS,
@@ -26,16 +26,16 @@ from phactory.builders.base import (
     SessionStatus,
     check_base,
 )
-from phactory.builders.handoff import (
+from slipway.builders.handoff import (
     IN_FLIGHT_STATES,
     TOOLS,
     InFlightBuild,
     in_flight_files,
     render,
 )
-from phactory.config.project import parse_project
-from phactory.records.queries import IN_FLIGHT_STATES as RECORDS_IN_FLIGHT_STATES
-from phactory.trackers.base import Card, ClosingReference
+from slipway.config.project import parse_project
+from slipway.records.queries import IN_FLIGHT_STATES as RECORDS_IN_FLIGHT_STATES
+from slipway.trackers.base import Card, ClosingReference
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = ROOT / "tests" / "fixtures"
@@ -43,10 +43,10 @@ GOLDEN = FIXTURES / "handoff" / "EX-12.txt"
 EXPLAINER = ROOT / "docs" / "explainers" / "u11-builder-contract.md"
 
 BASE = "0123456789abcdef0123456789abcdef01234567"
-BRANCH = "phactory/EX-12-hello-page"
+BRANCH = "slipway/EX-12-hello-page"
 RULES = "Write tests first.\nKeep each function under forty lines."
 BODY = (
-    "Add a hello page that greets the visitor by name.\n\n```phactory\n"
+    "Add a hello page that greets the visitor by name.\n\n```slipway\n"
     '{"good": "The hello page renders the visitor\'s name.", '
     '"paths": ["src/hello.py", "tests/test_hello.py"], '
     '"test": "tests/test_hello.py", "lane": "cloud"}\n```\n'
@@ -92,7 +92,7 @@ def test_the_sections_come_in_the_fixed_order(project):
     text = rendered(project).text
     marks = ["1. Base: " + BASE, "2. Branch: " + BRANCH, "3. Rules:", "4. Tools:",
              "5. Files other in flight builds", "6. Done:", "7. Credential:",
-             "8. Side reference: refs/phactory/log/EX-12", "The card:"]
+             "8. Side reference: refs/slipway/log/EX-12", "The card:"]
     places = [text.index(mark) for mark in marks]
     assert places == sorted(places)
     assert text.index(RULES.splitlines()[0]) < places[3]
@@ -112,7 +112,7 @@ def test_no_credential_value_or_variable_name_appears(project, monkeypatch):
 def test_the_handoff_fields_carry_what_the_adapter_needs(project):
     handoff = rendered(project)
     assert handoff.base == BASE and handoff.branch == BRANCH
-    assert handoff.side_reference == "refs/phactory/log/EX-12"
+    assert handoff.side_reference == "refs/slipway/log/EX-12"
     assert handoff.tools == TOOLS
     assert handoff.in_flight == ("src/footer.py", "src/nav.py")
     assert "Write tests first." in handoff.rules
@@ -144,9 +144,9 @@ def test_no_in_flight_files_and_no_machine_bound_tests(project):
 
 def test_a_branch_without_the_trackers_branch_token_is_refused(project):
     with pytest.raises(ValueError, match="EX-12"):
-        rendered(project, branch="phactory/hello-page")
-    assert rendered(project, branch="phactory/hello-page", closing=ClosingReference(
-        body_line="Closes #12")).branch == "phactory/hello-page"
+        rendered(project, branch="slipway/hello-page")
+    assert rendered(project, branch="slipway/hello-page", closing=ClosingReference(
+        body_line="Closes #12")).branch == "slipway/hello-page"
 
 
 def test_a_missing_base_is_refused(project):
@@ -204,7 +204,7 @@ def result(commit):
 def repo(tmp_path):
     repo = make_repo(tmp_path)
     base = repo.git("rev-parse", "HEAD")
-    repo.git("checkout", "-q", "-b", "phactory/EX-12-hello-page")
+    repo.git("checkout", "-q", "-b", "slipway/EX-12-hello-page")
     good = repo.commit("hello.py", "print('hello')\n", "hello")
     repo.git("checkout", "-q", "--orphan", "stray")
     stray = repo.commit("stray.py", "x = 1\n", "stray")
