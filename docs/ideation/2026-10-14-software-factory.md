@@ -1,4 +1,4 @@
-# Phactory: the software factory
+# Slipway: the software factory
 
 Created: 2026-10-14
 Status: ideation for a new system. It does not exist yet. Nothing here is built.
@@ -130,8 +130,8 @@ model, given the definition of good and the diff, returning a rubric result).
 
 - The eval runs after landing and is informational. It never blocks a landing while the grader
   is young.
-- The name is Phactory, chosen 2026-10-14 before any code. It is a word a customer will hear.
-- Phactory starts as a fresh repository. Modules from the two earlier systems that are generic
+- The name is Slipway, chosen 2026-10-14 before any code. It is a word a customer will hear.
+- Slipway starts as a fresh repository. Modules from the two earlier systems that are generic
   and already verified are lifted as files when a unit needs them, the way the runner was
   itself forked. From the runner: the tracker adapters, verify landed, the lease. From the
   lanes script: the land path (scratch join with its own environment, gate, fast forward to the

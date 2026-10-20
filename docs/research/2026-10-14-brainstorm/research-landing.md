@@ -33,7 +33,7 @@ Mergify [7]
 - Adds over GitHub native: rules engine, conditions, auto merge. Verdict: NOT FOR THIS (duplicates native queue; GitHub only).
 
 Graphite merge queue [9]
-- Stack aware queue, GitHub only, no Bitbucket evidence. Price disagrees across 3p: $18 to $40 per user per month; advanced queue features reported Enterprise only. Stacking is not Phactory's model (one PR per card).
+- Stack aware queue, GitHub only, no Bitbucket evidence. Price disagrees across 3p: $18 to $40 per user per month; advanced queue features reported Enterprise only. Stacking is not Slipway's model (one PR per card).
 - Verdict: NOT FOR THIS.
 
 Aviator MergeQueue [10]
@@ -61,9 +61,9 @@ GitHub queue plan limits and add-to-queue API (GraphQL enqueuePullRequest is not
 ## Recommendation (5 lines)
 1. The "serialise, test the merge result, merge the verified commit, auto on green" core is a native queue on each host: GitHub merge queue and Bitbucket Cloud merge queues. Do not build a queue; configure one per repo.
 2. Card moved on merge is a stock Jira rule (Pull request merged) or GitHub Projects/Linear workflow, no code. Enforce issue key in PR title at push time.
-3. Phactory still builds: verify landed from both sides (git shows exact sha on main AND tracker status), since rules fail silently on a missing key.
+3. Slipway still builds: verify landed from both sides (git shows exact sha on main AND tracker status), since rules fail silently on a missing key.
 4. Still to build: the cross-builder lease and one-pusher rule before PRs reach the host queue (native queues serialise per branch, not per builder), plus the gate-on-production-like machine (queue calls your CI) and the needs-you queue (human approval waits, red gates, unfired rules).
-5. Check first: whether the native queues merge the exact tested sha and have an enqueue API, since Phactory's "never re-merge" rule depends on it. Skip Mergify, Graphite, Aviator, Trunk: GitHub only, and no sponsor overlap.
+5. Check first: whether the native queues merge the exact tested sha and have an enqueue API, since Slipway's "never re-merge" rule depends on it. Skip Mergify, Graphite, Aviator, Trunk: GitHub only, and no sponsor overlap.
 
 ## Sources
 [1] https://ai.engineer/nyc

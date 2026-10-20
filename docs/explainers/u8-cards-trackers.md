@@ -1,14 +1,14 @@
 # U8 explainer: card contract and tracker adapters
 
-A card is one unit of work filed on a project's tracker. Phactory needs four things from a tracker: which cards are ready to build, what one card says, whether a card is done, and what a pull request must carry so the tracker's own automation finds the card. This card builds the code that answers those four questions for GitHub Projects and Jira, and the parser for the block a card carries in its body.
+A card is one unit of work filed on a project's tracker. Slipway needs four things from a tracker: which cards are ready to build, what one card says, whether a card is done, and what a pull request must carry so the tracker's own automation finds the card. This card builds the code that answers those four questions for GitHub Projects and Jira, and the parser for the block a card carries in its body.
 
 ## Words used below
 
 - **Tracker.** Where a project's cards live. Here, a GitHub Projects board or a Jira project.
-- **Adapter.** A class that hides one tracker behind a shared set of methods, so the rest of Phactory never knows which tracker it is reading.
+- **Adapter.** A class that hides one tracker behind a shared set of methods, so the rest of Slipway never knows which tracker it is reading.
 - **Board column.** On GitHub Projects, the value of a card's single select Status field. On Jira, the card's workflow status.
 - **Lane label.** The label that says who builds a card, such as `cloud` (R9). A project dispatches only cards carrying its own lane label.
-- **phactory block.** A fenced code block in the card body, opened with three backticks and the word `phactory`, holding a JSON object with `good`, `paths`, `test`, and `lane` (KTD5).
+- **slipway block.** A fenced code block in the card body, opened with three backticks and the word `slipway`, holding a JSON object with `good`, `paths`, `test`, and `lane` (KTD5).
 - **Ready rule.** The test a card must pass before dispatch may pick it up.
 - **Closing reference.** The text a pull request carries in its title, body, or branch name so the tracker links it to the card and moves the card when it merges.
 - **Transport.** The thing that actually talks to the tracker: the `gh` command line tool for GitHub, an HTTP opener from `urllib` for Jira.
@@ -21,20 +21,20 @@ A card is one unit of work filed on a project's tracker. Phactory needs four thi
 
 | File | What it does |
 |:-|:-|
-| `src/phactory/cards/contract.py` | `parse(body)` reads the phactory block into a `Block` (good, paths, test, lane, what is absent, or an error). `ready(card, project, other_lanes)` applies the ready rule and returns a `Readiness` with a reason when someone must act. |
-| `src/phactory/trackers/base.py` | The shapes every adapter returns: `Card`, `TrackerStatus`, `ClosingReference`, the `skipped` helper, `TRACKER_UNREADABLE`, the network timeout, and `INTERFACE`, the only public methods an adapter may have. |
-| `src/phactory/trackers/github.py` | `GitHubTracker`, derived from native-relay's GitHub adapter. Reads through `gh`, injected as `run`. Never lists a board. |
-| `src/phactory/trackers/jira.py` | `JiraTracker`, derived from native-relay's Jira adapter. Reads the Jira REST API through `urllib`, injected as `opener`, with the credential from `resolve_tracker_credential` (U6). |
+| `src/slipway/cards/contract.py` | `parse(body)` reads the slipway block into a `Block` (good, paths, test, lane, what is absent, or an error). `ready(card, project, other_lanes)` applies the ready rule and returns a `Readiness` with a reason when someone must act. |
+| `src/slipway/trackers/base.py` | The shapes every adapter returns: `Card`, `TrackerStatus`, `ClosingReference`, the `skipped` helper, `TRACKER_UNREADABLE`, the network timeout, and `INTERFACE`, the only public methods an adapter may have. |
+| `src/slipway/trackers/github.py` | `GitHubTracker`, derived from native-relay's GitHub adapter. Reads through `gh`, injected as `run`. Never lists a board. |
+| `src/slipway/trackers/jira.py` | `JiraTracker`, derived from native-relay's Jira adapter. Reads the Jira REST API through `urllib`, injected as `opener`, with the credential from `resolve_tracker_credential` (U6). |
 | `tests/unit/test_contract.py` | The block parser and the ready rule. |
 | `tests/unit/test_trackers.py` | Both adapters against fixtures, the board listing ban, the budget skip, the network guard, and the import rule for these two packages. |
 | `tests/fixtures/tracker/` | The six native-relay fixtures, unchanged, plus six new ones for labels, the per issue membership answer, the rate limited answer, and a ready search. |
 
 ## The card contract
 
-The block parser looks for exactly one fenced block whose info string is `phactory`:
+The block parser looks for exactly one fenced block whose info string is `slipway`:
 
 ````
-```phactory
+```slipway
 {"good": "The page renders.", "paths": ["src/page.py"], "test": "tests/test_page.py", "lane": "cloud"}
 ```
 ````

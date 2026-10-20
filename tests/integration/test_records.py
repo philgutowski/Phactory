@@ -1,4 +1,4 @@
-"""U7 test scenarios against the local Postgres named by PHACTORY_TEST_DSN.
+"""U7 test scenarios against the local Postgres named by SLIPWAY_TEST_DSN.
 
 Each test gets its own schema (a namespace of tables inside the database),
 with the connection's search_path pointing at it, applies the migrations
@@ -16,14 +16,14 @@ import psycopg
 import pytest
 from psycopg import errors
 
-from phactory.records import migrate, queries, store
+from slipway.records import migrate, queries, store
 
 
 @pytest.fixture
 def connect():
-    dsn = os.environ.get("PHACTORY_TEST_DSN", "")
+    dsn = os.environ.get("SLIPWAY_TEST_DSN", "")
     if not dsn:
-        pytest.skip("PHACTORY_TEST_DSN is not set")
+        pytest.skip("SLIPWAY_TEST_DSN is not set")
     schema = f"t_{uuid.uuid4().hex[:12]}"
     # A database made by initdb under the C locale is SQL_ASCII, and psycopg
     # then returns text as bytes. Asking for UTF8 on the client side makes
@@ -118,8 +118,8 @@ def test_wrong_database_is_refused(connect):
 def test_dispatched_then_building_records_two_transitions(conn, project):
     build = store.claim(conn, project, "C-1", "watch").build_id
     first = store.record_transition(conn, build, "claimed", "dispatched", "watch",
-                                    evidence={"branch": "phactory/c-1"},
-                                    claims={"branch": "phactory/c-1"})
+                                    evidence={"branch": "slipway/c-1"},
+                                    claims={"branch": "slipway/c-1"})
     second = store.record_transition(conn, build, "dispatched", "building", "worker")
     assert (first.seq, second.seq) == (1, 2)
     rows = conn.execute("SELECT seq, from_state, to_state, actor FROM transitions "
@@ -127,7 +127,7 @@ def test_dispatched_then_building_records_two_transitions(conn, project):
     assert rows == [(1, "claimed", "dispatched", "watch"), (2, "dispatched", "building", "worker")]
     state, branch = conn.execute("SELECT state, branch FROM builds WHERE id = %s",
                                  (build,)).fetchone()
-    assert (state, branch) == ("building", "phactory/c-1")
+    assert (state, branch) == ("building", "slipway/c-1")
 
 
 def test_edge_not_allowed_is_refused_by_the_database(conn, project):

@@ -3,7 +3,7 @@ requires = ["setuptools>=69"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "phactory"
+name = "slipway"
 version = "0.0.0"
 description = "The landing and grading authority between coding agent builders and a customer's repository."
 readme = "README.md"
@@ -24,7 +24,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 # The migration files ship inside the package beside migrate.py.
-phactory = ["records/schema/*.sql"]
+slipway = ["records/schema/*.sql"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -35,7 +35,7 @@ pythonpath = ["src", "tests"]
 # _gate turns a skipped integration test into a failure when CI is set.
 addopts = "-p _nonet -p _gate -p pytester"
 markers = [
-    "integration: needs the local Postgres named by PHACTORY_TEST_DSN",
+    "integration: needs the local Postgres named by SLIPWAY_TEST_DSN",
 ]
 
 [tool.ruff]

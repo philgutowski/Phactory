@@ -4,7 +4,7 @@ import dataclasses
 
 import pytest
 
-from phactory.redact import MARK, TOKEN_PATTERNS, find_token, refusal_record, scrub
+from slipway.redact import MARK, TOKEN_PATTERNS, find_token, refusal_record, scrub
 
 INJECTED = "s3cr3t/value+with=symbols"
 

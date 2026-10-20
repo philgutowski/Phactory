@@ -1,0 +1,106 @@
+# Slipway board status workflow (KTD27).
+#
+# A project adopts this file by copying it to .github/workflows/ in its own
+# repository. It moves a card's GitHub Projects item to "In progress" when a
+# branch for the card is created and to "In review" when the card's pull
+# request opens. GitHub Projects' own built in workflow moves the item to
+# "Done" when the issue closes on merge, so this file does not.
+#
+# The adopting project supplies, as repository settings, never as edits here:
+#   secret   SLIPWAY_BOARD_TOKEN   a token that can read issues and write the project
+#   variable SLIPWAY_BOARD_NUMBER  the project number, as in /users/<owner>/projects/<number>
+#   variable SLIPWAY_BOARD_OWNER   the project owner; the repository owner when unset
+# With the secret or the number missing the job prints a notice and passes,
+# so a repository that has not finished setup is never blocked by this file.
+#
+# Finding the card's issue:
+#   1. On pull_request, a closing keyword in the body ("Closes #8") names the
+#      issue. It comes first because it is the same link GitHub uses to close
+#      the issue on merge, so the board and the close always agree.
+#   2. Otherwise, and always on create (a branch has no body), the branch name
+#      slipway/u<n>-<slug> maps to the open issue titled "U<n>: ...". The
+#      branch carries the card token, not the issue number, because the branch
+#      is named before anyone reads the issue number back.
+# No issue found is a notice, not a failure.
+
+name: slipway-board
+
+on:
+  create:
+  pull_request:
+    types: [opened]
+
+permissions:
+  contents: read
+
+jobs:
+  board:
+    if: >-
+      (github.event_name == 'create' && github.ref_type == 'branch'
+        && startsWith(github.ref_name, 'slipway/'))
+      || (github.event_name == 'pull_request'
+        && startsWith(github.head_ref, 'slipway/'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Move the card's board item
+        env:
+          GH_TOKEN: ${{ secrets.SLIPWAY_BOARD_TOKEN }}
+          BOARD_OWNER: ${{ vars.SLIPWAY_BOARD_OWNER || github.repository_owner }}
+          BOARD_NUMBER: ${{ vars.SLIPWAY_BOARD_NUMBER }}
+          STATUS_FIELD: ${{ vars.SLIPWAY_BOARD_STATUS_FIELD || 'Status' }}
+          IN_PROGRESS: ${{ vars.SLIPWAY_BOARD_IN_PROGRESS || 'In progress' }}
+          IN_REVIEW: ${{ vars.SLIPWAY_BOARD_IN_REVIEW || 'In review' }}
+          EVENT_NAME: ${{ github.event_name }}
+          BRANCH: ${{ github.event_name == 'create' && github.ref_name || github.head_ref }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::notice::SLIPWAY_BOARD_TOKEN is not set, board not moved"
+            exit 0
+          fi
+          if [ -z "${BOARD_NUMBER:-}" ]; then
+            echo "::notice::SLIPWAY_BOARD_NUMBER is not set, board not moved"
+            exit 0
+          fi
+          if [ "$EVENT_NAME" = "create" ]; then
+            target="$IN_PROGRESS"
+          else
+            target="$IN_REVIEW"
+          fi
+
+          issue=""
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            keyword='(close[sd]?|fix(e[sd])?|resolve[sd]?)[[:space:]]+#[0-9]+'
+            issue=$(printf '%s\n' "${PR_BODY:-}" | grep -oiE "$keyword" | head -n 1 \
+              | grep -oE '[0-9]+' || true)
+          fi
+          if [ -z "$issue" ] && [[ "$BRANCH" =~ ^slipway/[uU]([0-9]+)- ]]; then
+            prefix="U${BASH_REMATCH[1]}:"
+            issue=$(gh issue list -R "$REPO" -s open -L 100 -S "U${BASH_REMATCH[1]} in:title" \
+              --json number,title \
+              | jq -r --arg p "$prefix" '[.[] | select(.title | startswith($p))][0].number // empty')
+          fi
+          if [ -z "$issue" ]; then
+            echo "::notice::no issue found for branch $BRANCH, board not moved"
+            exit 0
+          fi
+
+          url="https://github.com/$REPO/issues/$issue"
+          project_id=$(gh project view "$BOARD_NUMBER" --owner "$BOARD_OWNER" --format json \
+            | jq -r '.id')
+          item_id=$(gh project item-add "$BOARD_NUMBER" --owner "$BOARD_OWNER" --url "$url" \
+            --format json | jq -r '.id')
+          fields=$(gh project field-list "$BOARD_NUMBER" --owner "$BOARD_OWNER" --format json)
+          field_id=$(printf '%s' "$fields" \
+            | jq -r --arg f "$STATUS_FIELD" '.fields[] | select(.name == $f) | .id')
+          option_id=$(printf '%s' "$fields" | jq -r --arg f "$STATUS_FIELD" --arg o "$target" \
+            '.fields[] | select(.name == $f) | .options[] | select(.name == $o) | .id')
+          if [ -z "$field_id" ] || [ -z "$option_id" ]; then
+            echo "::error::project $BOARD_NUMBER has no $STATUS_FIELD option named $target"
+            exit 1
+          fi
+          gh project item-edit --id "$item_id" --project-id "$project_id" \
+            --field-id "$field_id" --single-select-option-id "$option_id"
+          echo "::notice::issue #$issue moved to $target"

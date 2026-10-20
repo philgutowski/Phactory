@@ -15,15 +15,15 @@ U11 wrote the contract every builder adapter implements. This card writes the se
 - **Credential helper.** A small program git asks for a username and password when it needs them. Here it is a shell function that prints the contents of a token file, so the token is never in a URL or on a command line.
 - **Hatchet worker.** A process that connects out to the Hatchet engine and runs the tasks the engine hands it. A worker label is a name the worker registers under; a task that asks for a label only goes to a worker with it.
 - **launchd, plist.** launchd is the macOS service supervisor. A plist is the XML file that tells it what to run, as which user, and to restart it when it exits.
-- **Session reference.** The adapter's name for one session. Here it is also the container name, `phactory-<card key>-<8 random hex>`.
+- **Session reference.** The adapter's name for one session. Here it is also the container name, `slipway-<card key>-<8 random hex>`.
 
 ## What each file does
 
 | File | What it does |
 |:-|:-|
-| `src/phactory/builders/cli.py` | `ContainerBuilder` (one container per card, `remote_session`), `LaptopBuilder` (a session as a second user, `worker_process`), `laptop_build` (the body of the laptop child task), `worker_label` (routing), `map_transcript` (transcript to shape records), `scrub_record`, and `push_side_reference` (the one writer of the build's log commit). |
+| `src/slipway/builders/cli.py` | `ContainerBuilder` (one container per card, `remote_session`), `LaptopBuilder` (a session as a second user, `worker_process`), `laptop_build` (the body of the laptop child task), `worker_label` (routing), `map_transcript` (transcript to shape records), `scrub_record`, and `push_side_reference` (the one writer of the build's log commit). |
 | `deploy/builder.Dockerfile` | The builder image: a base image, git, the CLI at a pinned version, and a non root user. Every value is a build argument. |
-| `deploy/laptop/com.phactory.worker.plist` | The launchd job that keeps the laptop's Hatchet worker running as its dedicated user. |
+| `deploy/laptop/com.slipway.worker.plist` | The launchd job that keeps the laptop's Hatchet worker running as its dedicated user. |
 | `tests/unit/test_cli_builder.py` | The card's test scenarios, plus the mapper, the side reference, the deploy files, and the import rule. |
 
 ## How a session starts in the container
@@ -40,7 +40,7 @@ U11 wrote the contract every builder adapter implements. This card writes the se
 | `--read-only`, `--tmpfs /tmp` | nothing outside the workspace and `/tmp` can be written |
 | `--network` | the isolated builder network; `host`, `bridge`, and `default` are refused |
 | `--cap-drop ALL`, `--security-opt no-new-privileges` | no Linux capabilities, no privilege gain |
-| mounts | `workspace/` at `/workspace`, `run/` at `/run/phactory` read only. No Docker socket. |
+| mounts | `workspace/` at `/workspace`, `run/` at `/run/slipway` read only. No Docker socket. |
 | `--env NAME=value` | every non secret value the session script reads |
 | `--env CLAUDE_CODE_OAUTH_TOKEN` (or `ANTHROPIC_API_KEY`) | the name only. Docker copies the value from its own client environment, which the adapter sets for that one call, so the token is never on a command line where `ps` would show it. |
 
@@ -60,7 +60,7 @@ The laptop runs a Hatchet worker as a dedicated user with its own home. That use
 sudo --non-interactive --user <session user> --preserve-env=<the session's own names> -- /bin/sh -c SESSION_SCRIPT
 ```
 
-The environment it passes is built from nothing: `PATH`, the session's variables, and the account token. The worker's own variables (a database URL, `HATCHET_CLIENT_TOKEN`, `PHACTORY_HOME`) are never copied. `start` blocks until the session exits, which is what `worker_process` means; a background thread refreshes the token file while it waits. The token file is mode 640 here, because the session user reads it through the group it shares with the worker user.
+The environment it passes is built from nothing: `PATH`, the session's variables, and the account token. The worker's own variables (a database URL, `HATCHET_CLIENT_TOKEN`, `SLIPWAY_HOME`) are never copied. `start` blocks until the session exits, which is what `worker_process` means; a background thread refreshes the token file while it waits. The token file is mode 640 here, because the session user reads it through the group it shares with the worker user.
 
 `laptop_build(builder, handoff, binding, credential)` is the body of the `laptop_build` child task that U14 registers. It runs one session and returns a `LaptopReturn`: the `BuilderResult`, the already scrubbed transcript, and the count of skipped lines, all plain JSON so Hatchet can carry them. It then releases the session. The parent on the VPS writes every record and the side reference from what came back.
 
@@ -74,20 +74,20 @@ Operator setup the code assumes (recorded here because no code can check it from
 
 ## How the worker is supervised on the laptop
 
-`deploy/laptop/com.phactory.worker.plist` is a launch daemon, so it runs without anyone logged in. It carries no comment, because an XML comment is written with two hyphens, and no value except its own label: the user name is a placeholder replaced at install. Install it with:
+`deploy/laptop/com.slipway.worker.plist` is a launch daemon, so it runs without anyone logged in. It carries no comment, because an XML comment is written with two hyphens, and no value except its own label: the user name is a placeholder replaced at install. Install it with:
 
 ```sh
-sudo cp deploy/laptop/com.phactory.worker.plist /Library/LaunchDaemons/
-sudo plutil -replace UserName -string <worker user> /Library/LaunchDaemons/com.phactory.worker.plist
-sudo launchctl bootstrap system /Library/LaunchDaemons/com.phactory.worker.plist
+sudo cp deploy/laptop/com.slipway.worker.plist /Library/LaunchDaemons/
+sudo plutil -replace UserName -string <worker user> /Library/LaunchDaemons/com.slipway.worker.plist
+sudo launchctl bootstrap system /Library/LaunchDaemons/com.slipway.worker.plist
 ```
 
-It runs `/bin/sh`, which loads `$HOME/.phactory-worker.env` (mode 600, owned by the worker user) and starts `$PHACTORY_WORKER_COMMAND`, appending its output to `$HOME/Library/Logs/phactory-worker.log`. The environment file sets:
+It runs `/bin/sh`, which loads `$HOME/.slipway-worker.env` (mode 600, owned by the worker user) and starts `$SLIPWAY_WORKER_COMMAND`, appending its output to `$HOME/Library/Logs/slipway-worker.log`. The environment file sets:
 
 | Variable | What it is |
 |:-|:-|
-| `PHACTORY_WORKER_COMMAND` | the command that starts the Hatchet worker; U14 provides it |
-| `PHACTORY_WORKER_LABEL` | the label the operator file gives this worker |
+| `SLIPWAY_WORKER_COMMAND` | the command that starts the Hatchet worker; U14 provides it |
+| `SLIPWAY_WORKER_LABEL` | the label the operator file gives this worker |
 | `HATCHET_CLIENT_TOKEN` | this worker's own Hatchet token |
 | the account variable, the git credential variable | the two builder secrets |
 
@@ -146,9 +146,9 @@ a line that is not a JSON object             ->  skipped and counted, never fata
 
 Follow up #56 asks who writes the log commit. This adapter answers: the adapter is the one writer of the commit that closes a build. `push_side_reference` (called through `push_log` for a container, or by the parent with a `LaptopReturn` for the laptop) runs only git plumbing on a bare repository in the session directory, with hooks pointed at nothing, so no project code runs (KTD18):
 
-1. Read the tip of `refs/phactory/log/<key>` with `ls-remote`, and fetch it when there is one.
+1. Read the tip of `refs/slipway/log/<key>` with `ls-remote`, and fetch it when there is one.
 2. If that tip carries `actions.jsonl` (the builder's own action log, which the handoff asks it to push), carry it over, scrubbed.
-3. Write `trace.jsonl` (the scrubbed shape records) and `transcript.jsonl` (the scrubbed transcript) as blobs, make a tree of the files, and commit it with the tip as its parent and the message `phactory log <key> build <build id>`.
+3. Write `trace.jsonl` (the scrubbed shape records) and `transcript.jsonl` (the scrubbed transcript) as blobs, make a tree of the files, and commit it with the tip as its parent and the message `slipway log <key> build <build id>`.
 4. Push that commit to the reference. The token file it used is deleted when it is done.
 
 So the builder's own commit stays in the history, and the build's last commit always holds the full set.

@@ -4,7 +4,7 @@ Every adapter here is built with an injected transport: DispatchRun stands in
 for gh, FakeOpener for urllib's opener. Both answer from the JSON fixtures in
 tests/fixtures/tracker and refuse anything unrouted. The six fixtures named
 github_* and jira_* without a further suffix are native-relay's, unchanged;
-the others add what Phactory reads and the origin never did (labels, and the
+the others add what Slipway reads and the origin never did (labels, and the
 per issue project membership answer). The network guard (tests/_nonet.py) is
 loaded for every test, and two tests below prove it would catch an adapter
 built without its fake.
@@ -23,13 +23,13 @@ from pathlib import Path
 import pytest
 
 from _nonet import NetworkReached
-from phactory.config.bindings import BindingInvalid, resolve_tracker_credential
-from phactory.config.project import Tracker, load_project
-from phactory.trackers import github as github_module
-from phactory.trackers import jira as jira_module
-from phactory.trackers.base import INTERFACE, TRACKER_UNREADABLE, ClosingReference
-from phactory.trackers.github import GitHubTracker
-from phactory.trackers.jira import JiraTracker
+from slipway.config.bindings import BindingInvalid, resolve_tracker_credential
+from slipway.config.project import Tracker, load_project
+from slipway.trackers import github as github_module
+from slipway.trackers import jira as jira_module
+from slipway.trackers.base import INTERFACE, TRACKER_UNREADABLE, ClosingReference
+from slipway.trackers.github import GitHubTracker
+from slipway.trackers.jira import JiraTracker
 from test_imports import SRC, edges_of, layer
 
 TESTS = Path(__file__).resolve().parents[1]
@@ -52,11 +52,11 @@ def isolated_home(tmp_path, monkeypatch):
     user = tmp_path / "user"
     user.mkdir()
     monkeypatch.setenv("HOME", str(user))
-    root = tmp_path / "phactory"
+    root = tmp_path / "slipway"
     (root / "projects").mkdir(parents=True)
     shutil.copy(CONFIG / "operator.toml", root / "operator.toml")
     shutil.copy(CONFIG / "project.toml", root / "projects" / f"{SLUG}.toml")
-    monkeypatch.setenv("PHACTORY_HOME", str(root))
+    monkeypatch.setenv("SLIPWAY_HOME", str(root))
     return root
 
 
@@ -167,7 +167,7 @@ def test_github_read_returns_labels_from_the_fixture(github_project):
     assert card.labels == ("cloud", "docs")
     assert card.title == "Add the brief renderer"
     assert card.status == "OPEN"
-    assert "```phactory" in card.body
+    assert "```slipway" in card.body
     assert run.calls == [["gh", "issue", "view", "12", "--repo", "o/r",
                           "--json", "number,title,body,state,labels"]]
 
@@ -459,7 +459,7 @@ def test_cards_and_trackers_import_only_config_redact_and_each_other():
     root = SRC
     allowed = {"cards": {"cards"}, "trackers": {"trackers", "config", "redact"}}
     for package, may in allowed.items():
-        for path in sorted((root / "phactory" / package).rglob("*.py")):
+        for path in sorted((root / "slipway" / package).rglob("*.py")):
             for edge in edges_of(root, path):
                 assert layer(edge.imported) in may, str(edge)
 

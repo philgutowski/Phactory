@@ -5,16 +5,16 @@
 
 /.github/                   @philgutowski
 /deploy/                    @philgutowski
-/src/phactory/config/       @philgutowski
-/src/phactory/auth.py       @philgutowski
-/src/phactory/redact.py     @philgutowski
-/src/phactory/mcp/          @philgutowski
-/src/phactory/hosts/        @philgutowski
-/src/phactory/builders/     @philgutowski
-/src/phactory/trace/        @philgutowski
-/src/phactory/evals/        @philgutowski
-/src/phactory/onboard/      @philgutowski
-/src/phactory/runner/       @philgutowski
+/src/slipway/config/       @philgutowski
+/src/slipway/auth.py       @philgutowski
+/src/slipway/redact.py     @philgutowski
+/src/slipway/mcp/          @philgutowski
+/src/slipway/hosts/        @philgutowski
+/src/slipway/builders/     @philgutowski
+/src/slipway/trace/        @philgutowski
+/src/slipway/evals/        @philgutowski
+/src/slipway/onboard/      @philgutowski
+/src/slipway/runner/       @philgutowski
 
 # Not in KTD25's list: this file itself. Without this line an auto merged
 # change could delete the rule above without anyone reading it.

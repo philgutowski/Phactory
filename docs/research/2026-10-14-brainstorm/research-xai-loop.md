@@ -1,4 +1,4 @@
-# Research: does the xAI / SpaceX / Cursor family make Phactory redundant?
+# Research: does the xAI / SpaceX / Cursor family make Slipway redundant?
 Date 2026-10-14. ~15 searches/fetches. P = PRIMARY (vendor docs), T = THIRD PARTY, U = UNVERIFIED.
 Context: SpaceX merged xAI (Feb 2026, now "SpaceXAI") and closed the Cursor (Anysphere) purchase 2026-08-14 [T: 9, 10]. So one vendor family now owns Cursor agents, Grok Build, Grok Bot, and Origin (code host). Everything below is single-family; none is cross-vendor.
 
@@ -11,29 +11,29 @@ Stage key: card, dispatch, build, return, land, eval, trace, page, manager
 - parallel: one active run per agent (409 agent_busy); many agents allowed; no account-wide cap documented (U) [P: 1].
 - pricing: model API rates, spend limit, paid plan required [P: 2].
 - NOT covered: fixed handoff contract (rules, sibling-edit files, done line), merge queue entry, git/tracker landing verification, eval/rubric scoring, Langfuse export (U), cross-builder page, needs-you queue.
-- Verdict: ADAPTER (Cursor is a second builder behind Phactory's handoff; Bitbucket Cloud push makes it useful).
+- Verdict: ADAPTER (Cursor is a second builder behind Slipway's handoff; Bitbucket Cloud push makes it useful).
 
 ## 2. Cursor Automations
 - card: cron, webhook POST, GitHub/GitLab/Bitbucket Cloud events, Slack, Linear (created, status changed), Sentry, PagerDuty; runs cloud agents; service-account billing [P: 3]. Jira: not mentioned. Concurrency: not mentioned.
-- Covers card + dispatch inside Cursor only. Verdict: REPLACES A STAGE (card intake/dispatch for Cursor-only work); not for Phactory's tracker-agnostic handoff.
+- Covers card + dispatch inside Cursor only. Verdict: REPLACES A STAGE (card intake/dispatch for Cursor-only work); not for Slipway's tracker-agnostic handoff.
 
 ## 3. Cursor Bugbot
 - PR review on GitHub, GitLab, Bitbucket (incl. Data Center), Azure DevOps, Origin; usage billing; Autofix launches a Cloud Agent, Bitbucket supports commit-to-existing-branch only [P: 4].
-- Covers a review step after return. It is a reviewer, not a deterministic eval or cross-builder score. Verdict: ADAPTER-ish / optional review signal Phactory can read. Not a stage replacement.
+- Covers a review step after return. It is a reviewer, not a deterministic eval or cross-builder score. Verdict: ADAPTER-ish / optional review signal Slipway can read. Not a stage replacement.
 
 ## 4. Grok Build (CLI)
 - build: terminal coding agent, plan mode, subagents; headless `grok -p` with JSON/stream-JSON, ACP, `--permission-mode dontAsk`, strict sandbox, XAI_API_KEY for CI [P: 5, 6]. Reported worktree subagents, up to 8 (T: 11).
 - Scheduled prompts: /loop, 50 tasks, 7-day expiry, only while a session is alive (P: 5 search snippet; hosted runtime not documented).
 - git host / tracker / PR / merge queue / eval / trace export: not on overview page [P: 7] (U). Enterprise page names "telemetry/OpenTelemetry, hosted/cloud agents" as features but gives no detail [P: 8] (U, worth a follow-up fetch).
-- Verdict: ADAPTER. A headless CLI Phactory can run in its own sandbox, like any builder. This matches the existing board-lanes use of Grok agents.
+- Verdict: ADAPTER. A headless CLI Slipway can run in its own sandbox, like any builder. This matches the existing board-lanes use of Grok agents.
 
 ## 5. Grok Bot (SpaceXAI, runs on Cursor plans)
 - Persistent cloud computer per user, multiple Bots in parallel, work continues with laptop closed; routines (50 per Bot, 20 run records kept), triggers from Slack/GitHub events; no API documented [P: 9b, 10b]. Coding agents, Linear, Jira, Bitbucket: not covered.
-- Covers personal-assistant "manager agent" territory loosely. Verdict: NOT FOR THIS (no API, so not drivable by Phactory; not a loop).
+- Covers personal-assistant "manager agent" territory loosely. Verdict: NOT FOR THIS (no API, so not drivable by Slipway; not a loop).
 
 ## 6. xAI API: Remote MCP tool
 - Responses API tool type "mcp": Grok calls your MCP server over streaming HTTP/SSE; allowed_tools, headers; require_approval unsupported [P: 11b]. This is a tool-calling feature of a model, not an agent runtime.
-- Search found no xAI managed agent runtime, hosted task API, or "Grok Code" agent beyond Grok Build [searches 3, 5]. Verdict: NOT FOR THIS, except that a Phactory manager agent could use Grok models with MCP (surface, not a stage).
+- Search found no xAI managed agent runtime, hosted task API, or "Grok Code" agent beyond Grok Build [searches 3, 5]. Verdict: NOT FOR THIS, except that a Slipway manager agent could use Grok models with MCP (surface, not a stage).
 
 ## 7. Origin (Cursor/SpaceX code host, beta, launched 2026-08-17)
 - Mirrors GitHub repos, pushes still go to GitHub; PRs, checks, merge function, agent-assisted conflict and CI-fix claimed [T: 12]. Merge queue: not found (U). Cursor has published no Origin data-retention or export terms [T: 12].
@@ -53,7 +53,7 @@ Stage key: card, dispatch, build, return, land, eval, trace, page, manager
 None verifies landing from git+tracker, scores with eval+rubric, runs more than one vendor, or records per-step actors. Every product trusts its own agent's finish.
 
 ## Verdict
-INVALIDATES PHACTORY: no. No product does card in to verified merge out, scored, across vendors. The family is single-vendor by design and its incentive is lock-in.
+INVALIDATES SLIPWAY: no. No product does card in to verified merge out, scored, across vendors. The family is single-vendor by design and its incentive is lock-in.
 REPLACES A STAGE: Cursor Automations replaces card intake plus dispatch for Cursor-only, GitHub/Linear/Bitbucket work. Bugbot overlaps an optional review signal.
 ADAPTER: Cursor Cloud Agents (Bitbucket Cloud ready), Grok Build headless.
 NOT FOR THIS: Grok Bot, xAI remote MCP, Origin (today).
@@ -61,8 +61,8 @@ NOT FOR THIS: Grok Bot, xAI remote MCP, Origin (today).
 ## Recommendation (5 lines)
 1. Proceed; the cross-vendor verify, eval and compare layer is the gap nobody in this family fills.
 2. Build the Cursor Cloud adapter second: POST /v1/agents with repos[].url and startingRef, poll the run, read the pushed cursor/ branch from git, not the reply.
-3. Treat Grok Build `grok -p` as a third adapter inside Phactory's own sandbox; fetch the enterprise telemetry/hosted-agents detail before committing.
-4. Do not build intake that duplicates Automations for Cursor-only users; keep Phactory's card reader tracker-native and the fixed handoff as the contract.
+3. Treat Grok Build `grok -p` as a third adapter inside Slipway's own sandbox; fetch the enterprise telemetry/hosted-agents detail before committing.
+4. Do not build intake that duplicates Automations for Cursor-only users; keep Slipway's card reader tracker-native and the fixed handoff as the contract.
 5. Re-check in 60 days: Cursor v1 webhooks, a transcript endpoint, Origin merge queue, any Grok hosted runtime. Any of them could narrow the adapter work, not the verify/eval value.
 
 ## Sources

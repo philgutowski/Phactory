@@ -1,8 +1,8 @@
-"""The KTD23 dependency rule, checked against src/phactory.
+"""The KTD23 dependency rule, checked against src/slipway.
 
-A layer is the first name under phactory: phactory.mcp.server is in layer
-mcp, phactory.cli is in layer cli. The walk reads every .py file under
-src/phactory with the ast module (it never imports them, so nothing under
+A layer is the first name under slipway: slipway.mcp.server is in layer
+mcp, slipway.cli is in layer cli. The walk reads every .py file under
+src/slipway with the ast module (it never imports them, so nothing under
 test runs), resolves each import statement, relative ones included, to a
 module name, and checks each edge (importer, imported) against the rules
 below. A forbidden edge is reported as "importer -> imported" with the file
@@ -39,7 +39,7 @@ class Edge:
 
 def layer(module: str) -> str | None:
     parts = module.split(".")
-    if parts[0] != "phactory" or len(parts) < 2:
+    if parts[0] != "slipway" or len(parts) < 2:
         return None
     return parts[1]
 
@@ -66,9 +66,9 @@ def edges_of(root: Path, path: Path) -> list[Edge]:
                 stem = ".".join([*base, node.module] if node.module else base)
             else:
                 stem = node.module or ""
-            # "from phactory import workflow" imports the workflow layer, so
+            # "from slipway import workflow" imports the workflow layer, so
             # the name joins the stem only when the stem is the root package.
-            if stem == "phactory":
+            if stem == "slipway":
                 targets = [f"{stem}.{alias.name}" for alias in node.names]
             else:
                 targets = [stem]
@@ -79,13 +79,13 @@ def edges_of(root: Path, path: Path) -> list[Edge]:
 
 
 def walk(root: Path) -> list[Edge]:
-    """Every phactory to phactory import edge under root/phactory."""
-    return [e for p in sorted((root / "phactory").rglob("*.py")) for e in edges_of(root, p)]
+    """Every slipway to slipway import edge under root/slipway."""
+    return [e for p in sorted((root / "slipway").rglob("*.py")) for e in edges_of(root, p)]
 
 
 def layers_present(root: Path) -> set[str]:
     present = set()
-    for p in (root / "phactory").rglob("*.py"):
+    for p in (root / "slipway").rglob("*.py"):
         name = layer(module_name(root, p)[0])
         if name:
             present.add(name)
@@ -117,7 +117,7 @@ def _workflow_upward(src: str, dst: str) -> bool:
 
 
 def _machine_to_surface(src: str, dst: str) -> bool:
-    return src == "phactory.onboard.machine" and layer(dst) in SURFACES
+    return src == "slipway.onboard.machine" and layer(dst) in SURFACES
 
 
 RULES = [
@@ -136,7 +136,7 @@ def violations(root: Path, rules=RULES) -> list[str]:
 
 
 def test_walk_sees_the_package():
-    assert (SRC / "phactory" / "__init__.py").is_file()
+    assert (SRC / "slipway" / "__init__.py").is_file()
     assert walk(SRC) is not None
 
 
@@ -144,13 +144,13 @@ def test_walk_sees_the_package():
 def test_rule_holds(rule):
     present = layers_present(SRC)
     if rule.needs not in present:
-        pytest.skip(f"phactory.{rule.needs} does not exist yet")
+        pytest.skip(f"slipway.{rule.needs} does not exist yet")
     assert violations(SRC, [rule]) == []
 
 
 def _tree(tmp_path: Path, files: dict[str, str]) -> Path:
     root = tmp_path / "src"
-    for rel, text in {"phactory/__init__.py": "", **files}.items():
+    for rel, text in {"slipway/__init__.py": "", **files}.items():
         target = root / rel
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(text)
@@ -159,30 +159,30 @@ def _tree(tmp_path: Path, files: dict[str, str]) -> Path:
 
 def test_mcp_importing_workflow_is_named(tmp_path):
     root = _tree(tmp_path, {
-        "phactory/mcp/__init__.py": "",
-        "phactory/mcp/tools.py": "from phactory.workflow import card\n",
-        "phactory/workflow/__init__.py": "",
-        "phactory/workflow/card.py": "",
+        "slipway/mcp/__init__.py": "",
+        "slipway/mcp/tools.py": "from slipway.workflow import card\n",
+        "slipway/workflow/__init__.py": "",
+        "slipway/workflow/card.py": "",
     })
     found = violations(root)
-    assert any("phactory.mcp.tools -> phactory.workflow" in v for v in found), found
+    assert any("slipway.mcp.tools -> slipway.workflow" in v for v in found), found
     assert any(v.startswith("surfaces import") for v in found), found
 
 
 def test_relative_import_resolves(tmp_path):
     root = _tree(tmp_path, {
-        "phactory/mcp/__init__.py": "",
-        "phactory/mcp/tools.py": "from ..workflow import card\n",
-        "phactory/workflow/__init__.py": "",
+        "slipway/mcp/__init__.py": "",
+        "slipway/mcp/tools.py": "from ..workflow import card\n",
+        "slipway/workflow/__init__.py": "",
     })
-    assert any("phactory.mcp.tools -> phactory.workflow" in v for v in violations(root))
+    assert any("slipway.mcp.tools -> slipway.workflow" in v for v in violations(root))
 
 
 def test_allowed_edges_pass(tmp_path):
     root = _tree(tmp_path, {
-        "phactory/mcp/tools.py": "from phactory.service import status\nfrom . import audit\n",
-        "phactory/service/status.py": "import phactory.records.store\n",
-        "phactory/workflow/worker.py": "from phactory.workflow import card\n",
-        "phactory/onboard/machine.py": "from phactory import service\n",
+        "slipway/mcp/tools.py": "from slipway.service import status\nfrom . import audit\n",
+        "slipway/service/status.py": "import slipway.records.store\n",
+        "slipway/workflow/worker.py": "from slipway.workflow import card\n",
+        "slipway/onboard/machine.py": "from slipway import service\n",
     })
     assert violations(root) == []

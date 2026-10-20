@@ -18,7 +18,7 @@ import pytest
 
 from _fakes import FakeRun
 from _repo import git
-from phactory.builders.base import (
+from slipway.builders.base import (
     BUILDER_FAILED,
     RETURNED,
     RETURNED_EMPTY,
@@ -26,7 +26,7 @@ from phactory.builders.base import (
     Credential,
     Schedule,
 )
-from phactory.builders.cli import (
+from slipway.builders.cli import (
     CREDENTIAL_HELPER,
     PERMISSION_MODE,
     SESSION_SCRIPT,
@@ -42,12 +42,12 @@ from phactory.builders.cli import (
     scrub_record,
     worker_label,
 )
-from phactory.builders.handoff import render
-from phactory.config.bindings import BindingInvalid, ResolvedBinding
-from phactory.config.operator import Account, AccountKind, BuilderWorker, parse_operator
-from phactory.config.project import parse_project
-from phactory.redact import MARK
-from phactory.trace.shape import (
+from slipway.builders.handoff import render
+from slipway.config.bindings import BindingInvalid, ResolvedBinding
+from slipway.config.operator import Account, AccountKind, BuilderWorker, parse_operator
+from slipway.config.project import parse_project
+from slipway.redact import MARK
+from slipway.trace.shape import (
     ACTIONS_FILE,
     TRACE_FILE,
     TRANSCRIPT_FILE,
@@ -59,13 +59,13 @@ from phactory.trace.shape import (
     load_jsonl,
     trace_of,
 )
-from phactory.trackers.base import Card
+from slipway.trackers.base import Card
 from test_imports import SRC, edges_of, layer
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = ROOT / "tests" / "fixtures" / "config"
 DOCKERFILE = ROOT / "deploy" / "builder.Dockerfile"
-PLIST = ROOT / "deploy" / "laptop" / "com.phactory.worker.plist"
+PLIST = ROOT / "deploy" / "laptop" / "com.slipway.worker.plist"
 EXPLAINER = ROOT / "docs" / "explainers" / "u13-cli-builder.md"
 
 BASE = "0123456789abcdef0123456789abcdef01234567"
@@ -79,7 +79,7 @@ USER = "10001:10001"
 T0 = datetime(2026, 10, 15, 9, 0, tzinfo=UTC)
 GIT = ["git", "-c", "core.hooksPath=/dev/null", "-c", f"credential.helper={CREDENTIAL_HELPER}"]
 
-BODY = ('Add a hello page.\n\n```phactory\n{"good": "It renders.", '
+BODY = ('Add a hello page.\n\n```slipway\n{"good": "It renders.", '
         '"paths": ["src/hello.py"], "test": "tests/test_hello.py"}\n```\n')
 
 
@@ -147,16 +147,16 @@ def binding(operator):
 
 def handoff(project, key="EX-12"):
     card = Card(key=key, title="Add the hello page", body=BODY, status="Ready")
-    return render(project, card, BASE, f"phactory/{key}-hello-page")
+    return render(project, card, BASE, f"slipway/{key}-hello-page")
 
 
 ENVIRON = {
     "PATH": "/usr/bin:/bin",
     "HOME": "/home/worker",
-    "PHACTORY_ACCOUNT_MAX_SUB": ACCOUNT_TOKEN,
-    "PHACTORY_DATABASE_URL": "postgresql://phactory:pw@db/phactory",
+    "SLIPWAY_ACCOUNT_MAX_SUB": ACCOUNT_TOKEN,
+    "SLIPWAY_DATABASE_URL": "postgresql://slipway:pw@db/slipway",
     "HATCHET_CLIENT_TOKEN": "hatchet-client-token-value-0123456789",
-    "PHACTORY_HOME": "/srv/phactory",
+    "SLIPWAY_HOME": "/srv/slipway",
 }
 
 
@@ -219,7 +219,7 @@ def test_two_cards_on_one_account_share_nothing(tmp_path, project, binding):
         assert repo.is_dir() and list(repo.iterdir()) == []
     # Each session clones into its own workspace, the one its own mount gives.
     for r in runs:
-        assert "PHACTORY_REPO=/workspace/repo" in env_args(r)
+        assert "SLIPWAY_REPO=/workspace/repo" in env_args(r)
         assert SESSION_SCRIPT == r[-1] and 'git clone' in r[-1]
 
 
@@ -237,18 +237,18 @@ def test_container_invocation_baseline(tmp_path, project, binding):
     assert argv[argv.index("--network") + 1] == NETWORK
     assert "--read-only" in argv
     assert argv[argv.index("--cap-drop") + 1] == "ALL"
-    assert {m["target"] for m in mounts(argv)} == {"/workspace", "/run/phactory"}
-    assert any("readonly" in a and "/run/phactory" in a for a in argv)
+    assert {m["target"] for m in mounts(argv)} == {"/workspace", "/run/slipway"}
+    assert any("readonly" in a and "/run/slipway" in a for a in argv)
     assert "CLAUDE_CONFIG_DIR=/workspace/config" in env_args(argv)
     # The token is named on the command line and carried by the client's environment.
     variable = TOKEN_VARIABLE[AccountKind.SUBSCRIPTION]
     assert variable in env_args(argv)
     assert ACCOUNT_TOKEN not in text and all(t not in text for t in GIT_TOKENS)
     assert kwargs["env"][variable] == ACCOUNT_TOKEN
-    assert "PHACTORY_DATABASE_URL" not in kwargs["env"]
+    assert "SLIPWAY_DATABASE_URL" not in kwargs["env"]
     assert "HATCHET_CLIENT_TOKEN" not in kwargs["env"]
     # The git credential is in a token file, never in the remote URL.
-    assert f"PHACTORY_REMOTE={REMOTE}" in env_args(argv)
+    assert f"SLIPWAY_REMOTE={REMOTE}" in env_args(argv)
     token = builder.dir(argv[argv.index("--name") + 1]) / "run" / "token"
     assert token.read_text() == GIT_TOKENS[0]
     assert token.stat().st_mode & 0o777 == 0o600
@@ -257,9 +257,9 @@ def test_container_invocation_baseline(tmp_path, project, binding):
 def test_session_script_shape():
     assert "claude -p" in SESSION_SCRIPT
     assert "--bare" not in SESSION_SCRIPT.replace("# `--bare`", "")
-    assert "$PHACTORY_PERMISSION_MODE" in SESSION_SCRIPT
+    assert "$SLIPWAY_PERMISSION_MODE" in SESSION_SCRIPT
     assert PERMISSION_MODE == "bypassPermissions"
-    assert '< "$PHACTORY_HANDOFF"' in SESSION_SCRIPT
+    assert '< "$SLIPWAY_HANDOFF"' in SESSION_SCRIPT
 
 
 def test_api_key_account_uses_the_api_key_variable(tmp_path, project, binding):
@@ -267,7 +267,7 @@ def test_api_key_account_uses_the_api_key_variable(tmp_path, project, binding):
     run.reply(["docker", "run"])
     builder = container(tmp_path, run)
     api = replace(binding, account=Account("api-main", AccountKind.API_KEY,
-                                           "PHACTORY_ACCOUNT_MAX_SUB"))
+                                           "SLIPWAY_ACCOUNT_MAX_SUB"))
     builder.start(handoff(project), api, Credential("example-app", minting(GIT_TOKENS)))
     argv, kwargs = run.call("docker")
     assert "ANTHROPIC_API_KEY" in env_args(argv)
@@ -309,7 +309,7 @@ def started(tmp_path, project, binding, clock=None, tokens=GIT_TOKENS, lifetime=
 def test_exit_with_no_branch_pushed_is_returned_empty(tmp_path, project, binding):
     builder, run, ref = started(tmp_path, project, binding)
     inspect_reply(run, ref, code=3)
-    run.reply([*GIT, "ls-remote", REMOTE], f"{BASE}\trefs/heads/phactory/EX-12-hello-page\n")
+    run.reply([*GIT, "ls-remote", REMOTE], f"{BASE}\trefs/heads/slipway/EX-12-hello-page\n")
     status = builder.poll(ref)
     assert status.terminal
     result = status.result
@@ -337,7 +337,7 @@ def test_exit_with_a_pushed_branch_returns_commit_and_cost(tmp_path, project, bi
     out.write_text(json.dumps({"type": "result", "subtype": "success",
                                "total_cost_usd": 1.25}))
     inspect_reply(run, ref, code=0)
-    run.reply([*GIT, "ls-remote", REMOTE], f"{PUSHED}\trefs/heads/phactory/EX-12-hello-page\n")
+    run.reply([*GIT, "ls-remote", REMOTE], f"{PUSHED}\trefs/heads/slipway/EX-12-hello-page\n")
     result = builder.poll(ref).result
     assert result.outcome == RETURNED and result.commit == PUSHED
     assert result.cost == 1.25 and result.halt_class is None
@@ -408,7 +408,7 @@ def transcript_lines(secret_values):
     ]) + "\n"
 
 
-def bare_remote(tmp_path, branch="phactory/EX-12-hello-page"):
+def bare_remote(tmp_path, branch="slipway/EX-12-hello-page"):
     """A bare remote with the card's branch at a base commit, and that commit id."""
     work = tmp_path / "seed"
     work.mkdir()
@@ -431,7 +431,7 @@ def test_transcript_is_scrubbed_before_the_side_reference_commit(tmp_path, proje
     git(work, "add", ACTIONS_FILE)
     git(work, "commit", "-q", "-m", "builder log")
     builder_log = git(work, "rev-parse", "HEAD")
-    git(work, "push", "-q", str(remote), "HEAD:refs/phactory/log/EX-12")
+    git(work, "push", "-q", str(remote), "HEAD:refs/slipway/log/EX-12")
 
     run = Hybrid()
     run.reply(["docker", "run"])
@@ -450,11 +450,11 @@ def test_transcript_is_scrubbed_before_the_side_reference_commit(tmp_path, proje
     assert MARK in on_disk
 
     commit = builder.push_log(ref, 7)
-    reference = "refs/phactory/log/EX-12"
+    reference = "refs/slipway/log/EX-12"
     assert git(tmp_path, "--git-dir", str(remote), "rev-parse", reference) == commit
     assert git(tmp_path, "--git-dir", str(remote), "rev-parse", f"{commit}^") == builder_log
     assert git(tmp_path, "--git-dir", str(remote), "log", "-1", "--format=%s", commit) == \
-        "phactory log EX-12 build 7"
+        "slipway log EX-12 build 7"
     names = git(tmp_path, "--git-dir", str(remote), "ls-tree", "--name-only", commit).split()
     assert names == sorted([ACTIONS_FILE, TRACE_FILE, TRANSCRIPT_FILE])
     for name in names:
@@ -504,7 +504,7 @@ def test_build_crossing_the_hour_pushes_with_the_rewritten_token(tmp_path, proje
 
     # The helper git runs inside the session now answers with the new token.
     env = {"PATH": os.environ["PATH"], "HOME": str(tmp_path), "GIT_CONFIG_NOSYSTEM": "1",
-           "PHACTORY_TOKEN_FILE": str(token), "PHACTORY_GIT_USERNAME": "x-access-token"}
+           "SLIPWAY_TOKEN_FILE": str(token), "SLIPWAY_GIT_USERNAME": "x-access-token"}
     filled = subprocess.run(["git", "-c", f"credential.helper={CREDENTIAL_HELPER}",
                              "credential", "fill"],
                             input="protocol=https\nhost=code-host.example.test\n\n", env=env,
@@ -517,7 +517,7 @@ def test_build_crossing_the_hour_pushes_with_the_rewritten_token(tmp_path, proje
     builder.poll(ref)
     commit = builder.push_log(ref, 1)
     assert git(tmp_path, "--git-dir", str(remote), "rev-parse",
-               "refs/phactory/log/EX-12") == commit
+               "refs/slipway/log/EX-12") == commit
     # Both tokens the session ever held are scrubbed from what it writes.
     assert set(GIT_TOKENS[:2]) <= set(builder.injected(ref))
 
@@ -548,7 +548,7 @@ def test_laptop_task_routes_to_the_operator_files_label(project, operator):
 
 def laptop(tmp_path, run):
     return LaptopBuilder(tmp_path / "sessions", GitAccess(REMOTE, "x-access-token"),
-                         "phactory-session", "/opt/bin:/usr/bin:/bin", run=run,
+                         "slipway-session", "/opt/bin:/usr/bin:/bin", run=run,
                          environ=ENVIRON, now=Clock())
 
 
@@ -556,19 +556,19 @@ def test_laptop_session_environment_carries_no_control_plane_secret(tmp_path, pr
                                                                      binding):
     run = Recorder()
     run.reply(["sudo"])
-    run.reply([*GIT, "ls-remote", REMOTE], f"{PUSHED}\trefs/heads/phactory/EX-12-hello-page\n")
+    run.reply([*GIT, "ls-remote", REMOTE], f"{PUSHED}\trefs/heads/slipway/EX-12-hello-page\n")
     builder = laptop(tmp_path, run)
     assert builder.schedule is Schedule.WORKER_PROCESS
     ref = builder.start(handoff(project), binding, Credential("example-app",
                                                               minting(GIT_TOKENS)))
     argv, kwargs = run.call("sudo")
     env = kwargs["env"]
-    assert argv[:4] == ["sudo", "--non-interactive", "--user", "phactory-session"]
+    assert argv[:4] == ["sudo", "--non-interactive", "--user", "slipway-session"]
     kept = next(a for a in argv if a.startswith("--preserve-env="))
-    for name in ("PHACTORY_DATABASE_URL", "HATCHET_CLIENT_TOKEN", "PHACTORY_HOME"):
+    for name in ("SLIPWAY_DATABASE_URL", "HATCHET_CLIENT_TOKEN", "SLIPWAY_HOME"):
         assert name not in env and name not in kept
-    for value in (ENVIRON["PHACTORY_DATABASE_URL"], ENVIRON["HATCHET_CLIENT_TOKEN"],
-                  ENVIRON["PHACTORY_HOME"]):
+    for value in (ENVIRON["SLIPWAY_DATABASE_URL"], ENVIRON["HATCHET_CLIENT_TOKEN"],
+                  ENVIRON["SLIPWAY_HOME"]):
         assert value not in json.dumps(env) and value not in " ".join(argv)
     assert "operator.toml" not in json.dumps(env)
     assert env["CLAUDE_CODE_OAUTH_TOKEN"] == ACCOUNT_TOKEN
@@ -594,7 +594,7 @@ def test_laptop_build_returns_result_and_scrubbed_transcript(tmp_path, project, 
         return Recorder.__call__(run, argv, check=check, **kwargs)
 
     run.reply([*GIT, "ls-remote", REMOTE], "")
-    run.reply(["sudo", "--non-interactive", "--user", "phactory-session", "--", "rm"])
+    run.reply(["sudo", "--non-interactive", "--user", "slipway-session", "--", "rm"])
     builder.run = session
     back = laptop_build(builder, handoff(project), binding,
                         Credential("example-app", minting(GIT_TOKENS)))
@@ -629,7 +629,7 @@ def test_transcript_maps_to_shape_records():
     assert failed.error == "1 failed"
     assert mapped.records[9].exit_code is None
     # The records build a trace whose tool events land on their spans.
-    trace = trace_of("cli", "EX-12", "phactory/EX-12-hello-page", BASE, mapped.records,
+    trace = trace_of("cli", "EX-12", "slipway/EX-12-hello-page", BASE, mapped.records,
                      trace_id="4bf92f3577b34da6a3ce929d0e0e4736")
     assert len(trace.spans) == 1 + 2 + 4
     json.dumps(trace.otlp())
@@ -683,14 +683,14 @@ def test_scrub_record_covers_every_string_field():
 
 def test_both_adapters_satisfy_the_protocol(tmp_path):
     a = ContainerBuilder(tmp_path, GitAccess(REMOTE, "x"), IMAGE, NETWORK, USER)
-    b = LaptopBuilder(tmp_path, GitAccess(REMOTE, "x"), "phactory-session", "/usr/bin")
+    b = LaptopBuilder(tmp_path, GitAccess(REMOTE, "x"), "slipway-session", "/usr/bin")
     assert isinstance(a, Builder) and a.schedule is Schedule.REMOTE_SESSION
     assert isinstance(b, Builder) and b.schedule is Schedule.WORKER_PROCESS
 
 
 def test_cli_imports_only_what_builders_may():
     allowed = {"builders", "cards", "trackers", "config", "redact", "trace"}
-    path = SRC / "phactory" / "builders" / "cli.py"
+    path = SRC / "slipway" / "builders" / "cli.py"
     reached = {layer(e.imported) for e in edges_of(SRC, path)}
     assert reached <= allowed, reached
 
@@ -710,16 +710,16 @@ def test_dockerfile_baseline():
 
 def test_launchd_plist_supervises_the_worker():
     plist = plistlib.loads(PLIST.read_bytes())
-    assert plist["Label"] == "com.phactory.worker"
+    assert plist["Label"] == "com.slipway.worker"
     assert plist["KeepAlive"] is True and plist["RunAtLoad"] is True
-    assert plist["UserName"] == "PHACTORY_WORKER_USER"  # replaced at install
+    assert plist["UserName"] == "SLIPWAY_WORKER_USER"  # replaced at install
     command = plist["ProgramArguments"][-1]
-    assert "$PHACTORY_WORKER_COMMAND" in command and ".phactory-worker.env" in command
+    assert "$SLIPWAY_WORKER_COMMAND" in command and ".slipway-worker.env" in command
     assert "EnvironmentVariables" not in plist
 
 
 @pytest.mark.parametrize("path", [DOCKERFILE, PLIST, EXPLAINER,
-                                  SRC / "phactory" / "builders" / "cli.py"],
+                                  SRC / "slipway" / "builders" / "cli.py"],
                          ids=lambda p: p.name)
 def test_no_dashes_as_punctuation(path):
     text = path.read_text()

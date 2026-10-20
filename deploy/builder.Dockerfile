@@ -9,7 +9,7 @@
 #     -t <tag> .
 #
 # The image holds no secret and no project value. The adapter
-# (src/phactory/builders/cli.py) starts it with the KTD12 baseline: a non root
+# (src/slipway/builders/cli.py) starts it with the KTD12 baseline: a non root
 # user, a read only root filesystem with only /workspace and /tmp writable, no
 # Docker socket, the isolated builder network, every capability dropped, and
 # the account token passed by environment only. The session script, the git
@@ -40,7 +40,7 @@ RUN test -n "${CLAUDE_CODE_VERSION}" \
 RUN (getent group "${BUILDER_GID}" || groupadd --gid "${BUILDER_GID}" builder) \
  && useradd --uid "${BUILDER_UID}" --gid "${BUILDER_GID}" --no-create-home \
       --home-dir /workspace/home --shell /bin/sh builder \
- && mkdir -p /workspace /run/phactory
+ && mkdir -p /workspace /run/slipway
 
 # No self update and no telemetry: the network allows the code host and the
 # package registries only.

@@ -5,7 +5,7 @@ import re
 
 import pytest
 
-from phactory.trace.shape import (
+from slipway.trace.shape import (
     SIDE_REFERENCE_PREFIX,
     SPAN_KIND_CLIENT,
     SPAN_KIND_INTERNAL,
@@ -47,7 +47,7 @@ RECORDS = [
 
 
 def build():
-    return trace_of("cli", "EX-12", "phactory/EX-12-hello-page", "a" * 40, RECORDS,
+    return trace_of("cli", "EX-12", "slipway/EX-12-hello-page", "a" * 40, RECORDS,
                     trace_id=TRACE_ID, commit="b" * 40, files_changed=2, insertions=10,
                     deletions=1)
 
@@ -150,24 +150,24 @@ def test_three_tool_calls_and_one_model_request_serialise_with_genai_names():
     top = attrs(root)
     assert root["name"] == "invoke_agent cli" and "parentSpanId" not in root
     assert top["gen_ai.operation.name"] == "invoke_agent"
-    assert top["phactory.card.key"] == "EX-12"
-    assert top["vcs.ref.head.name"] == "phactory/EX-12-hello-page"
+    assert top["slipway.card.key"] == "EX-12"
+    assert top["vcs.ref.head.name"] == "slipway/EX-12-hello-page"
     assert top["vcs.ref.base.revision"] == "a" * 40
     assert top["vcs.ref.head.revision"] == "b" * 40
-    assert top["phactory.diff.files_changed"] == 2
+    assert top["slipway.diff.files_changed"] == 2
     assert (root["startTimeUnixNano"], root["endTimeUnixNano"]) == (str(10 * S), str(19 * S))
 
 
 def test_file_command_and_connection_events_land_on_the_tool_call_that_caused_them():
     spans = build().otlp()["resourceSpans"][0]["scopeSpans"][0]["spans"]
-    assert spans[2]["events"][0]["name"] == "phactory.command"
+    assert spans[2]["events"][0]["name"] == "slipway.command"
     assert attrs(spans[2]["events"][0]) == {"process.command_line": "pytest -q",
                                             "process.exit.code": 0}
-    assert spans[3]["events"][0]["name"] == "phactory.file_change"
+    assert spans[3]["events"][0]["name"] == "slipway.file_change"
     assert attrs(spans[4]["events"][0])["server.address"] == "pypi.org"
-    assert [e["name"] for e in spans[0]["events"]] == ["phactory.file_change"]
-    assert attrs(spans[0]["events"][0]) == {"phactory.file.path": "README.md",
-                                            "phactory.file.action": "created"}
+    assert [e["name"] for e in spans[0]["events"]] == ["slipway.file_change"]
+    assert attrs(spans[0]["events"][0]) == {"slipway.file.path": "README.md",
+                                            "slipway.file.action": "created"}
 
 
 def test_the_same_records_give_the_same_spans():
@@ -175,14 +175,14 @@ def test_the_same_records_give_the_same_spans():
 
 
 def test_a_trace_draws_a_random_id_when_none_is_given():
-    a, b = Trace("cli", "1", "phactory/1-x", "a" * 40), Trace("cli", "1", "phactory/1-x", "a")
+    a, b = Trace("cli", "1", "slipway/1-x", "a" * 40), Trace("cli", "1", "slipway/1-x", "a")
     assert a.trace_id != b.trace_id and re.fullmatch("[0-9a-f]{32}", a.trace_id)
     with pytest.raises(ValueError):
         Trace("cli", "1", "b", "a", trace_id="0" * 32)
 
 
 def test_an_empty_trace_is_still_valid_otlp():
-    trace = trace_of("managed_agents", "12", "phactory/12-x", "a" * 40, [])
+    trace = trace_of("managed_agents", "12", "slipway/12-x", "a" * 40, [])
     trace.root.start_ns = trace.root.end_ns = 1
     check_otlp(trace.otlp())
 
@@ -209,10 +209,10 @@ def test_a_line_of_unknown_type_or_field_is_refused():
 
 
 def test_the_side_reference_is_outside_refs_heads():
-    assert side_reference("EX-12") == "refs/phactory/log/EX-12"
+    assert side_reference("EX-12") == "refs/slipway/log/EX-12"
     assert side_reference("12") == SIDE_REFERENCE_PREFIX + "12"
     assert not SIDE_REFERENCE_PREFIX.startswith("refs/heads/")
-    assert log_commit_message("EX-12", 7) == "phactory log EX-12 build 7"
+    assert log_commit_message("EX-12", 7) == "slipway log EX-12 build 7"
 
 
 @pytest.mark.parametrize("key", ["", "a b", "../x", "x..y", "x.lock", "-x", "x/y", "x~1", "x."])
@@ -226,8 +226,8 @@ def test_a_key_that_cannot_name_a_reference_is_refused(key):
 def test_builders_and_trace_import_only_cards_trackers_config_redact_and_each_other():
     may = {"builders", "trace", "cards", "trackers", "config", "redact"}
     for package in ("builders", "trace"):
-        for path in sorted((SRC / "phactory" / package).rglob("*.py")):
+        for path in sorted((SRC / "slipway" / package).rglob("*.py")):
             for edge in edges_of(SRC, path):
                 assert layer(edge.imported) in may, str(edge)
-    for path in sorted((SRC / "phactory" / "trace").rglob("*.py")):
+    for path in sorted((SRC / "slipway" / "trace").rglob("*.py")):
         assert all(layer(e.imported) == "trace" for e in edges_of(SRC, path))

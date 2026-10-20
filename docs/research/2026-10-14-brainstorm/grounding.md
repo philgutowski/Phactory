@@ -1,8 +1,8 @@
-# Grounding dossier: Phactory v1 (verbatim pointers, no interpretation)
+# Grounding dossier: Slipway v1 (verbatim pointers, no interpretation)
 Written 2026-10-14 by the grounding scout (relayed; scout ran read-only).
 
-## 1. Note (Phactory)
-Path: /Users/pgutowski/Documents/PhilAI/Phactory/docs/ideation/2026-10-14-software-factory.md
+## 1. Note (Slipway)
+Path: /Users/pgutowski/Documents/PhilAI/Slipway/docs/ideation/2026-10-14-software-factory.md
 - "Rules learned" (from the runner): "Never trust the agent's own report. The agent's closing claim is a claim. Landing is decided from git and the tracker, read by the tool itself."
 - "From the lanes": "Verify in a scratch join and land the exact verified commit. Merge onto main in a throwaway worktree with its own environment, run the gate there, fast forward main to that commit. Never re merge."
 - "Decisions settled": "From the runner: the tracker adapters, verify landed, the lease. From the lanes script: the land path (...), the handoff shape, and the status read."
@@ -69,7 +69,7 @@ Evals and grading
 - CONCEPTS.md:333-340 is the closest: the Closeout judges "whether a Task produced a learning". Not a score.
 
 Hard-coded identity
-- Search for phactory|cratekit|philgutowski|electricpassage|/Users/ in non-test runner .py files: no matches.
+- Search for slipway|cratekit|philgutowski|electricpassage|/Users/ in non-test runner .py files: no matches.
 - CLAUDE.md (repo) names GitHub project "Native Relay (project 6 on philgutowski)" and "Compound Relay (project 4)". Repo-level docs, not code.
 
 ## 3. Lanes script: board-lanes
