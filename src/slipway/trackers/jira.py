@@ -12,7 +12,10 @@ email, and the API token come from resolve_tracker_credential (U6), which
 reads the operator file's tracker credential entry and the environment
 variables it names. The project file only names that entry, so no site,
 email, or token name from a project file ever reaches this module (R3). The
-token is held as a Basic authorization header and never leaves this object.
+instance holds the token and the email twice: once inside the Basic
+authorization header it sends, and once as the pair scrub removes from a
+failure reason before that reason leaves the adapter. Neither leaves this
+object in any other form, and the repr shows only the site and the board.
 
 What ready means on a Jira board is the project's: its board key, its ready
 status, and its lane label, all from the project file. A card is terminal

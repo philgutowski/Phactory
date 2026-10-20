@@ -93,6 +93,8 @@ closing_reference(key)  -> ClosingReference  title_token, body_line, branch_toke
 | GitHub | `GitHubTracker(project, run=None)` | `make_run()`, which calls `gh` through `subprocess.run` with a 30 second timeout | `DispatchRun`, which answers each `gh` subcommand from a fixture and records every call |
 | Jira | `JiraTracker(project, opener=None, credential=None, ...)` | `urllib.request.build_opener()` | `FakeOpener`, which routes a URL fragment to a fixture and records every request with its headers |
 
+Both test transports live in `tests/_fakes.py`, beside `FakeRun`, so a later unit that needs a scripted tracker (U9's hosts, U25's watch cycle) imports the same fakes instead of copying them. They read the fixtures in `tests/fixtures/tracker` through `tracker_fixture(name)`. A fake is a stand in object that answers like the real thing from a script and records what it was asked.
+
 The network guard (`tests/_nonet.py`) is loaded for every test. Two tests build an adapter with no fake and check that its first read raises `NetworkReached`, which proves the guard would catch a test that forgot its fake.
 
 ## GitHub: never list a board
@@ -168,3 +170,9 @@ The host adapter (U9) takes this object when it opens the pull request.
 - **The ready rule takes `other_lanes`.** The project file names one lane label, so "two lane labels" needs the other lane words from the caller. A block whose `lane` disagrees with the label is also not ready.
 - **Six new fixtures.** The native-relay fixtures carry no labels and no per issue membership answer, so those are new files beside the six copied unchanged.
 - **The card shape lives in `trackers/base.py`** and the contract reads it by attribute, so `cards` imports nothing from `trackers`.
+
+## Follow up from the review (card #47)
+
+- **The fakes moved.** `DispatchRun` and `FakeOpener` now live in `tests/_fakes.py`, as described above. `tests/unit/test_hosts.py` keeps its own `FakeApi`, which fakes a host API rather than a tracker, so it was left alone.
+- **The Jira docstring is accurate.** The adapter keeps the token and the email on the instance, inside the authorization header and as the pair `scrub` removes from a failure reason. The module docstring now says so.
+- **Three gaps are recorded, not built.** The GitHub board's Status field is looked up by its default name, so a board whose single select field was renamed yields no column for any card; the onboard durable state check (U19, #22) must prove the field exists by name and halt with a reason. The Jira `done_statuses` widener and the `owner/number` board string have no project file field or validation yet; they still need a config card, and onboard must validate the board string before saving (also on #22). The watch cycle (U25, #28) must pass the other projects' lane words as `other_lanes`, or two lane labels go undetected. Each is a comment on the issue named.
