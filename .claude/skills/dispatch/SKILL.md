@@ -18,7 +18,7 @@ gh api repos/philgutowski/slipway/rules/branches/main \
   --jq '[.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context]'
 ```
 
-If `review` is not in the list, dispatch only cards whose declared paths include a `CODEOWNERS` path (those wait for the operator's approval whatever the checks say), say in the report that the review check is not yet required, and name the two setup steps in `docs/explainers/build-loop.md`.
+If `review` is not in the list, dispatch nothing: a pull request would auto merge on `ci` alone, unreviewed. Say in the report that the review check is not yet required and name the setup steps in `docs/explainers/build-loop.md`.
 
 ## 1. Read the board
 
@@ -46,7 +46,7 @@ It prints every open cloud card with `ready` true or the reasons it is not: a de
 
 ## 3. Choose, within the caps
 
-- At most **three** cards in flight at once (open pull requests from `slipway/` branches plus sessions started this run). The operator reviews every change under a CODEOWNERS path, and most remaining cards touch one, so more in flight means a longer queue for one person, not faster landing.
+- At most **three** cards in flight at once (open pull requests from `slipway/` branches plus sessions started this run). Each in flight card holds its declared files, and each pull request that lands moves `main` under the others, so more in flight means more rebases and more held files, not faster landing.
 - At most **two** new dispatches per run.
 - Prefer, in order: a plan unit on the critical path (U9, then U14, then U25, then U16, U18, U20, U22), then follow ups oldest first.
 - Skip a card whose issue has a comment from the operator saying to hold it.
@@ -79,7 +79,7 @@ Append one line to the issue comment with the session id, so the next conductor 
 
 ## 5. Leave the rest alone
 
-Do not open, approve, merge, or close pull requests. The builder session opens its pull request, enables auto merge, and watches the `ci` and `review` checks. The operator reviews CODEOWNERS paths. If a builder session has failed (its pull request is red for a day with no push, or the session ended without a pull request), say so in one line on the issue and leave the branch; the operator decides whether to re dispatch, which is: delete the branch, then run this procedure again.
+Do not open, approve, merge, or close pull requests. The builder session opens its pull request, enables auto merge, and watches the `ci` and `review` checks; auto merge lands it when both are green. Nobody approves by hand. If a builder session has failed (its pull request is red for a day with no push, or the session ended without a pull request), say so in one line on the issue and leave the branch; the operator decides whether to re dispatch, which is: delete the branch, then run this procedure again.
 
 ## 6. Report
 

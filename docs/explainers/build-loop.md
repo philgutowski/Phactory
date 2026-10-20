@@ -1,6 +1,6 @@
 # The build loop: how Slipway builds itself in the cloud
 
-Slipway is a service for handing cards to coding agents and landing their work. Until its own workflow (U14) and watch (U25) exist, something else has to hand Slipway's cards to agents and land them. This page is that something. It is the plan's Build Process section made mechanical: a ready rule, a handoff, a dispatcher, a gate, a model review, and the operator's review on the paths that matter most. Everything here lives in `factory/`, `.claude/skills/dispatch/`, and `.github/workflows/review.yml`.
+Slipway is a service for handing cards to coding agents and landing their work. Until its own workflow (U14) and watch (U25) exist, something else has to hand Slipway's cards to agents and land them. This page is that something. It is the plan's Build Process section made mechanical: a ready rule, a handoff, a dispatcher, a gate, and a model review that is the review. Everything here lives in `factory/`, `.claude/skills/dispatch/`, and `.github/workflows/review.yml`.
 
 ## Words used below
 
@@ -30,8 +30,6 @@ start session(handoff)   ....>  checkout the branch
                                 enable auto merge                   ci runs the gate
                                                                     review reads the diff
                                 fix blocking findings, push   ...>  both checks run again
-                                                                    CODEOWNERS path? wait for
-                                                                    the operator's approval
                                                                     auto merge, squash
                                                                     issue closes, board: Done
 ```
@@ -49,13 +47,13 @@ Two details are worth knowing:
 
 ## The dispatcher, `.claude/skills/dispatch/SKILL.md`
 
-The conductor is a procedure, not a program, because the step that starts a cloud session is a Claude Code tool (`create_session`), reachable from a session and not from a shell. The skill tells a session exactly what to run and in what order, with two caps: at most three cards in flight and at most two new dispatches per run. The caps are there for one reason. Most remaining cards touch a CODEOWNERS path, so every one of them waits for the operator's approval; more in flight means a longer queue at one person, not faster landing.
+The conductor is a procedure, not a program, because the step that starts a cloud session is a Claude Code tool (`create_session`), reachable from a session and not from a shell. The skill tells a session exactly what to run and in what order, with two caps: at most three cards in flight and at most two new dispatches per run. The caps are there for one reason. Each in flight card holds its declared files, and each pull request that lands moves `main` under the others, so more in flight means more held files and more rebases, not faster landing.
 
 A scheduled task runs the skill in a fresh session on a cadence. Pausing the task pauses the factory; the branches, pull requests, and sessions already started carry on.
 
 ## The review check, `.github/workflows/review.yml` and `factory/review.py`
 
-Auto merge waits for the required status checks. `ci` proves the gate is green; it says nothing about whether the change does what the card asked. The review check is the second required check and the answer to that question.
+Auto merge waits for the required status checks and for nothing else. `ci` proves the gate is green; it says nothing about whether the change does what the card asked. The review check is the second required check and the answer to that question, and it is the whole review: no person approves a pull request before it lands.
 
 The workflow is the same two step shape as `ci.yml`, one checkout and one run step. The run step installs the Claude Code CLI and runs `factory/review.py`, which:
 
@@ -71,9 +69,9 @@ A review that could not run is red, never green. No key, a provider error, or an
 
 `factory/review-brief.md` is the reviewer's written definition of a good review, the same idea as a card's `good`. It names the ten things that block (the card's `good` not met, a defect with a traced path, the first law, KTD18, tests reaching the network or weakened, a secret, dash punctuation, a file another card holds, no explainer or undefined jargon, no `Closes #n`) and says everything else is advisory and gets one line. A change to the brief changes what lands, so `factory/` is a CODEOWNERS path and the operator reads every change to it.
 
-### What the review does not replace
+### What CODEOWNERS still does
 
-The ruleset still requires a code owner review on the KTD25 paths. The model review runs first and leaves a verdict and findings on the pull request, so the operator's review of a `hosts/` or `builders/` change starts from a read diff rather than a cold one. On every other path the model's pass is the review, and auto merge lands the change.
+The ruleset does not require a code owner review; the operator decided on 2026-10-20 that a model review plus a green gate is the merge gate on this repository. `CODEOWNERS` stays, because GitHub still asks the named owner to review a change under those paths, which is the right notification: a change to the gate, the deploy files, or a credential path is one the operator reads first once it lands, with the model's verdict and findings already on the pull request.
 
 ## Which model builds and which reviews
 
@@ -90,7 +88,7 @@ Three things would change this choice, and each is a one line change: `SLIPWAY_R
 ## Setup, once, by the operator
 
 1. Add the repository secret `ANTHROPIC_API_KEY` with a key from the Claude Console. Until it exists, the review check is red on every pull request, including the one that adds it.
-2. Add `review` to the ruleset's required status checks beside `ci` (Settings, Rules, `main`, Require status checks to pass). From that moment auto merge waits for the model review on every pull request.
+2. Add `review` to the ruleset's required status checks beside `ci` (Settings, Rules, `main`, Require status checks to pass), and turn off "Require review from Code Owners" on the same ruleset. From that moment auto merge waits for the model review on every pull request and for no person.
 3. Optionally set the variables `SLIPWAY_REVIEW_MODEL`, `SLIPWAY_REVIEW_EFFORT`, `SLIPWAY_REVIEW_BUDGET`, and `SLIPWAY_REVIEW_RUNS_ON`.
 
 The Admin role bypasses the ruleset, as U2 recorded, so the operator's own merge button skips both checks. Nothing here changes that.
@@ -99,5 +97,6 @@ The Admin role bypasses the ruleset, as U2 recorded, so the operator's own merge
 
 - **The builder opens its own pull request.** The plan's handoff shape says Slipway opens it; the cloud card handoff in the Build Process section says the session does, and this page follows the Build Process section.
 - **A model review is a required check.** The plan has the gate and the KTD25 human review only. The review check adds a reading of every change against its card before auto merge, which the plan's Build Process assumed a person would do when needed and nobody had time to do on every card.
+- **No person approves before the merge.** KTD25 has the operator approve a change on the credential and gate paths before it lands. The operator replaced that with the review check on 2026-10-20: a model review of every change, with `CODEOWNERS` kept as the request to read those paths first after they land.
 - **`factory/` is a CODEOWNERS path.** KTD25 does not list it, because it did not exist; it is the review gate's own code, so it joins `.github/`.
 - **The review job stays on a hosted runner by default.** `ci.yml` moves to an operator runner by variable; the review needs Node and a route to the Claude API, so it has its own variable and moves only when the instance has both.

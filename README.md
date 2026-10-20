@@ -16,7 +16,7 @@ Project gates can run on the operator's instances of [zig-actions-runner](https:
 
 ## How Slipway is built
 
-Slipway is its own first project. Every unit of the plan is a card on this repository's GitHub Projects board. Cards a Claude Code cloud session can build are built that way, from the card text alone, and land as a pull request that auto merges once the gate is green and a model review has read the change against its card; changes to the gate, the deploy files, or anything that holds a credential wait for one review by the operator as well. Spikes, deploys, and the acceptance pass are operator cards run by hand. The plan's Build Process section has the card template and the lane rules, and `docs/explainers/build-loop.md` has the loop as built: the ready rule, the handoff, the dispatcher, and the review check.
+Slipway is its own first project. Every unit of the plan is a card on this repository's GitHub Projects board. Cards a Claude Code cloud session can build are built that way, from the card text alone, and land as a pull request that auto merges once the gate is green and a model review has read the change against its card; the operator is asked to read changes to the gate, the deploy files, or anything that holds a credential, but the merge does not wait. Spikes, deploys, and the acceptance pass are operator cards run by hand. The plan's Build Process section has the card template and the lane rules, and `docs/explainers/build-loop.md` has the loop as built: the ready rule, the handoff, the dispatcher, and the review check.
 
 ## Status
 
