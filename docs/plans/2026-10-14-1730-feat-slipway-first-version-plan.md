@@ -32,7 +32,7 @@ Phillip approved this order on 2026-10-21, after the build had reached the end o
 
 The Unit Index carries the new dependencies. The ready rule reads each card's own Dependencies line, so the board issues were edited to match on the same day (U18, U19, U21, U24) and U26 and U27 were filed as #83 and #84.
 
-Two notes from the build of step 2, the same day. U26 checks an outside lander with the plain merge rule (the pull request is marked merged and the base tip carries the confirmed tree) rather than the auto merge rule its card named, because the first project's watcher keeps landing other cards on the base branch, so the base tip is rarely the landing commit itself. And U19 was built with five live reads still taken as operator attestations, since the adapters could not yet list or read them: board movement, the required check, the machine identity restriction, the repository, and the board. U28 (new) adds those reads, ahead of U24, so Integra's onboarding checks them instead of asking.
+Two notes from the build of step 2, the same day. U26 checks an outside lander with the plain merge rule (the pull request is marked merged and the base tip carries the confirmed tree) rather than the auto merge rule its card named, because the first project's watcher keeps landing other cards on the base branch, so the base tip is rarely the landing commit itself. And U19 was built with five live reads still taken as operator attestations, since the adapters could not yet list or read them: board movement, the required check, the machine identity restriction, the repository, and the board. U28 (new, filed as #94) adds those reads, ahead of U24, so Integra's onboarding checks them instead of asking.
 
 ---
 
@@ -1221,7 +1221,7 @@ flowchart LR
 
 ### U28. Live onboarding reads on the host and tracker adapters
 
-- **Goal:** Onboarding reads for itself what U19 shipped asking the operator to attest: the repository, the board, the board's labels and statuses, the required check, the machine identity restriction, and the board moving on a scratch pull request. The operator then picks boards, labels, and statuses from live lists, and the external gate and durable state checks pass or fail on what the host and tracker say.
+- **Goal:** Onboarding reads for itself what U19 was built asking the operator to attest: the repository, the board, the board's labels and statuses, the required check, the machine identity restriction, and the board moving on a scratch pull request. The operator then picks boards, labels, and statuses from live lists, and the external gate and durable state checks pass or fail on what the host and tracker say.
 - **Requirements:** R29 to R33, KTD6, KTD15, KTD18, KTD27, AE6, AE13.
 - **Dependencies:** U8, U9, U19, U26.
 - **Files:** `src/slipway/hosts/base.py`, `src/slipway/hosts/github.py`, `src/slipway/hosts/bitbucket.py`, `src/slipway/trackers/base.py`, `src/slipway/trackers/github.py`, `src/slipway/trackers/jira.py`, `src/slipway/onboard/checks.py`, `tests/unit/test_onboard_reads.py`, `tests/fixtures/host/`, `tests/fixtures/tracker/`.
