@@ -41,7 +41,7 @@ A bind mount maps one path on the VPS into a container. The app gets two: the `p
 |:-|:-|
 | App, port 443 | The internet |
 | Hatchet gRPC, behind TLS with a token per worker | The internet, for the laptop worker. This is the fourth public listener counted in KTD28. |
-| Hatchet dashboard and API | Compose network only |
+| Hatchet dashboard and API | Compose network, plus the VPS's own loopback for an SSH tunnel (`127.0.0.1:8888`, from the U4 seed); never the internet |
 | Runner read API | Compose network only |
 | Postgres | Compose network only |
 | Dagger engine | Compose network only |
