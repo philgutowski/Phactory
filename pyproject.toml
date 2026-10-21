@@ -26,8 +26,9 @@ dev = [
 where = ["src"]
 
 [tool.setuptools.package-data]
-# The migration files ship inside the package beside migrate.py.
-slipway = ["records/schema/*.sql"]
+# The migration files ship inside the package beside migrate.py, and the
+# status page's templates beside page/app.py.
+slipway = ["records/schema/*.sql", "page/templates/*.html"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

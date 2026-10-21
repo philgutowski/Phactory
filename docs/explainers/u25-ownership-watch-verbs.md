@@ -70,7 +70,7 @@ A land that pushes writes no audit row here. Its record is the transition the ru
 
 > 3 being built, 1 waiting to land, 1 needs you. EX-5 is halted: commit mismatch: the merge is not the confirmed commit.
 
-Nothing in `compose` calls a host or a tracker, so a status read is cheap enough to ask for by voice.
+Nothing in `compose` calls a host, and it reads the tracker only to ask whether an abandoned card is still ready (U20 added that rule, with each card's age, the landed today scores, and the open findings), so a status read is cheap enough to ask for by voice.
 
 ## watch
 
