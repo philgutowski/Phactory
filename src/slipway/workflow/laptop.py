@@ -112,6 +112,8 @@ def read_machine(environ: Mapping[str, str]) -> Machine:
     unset = missing(environ)
     if unset:
         raise MachineError(f"unset: {', '.join(unset)}")
+    if environ[SESSION_USER] == "root":
+        raise MachineError(f"{SESSION_USER}: a laptop session never runs as root")
     desktop = _json_object(environ, DESKTOP_SERVER)
     if desktop is not None and not isinstance(desktop.get("command"), str):
         raise MachineError(f"{DESKTOP_SERVER}: names no command")
@@ -190,7 +192,9 @@ def session_runner(machine: Machine, environ: Mapping[str, str], run=default_run
                               f"{binding.account.env} is unset on this laptop")
             builder = builder_for(machine, project, environ, run)
             credential = git_credential(project, environ)
-        except Refused as error:
+        except ValueError as error:
+            # Refused, and ToolRefused or an unknown checkout from a task
+            # input this laptop cannot read: the build ends with the reason.
             return refused(handoff, binding, str(error))
         return build(builder, handoff, binding, credential)
 

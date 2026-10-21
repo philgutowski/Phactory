@@ -46,7 +46,7 @@ What belongs to the project (its repository, clone or worktree, which token vari
 
 ## Refused at start, refused at the build
 
-The worker refuses to start, naming each one, while `SLIPWAY_WORKER_LABEL`, `SLIPWAY_SESSION_USER`, `SLIPWAY_SESSIONS`, or `SLIPWAY_SESSION_PATH` is unset, or while `SLIPWAY_DESKTOP_SERVER` or `SLIPWAY_CHECKOUTS` is set to something that is not a JSON object. A message names the variable, never its value. This follows U29's VPS worker.
+The worker refuses to start, naming each one, while `SLIPWAY_WORKER_LABEL`, `SLIPWAY_SESSION_USER`, `SLIPWAY_SESSIONS`, or `SLIPWAY_SESSION_PATH` is unset, while `SLIPWAY_SESSION_USER` is `root`, or while `SLIPWAY_DESKTOP_SERVER` or `SLIPWAY_CHECKOUTS` is set to something that is not a JSON object. A message names the variable, never its value. This follows U29's VPS worker.
 
 The other variables are needed only by some projects, so they are checked when a build arrives, before any session or folder exists:
 
@@ -57,7 +57,7 @@ The other variables are needed only by some projects, so they are checked when a
 | `checkout = "worktree"` | `SLIPWAY_CHECKOUTS` names no path for the project's slug |
 | any build | the account's or the git credential's variable is unset |
 
-A refused build ends `returned_empty`, halt class `builder_failed`, with the reason "the session did not start: ..." naming what is missing, the same way U27 ends a build whose tool a container cannot grant. `operator_browser` needs nothing of the machine: it is the `--chrome` flag on the session's command line.
+A refused build ends `returned_empty`, halt class `builder_failed`, with the reason "the session did not start: ..." naming what is missing, the same way U27 ends a build whose tool a container cannot grant. A task input this laptop cannot read, such as a tool name or a checkout mode it does not know, ends the build the same way rather than failing the task. `operator_browser` needs nothing of the machine: it is the `--chrome` flag on the session's command line.
 
 A clone project needs no checkout entry.
 

@@ -180,6 +180,9 @@ def test_the_entry_names_every_unset_variable_and_refuses_an_unreadable_one(caps
         assert name in err
     assert laptop.main([], {**ENVIRON, "SLIPWAY_CHECKOUTS": "[1, 2]"}, hatchet=FakeHatchet) == 2
     assert "SLIPWAY_CHECKOUTS: not a JSON object" in capsys.readouterr().err
+    assert laptop.main([], {**ENVIRON, "SLIPWAY_SESSION_USER": "root"}, hatchet=FakeHatchet) == 2
+    assert "SLIPWAY_SESSION_USER: a laptop session never runs as root" in (
+        capsys.readouterr().err)
     assert laptop.main([], {**ENVIRON, "SLIPWAY_DESKTOP_SERVER": "{"},
                        hatchet=FakeHatchet) == 2
     err = capsys.readouterr().err
@@ -281,3 +284,11 @@ def test_no_dashes_as_punctuation(path):
     if path.suffix == ".md":
         prose = re.sub(r"```.*?```", "", text, flags=re.S)
         assert "--" not in re.sub(r"`[^`]*`", "", prose)
+
+
+def test_a_task_input_the_laptop_cannot_read_ends_the_build_with_the_reason():
+    session, built = runner_for(ENVIRON)
+    back = session(handoff(("telepathy",)), BINDING, project())
+    assert built.calls == [] and back.result.halt_class == BUILDER_FAILED
+    back = session(handoff(), BINDING, project("sparse"))
+    assert built.calls == [] and "sparse" in back.result.reason
