@@ -15,7 +15,7 @@ This card is the other half of Phase 2's loop. U14 built the card workflow, the 
 
 ## The claim rule
 
-At most one build per card is outside the ownership terminal set (KTD3). The database enforces it with a partial unique index on `builds`, so the rule holds whoever calls `claim`, and when two callers race the database decides and the loser gets the winner's build back. Watch and the dispatch verb both go through it, and neither starts a run without a claim.
+At most one build per card is outside the ownership terminal set (KTD3). The database enforces it with a partial unique index on `builds`, a uniqueness rule that applies only to the rows outside the terminal set, so the rule holds whoever calls `claim`, and when two callers race the database decides and the loser gets the winner's build back. Watch and the dispatch verb both go through it, and neither starts a run without a claim.
 
 The run writes its own id onto the build in its first step, a compare and set on a null run id (U14's `attach_run`). That is why `dispatch` can start a run with no fear of starting two: a second run for the same build finds another id there and ends as a no op. It is also why a failed start is safe. The claim stays with no run id; watch sees it after one interval and starts the run again, and never claims the card a second time.
 

@@ -44,7 +44,7 @@ from slipway.builders.handoff import InFlightBuild
 from slipway.config import home
 from slipway.config.bindings import ResolvedBinding, resolve_binding
 from slipway.config.operator import Host, load_operator
-from slipway.config.project import Tracker, load_project
+from slipway.config.project import load_project
 from slipway.hosts.base import resolve_host_credential
 from slipway.records import queries, store
 from slipway.service import verbs
@@ -175,14 +175,8 @@ class WallClock:
 
 # The real ports, from SLIPWAY_HOME.
 
-def tracker_for(project):
-    if project.tracker is Tracker.GITHUB_PROJECTS:
-        from slipway.trackers.github import GitHubTracker
-
-        return GitHubTracker(project)
-    from slipway.trackers.jira import JiraTracker
-
-    return JiraTracker(project)
+# One tracker factory for the workflow and the service layer, so the two cannot drift.
+tracker_for = verbs.tracker_for
 
 
 def host_for(project, environ: Mapping[str, str] | None = None):

@@ -52,6 +52,7 @@ from psycopg.rows import dict_row
 
 from slipway.cards.contract import ready as ready_rule
 from slipway.config import home
+from slipway.config.bindings import BindingInvalid
 from slipway.config.operator import Host, Operator, load_operator
 from slipway.config.project import PROJECTS, Project, Tracker, load_project
 from slipway.halts import COMMIT_MISMATCH
@@ -59,6 +60,7 @@ from slipway.records import queries, store
 from slipway.records.store import Claim, canonical_json
 from slipway.redact import scrub
 from slipway.service.engine import CARD_RESUME, Engine
+from slipway.trackers.base import Card
 
 # The outcomes a verb returns, so a surface can branch without parsing text.
 DISPATCHED = "dispatched"  # claimed and the run started
@@ -166,7 +168,12 @@ def dispatch(ports: Ports, project: str, key: str, actor: str, reason: str | Non
              client: str | None = None) -> dict:
     """Claim the card and start its run, or say why not. Every call is audited."""
     found = ports.project(project)
-    card = ports.tracker(found).read(key)
+    try:
+        card = ports.tracker(found).read(key)
+    except BindingInvalid as error:
+        # A tracker credential that does not resolve is refused like an
+        # unreadable tracker, so this call still writes its one audit row.
+        card = Card(str(key), skipped=str(error))
     result = dispatch_card(ports, found, card, actor, reason, other_lanes(ports, found))
     _audit(ports, found.slug, actor, "dispatch", {"key": str(key), "reason": reason}, result,
            client)

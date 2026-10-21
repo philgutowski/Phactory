@@ -8,6 +8,7 @@ SLIPWAY_HOME. Nothing here reaches a network or a database.
 from datetime import timedelta
 
 from _service_fakes import MANAGER, OPERATOR, SLUG, ready_card, world
+from slipway.config.bindings import BindingInvalid
 from slipway.halts import COMMIT_MISMATCH, MERGED_CARD_NOT_MOVED
 from slipway.service import status, verbs
 from slipway.service.engine import CARD_RESUME
@@ -309,3 +310,18 @@ def test_across_is_refused_to_any_other_subject(tmp_path):
     w = world(tmp_path)
     found = status.across(w.ports, MANAGER)
     assert found["outcome"] == "refused" and "projects" not in found
+
+
+def test_a_tracker_that_cannot_be_built_is_refused_and_audited(tmp_path):
+    w = world(tmp_path, [ready_card("EX-1")])
+
+    def unbuildable(project):
+        raise BindingInvalid("tracker_credential", "EXAMPLE_TOKEN is not set")
+
+    ports = verbs.Ports(**{**w.ports.__dict__, "tracker": unbuildable})
+
+    result = verbs.dispatch(ports, SLUG, "EX-1", OPERATOR)
+
+    assert result["outcome"] == verbs.REFUSED and "tracker_credential" in result["reason"]
+    assert [r["tool"] for r in w.records.audit_rows] == ["dispatch"]
+    assert w.records.claims == []
