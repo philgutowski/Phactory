@@ -1,4 +1,4 @@
-"""Writes to Slipway's records: claims, transitions, host events, runner builds.
+"""Writes to Slipway's records: claims, transitions, host events, runner builds, scores.
 
 Every function takes an autocommit psycopg connection and runs its own
 transaction with conn.transaction(), so it commits or rolls back as a whole.
@@ -324,3 +324,24 @@ def record_gate_run(conn, project_id: int, host: str, host_run_id: str, instance
             "RETURNING id",
             (project_id, host, host_run_id, instance, instance, started_at, started_at,
              head_commit, conclusion, started_at, completed_at)).fetchone()[0]
+
+
+def record_score(conn, build_id: int, kind: str, result: dict,
+                 langfuse_score_id: str | None = None) -> int:
+    """Write a build's score of one kind and return its id.
+
+    scores is unique on (build, kind), so a step that runs twice replaces
+    the first result instead of adding a second row. langfuse_score_id is
+    kept when the second write does not carry one.
+    """
+    with conn.transaction():
+        row = conn.execute(
+            "INSERT INTO scores (project_id, build_id, kind, result, langfuse_score_id) "
+            "SELECT project_id, id, %s, %s::jsonb, %s FROM builds WHERE id = %s "
+            "ON CONFLICT (build_id, kind) DO UPDATE SET result = EXCLUDED.result, "
+            "langfuse_score_id = COALESCE(EXCLUDED.langfuse_score_id, "
+            "scores.langfuse_score_id) RETURNING id",
+            (kind, canonical_json(result), langfuse_score_id, build_id)).fetchone()
+    if row is None:
+        raise LookupError(f"no build {build_id}")
+    return row[0]

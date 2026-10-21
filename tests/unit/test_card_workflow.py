@@ -497,7 +497,8 @@ def test_load_registers_each_present_steps_module_in_order_and_skips_absent_ones
     registry = post_landed.load(("one.steps", "two.steps", "three.steps"), importer)
     assert registry.names(POST_LANDED) == ["first", "third"]
     assert registry.names(POST_BUILD) == ["second"]
-    assert post_landed.load().names(POST_LANDED) == []  # this unit registers nothing
+    # U16 registers the first step; U17 and U23 add theirs after it.
+    assert post_landed.load().names(POST_LANDED) == ["score_deterministic"]
 
 
 def test_a_steps_module_that_fails_its_own_import_is_not_skipped():
