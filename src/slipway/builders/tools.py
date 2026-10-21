@@ -47,6 +47,12 @@ PLAYWRIGHT_COMMAND = "playwright-mcp"
 DESKTOP_SERVER = "desktop"
 # The CLI flag that connects the session to Claude in Chrome.
 CHROME_FLAG = "--chrome"
+# Where Playwright finds its browsers. The session's HOME is a fresh folder
+# in its workspace, so Playwright's default cache under a real home is never
+# there; the server is always told where the browsers are. The image path is
+# where deploy/builder.Dockerfile installs them.
+BROWSERS_VARIABLE = "PLAYWRIGHT_BROWSERS_PATH"
+IMAGE_BROWSERS = "/opt/ms-playwright"
 # The configuration file, in the session's run/ folder.
 MCP_CONFIG_FILE = "mcp.json"
 
@@ -106,13 +112,18 @@ class Grant:
 
 
 def grant(tools: Iterable[str], container: bool, output_dir: str,
-          desktop_server: Mapping | None = None) -> Grant:
+          desktop_server: Mapping | None = None, browsers_path: str | None = None) -> Grant:
     """The Grant for a session.
 
     container says the session runs in the builder image; output_dir is
     where the browser saves screenshots, as the session sees the path.
     desktop_server is the laptop's computer use server entry (command,
     args, env), which only that machine knows; desktop is refused without it.
+    browsers_path is the folder the laptop installed Playwright's browsers
+    in; a container always uses the image's. A laptop given none leaves
+    the server on Playwright's default cache, which the session's fresh HOME
+    does not hold, so the browser will not launch; the rest of the build is
+    unaffected, which is why it is not refused.
     """
     tools = ordered(tools)
     refuse(tools, container)
@@ -124,8 +135,11 @@ def grant(tools: Iterable[str], container: bool, output_dir: str,
             # The container is the sandbox: every capability is dropped, so
             # Chromium's own sandbox, which needs them, cannot start there.
             args.append("--no-sandbox")
-        servers[PLAYWRIGHT_SERVER] = {"type": "stdio", "command": PLAYWRIGHT_COMMAND,
-                                      "args": args}
+        browsers = IMAGE_BROWSERS if container else browsers_path
+        entry: dict = {"type": "stdio", "command": PLAYWRIGHT_COMMAND, "args": args}
+        if browsers:
+            entry["env"] = {BROWSERS_VARIABLE: browsers}
+        servers[PLAYWRIGHT_SERVER] = entry
     if BuilderTool.OPERATOR_BROWSER in tools:
         flags.append(CHROME_FLAG)
     if BuilderTool.DESKTOP in tools:

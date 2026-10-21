@@ -10,7 +10,7 @@ Until this card a builder session had a shell, file tools, and git, and nothing 
 - **Claude in Chrome.** The browser extension that lets a Claude session drive the operator's own Chrome, with the operator's sign ins. The CLI connects to it with its `--chrome` flag.
 - **Computer use.** An agent taking screenshots of a screen and clicking and typing on it, through an MCP server that runs on that machine.
 - **Grant.** The tools one session is given: its MCP servers and its CLI flags.
-- **Container binding, laptop binding.** Where a project's builds run. A project with no `builder_worker` builds in a container on the VPS; one that names a builder worker builds on that laptop (U13, U29).
+- **Container binding, laptop binding.** Where a project's builds run. A project with no `builder_worker` builds in a container on the VPS, the rented server Slipway runs on; one that names a builder worker builds on that laptop (U13, U29).
 
 ## What each file does
 
@@ -34,7 +34,7 @@ project file           builder_tools = ["headless_browser", "desktop"]
    v
 handoff.render         Handoff.builder_tools, and section 4 names each level
    |
-   +--> workflow/card.py   building transition: tools_granted = [...]
+   +-> workflow/card.py    building transition: tools_granted = [...]
    |
    v
 cli adapter start      tools.grant(...) -> run/mcp.json and flags
@@ -47,7 +47,7 @@ The handoff text is the first message of the session's transcript, and the trans
 
 ## The three levels
 
-**headless_browser**, the default. The server runs inside the container, or as the laptop session's own user, with `--headless` (no window), `--isolated` (the browser profile lives in memory and is gone when the session ends), and `--output-dir` set to the session's `out/browser` folder. In the container it also gets `--no-sandbox`: every Linux capability is dropped there, and Chromium's own sandbox needs some of them, so the container is the sandbox instead. KTD12's isolation is unchanged, because nothing leaves the session's user. This is what a card uses to take a screenshot of a page it changed, such as the first project's visual rule. A screenshot the session names itself is saved relative to the session's working folder, the repository, so the session must not commit it.
+**headless_browser**, the default. The server runs inside the container, or as the laptop session's own user, with `--headless` (no window), `--isolated` (the browser profile lives in memory and is gone when the session ends), and `--output-dir` set to the session's `out/browser` folder. Its own environment names `PLAYWRIGHT_BROWSERS_PATH`, the folder Chromium is installed in: the image's `/opt/ms-playwright` in a container, and the laptop builder's `browsers_path` on the laptop. The session's HOME is a fresh folder in its workspace, so Playwright's default cache under a real home is never there. A laptop builder given no `browsers_path` still starts the build, since everything but the browser works, but the browser will not launch, so the operator sets it before any screenshot card. In the container it also gets `--no-sandbox`: every Linux capability is dropped there, and Chromium's own sandbox needs some of them, so the container is the sandbox instead. KTD12's isolation is unchanged, because nothing leaves the session's user. This is what a card uses to take a screenshot of a page it changed, such as the first project's visual rule. A screenshot the session names itself is saved relative to the session's working folder, the repository, so the session must not commit it.
 
 **operator_browser** and **desktop**, laptop only. Each acts as the operator, outside KTD12's dedicated session user: anything the operator is signed in to, the session can reach. So each is off unless the project file lists it, onboard asks about it as an explicit opt in with that trade off in the question, a container binding is refused at load, and every build that had the power says so in `tools_granted` and in its handoff.
 
@@ -62,6 +62,6 @@ The handoff text is the first message of the session's transcript, and the trans
 The live part of this card is yours:
 
 1. Build the builder image with `--build-arg PLAYWRIGHT_MCP_VERSION=<a pinned version>` beside the existing arguments.
-2. On the laptop, install the server for the session user: `npm install -g @playwright/mcp@<the same version>`, then `npx playwright install chromium` from that package's folder, so `playwright-mcp` is on the session's PATH.
+2. On the laptop, install the server for the session user: `npm install -g @playwright/mcp@<the same version>`, so `playwright-mcp` is on the session's PATH. Then, from that package's folder, run `PLAYWRIGHT_BROWSERS_PATH=<a folder the session user can read> npx playwright install chromium`, and start the laptop worker's `LaptopBuilder` with `browsers_path` set to that folder.
 3. Run one laptop card that takes a headless screenshot, and record it in the pull request.
 4. For each opt in, add it to one project's `builder_tools` (through onboard or by hand), run one card, and record the run. `desktop` also needs the laptop worker started with its computer use server.

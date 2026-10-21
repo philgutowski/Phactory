@@ -45,7 +45,9 @@ RUN test -n "${CLAUDE_CODE_VERSION}" \
 
 # The Playwright MCP server at a pinned version, and the Chromium build its
 # own Playwright expects, with the system libraries Chromium needs. The
-# browsers go under /opt, read only at run time, where every user finds them.
+# browsers go under /opt, read only at run time, where every user finds them;
+# the adapter names the same folder in the server's own environment
+# (IMAGE_BROWSERS in src/slipway/builders/tools.py).
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
 RUN test -n "${PLAYWRIGHT_MCP_VERSION}" \
  && npm install -g "@playwright/mcp@${PLAYWRIGHT_MCP_VERSION}" \

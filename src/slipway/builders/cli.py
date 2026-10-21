@@ -846,7 +846,9 @@ class LaptopBuilder(_Sessions):
     variables kept. path is the PATH the session gets. start blocks until
     the session exits, which is what worker_process means. desktop_server
     is this machine's computer use MCP server entry (command, args, env),
-    needed only by a project that grants desktop (U27).
+    needed only by a project that grants desktop, and browsers_path the
+    folder its Playwright browsers are installed in, needed by one that
+    grants headless_browser (U27).
     """
 
     schedule = Schedule.WORKER_PROCESS
@@ -856,9 +858,10 @@ class LaptopBuilder(_Sessions):
                  run: Run = default_run, environ: Mapping[str, str] | None = None,
                  now: Callable[[], datetime] = now_utc, refresh_seconds: float = 60.0,
                  checkout: Checkout | str = Checkout.CLONE, shared: Path | None = None,
-                 desktop_server: Mapping | None = None):
+                 desktop_server: Mapping | None = None, browsers_path: str | None = None):
         super().__init__(root, git, run, environ, now)
         self.desktop_server = dict(desktop_server) if desktop_server else None
+        self.browsers_path = browsers_path
         if session_user in ("", "root"):
             raise ValueError("a laptop session never runs as root")
         self.session_user, self.path, self.refresh_seconds = session_user, path, refresh_seconds
@@ -872,7 +875,7 @@ class LaptopBuilder(_Sessions):
 
     def _grant(self, handoff: Handoff, paths: Paths) -> Grant:
         return grant(handoff.builder_tools, container=False, output_dir=paths.browser,
-                     desktop_server=self.desktop_server)
+                     desktop_server=self.desktop_server, browsers_path=self.browsers_path)
 
     def environment(self, session_ref: str, handoff: Handoff, binding: ResolvedBinding,
                     session_id: str, token_value: str,

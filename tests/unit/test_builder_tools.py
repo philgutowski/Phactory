@@ -39,8 +39,10 @@ from slipway.builders.base import Credential, Schedule
 from slipway.builders.cli import SESSION_SCRIPT, WORKTREE_SCRIPT, LaptopReturn
 from slipway.builders.handoff import TOOLS
 from slipway.builders.tools import (
+    BROWSERS_VARIABLE,
     CHROME_FLAG,
     DESKTOP_SERVER,
+    IMAGE_BROWSERS,
     PLAYWRIGHT_COMMAND,
     PLAYWRIGHT_SERVER,
     ToolRefused,
@@ -149,6 +151,9 @@ def test_the_default_project_gives_the_session_the_headless_browser_and_nothing_
     assert {"--headless", "--isolated", "--no-sandbox"} <= set(server["args"])
     assert server["args"][server["args"].index("--output-dir") + 1] == \
         "/workspace/out/browser"
+    # The session's HOME is fresh, so the server is told where the image keeps Chromium.
+    assert server["env"] == {BROWSERS_VARIABLE: IMAGE_BROWSERS}
+    assert f"ENV {BROWSERS_VARIABLE}={IMAGE_BROWSERS}" in DOCKERFILE.read_text()
     # The session reads that file and only that file, with no other flag.
     argv = next(c for c in run_.calls if c[:2] == ["docker", "run"])
     env = env_args(argv)
@@ -197,14 +202,17 @@ def test_a_laptop_session_with_desktop_and_the_browser_gets_both_and_records_the
     run_.reply([*GIT, "ls-remote", REMOTE], f"{PUSHED}\trefs/heads/slipway/EX-12-hello-page\n")
     builder = laptop(tmp_path, run_)
     builder.desktop_server = DESKTOP
+    builder.browsers_path = "/opt/session-browsers"
     ref = builder.start(handoff(project), binding, Credential("example-app",
                                                               minting(GIT_TOKENS)))
 
     config = mcp_config(builder, ref)["mcpServers"]
     assert sorted(config) == sorted([PLAYWRIGHT_SERVER, DESKTOP_SERVER])
     assert config[DESKTOP_SERVER] == {"type": "stdio", **DESKTOP}
-    # On the laptop the browser keeps Chromium's own sandbox.
+    # On the laptop the browser keeps Chromium's own sandbox, and finds the
+    # browsers in the folder the laptop builder names, not under the fresh HOME.
     assert "--no-sandbox" not in config[PLAYWRIGHT_SERVER]["args"]
+    assert config[PLAYWRIGHT_SERVER]["env"] == {BROWSERS_VARIABLE: "/opt/session-browsers"}
     _, kwargs = run_.call("sudo")
     assert kwargs["env"]["SLIPWAY_TOOL_FLAGS"] == CHROME_FLAG
     assert kwargs["env"]["SLIPWAY_MCP_CONFIG"] == str(builder.dir(ref) / "run" / "mcp.json")
