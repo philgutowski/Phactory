@@ -7,6 +7,7 @@ Consumer: U14 (the card workflow) follows `docs/spikes/hatchet/task.py` and the 
 
 ## Terms used below
 
+- VPS: the virtual private server, the one rented machine Slipway's services run on.
 - Engine: the Hatchet server, which stores every run in Postgres and hands tasks to workers. `hatchet-lite` is the image that bundles the engine, its API, and its dashboard in one container.
 - Worker: a Python process that connects out to the engine over gRPC (a binary request protocol over HTTP/2) and runs the tasks it registered.
 - Durable task: a task whose progress the engine writes to a log, so after a crash or a redeploy the engine replays the log and the task carries on from where it was, instead of starting over.

@@ -1052,7 +1052,7 @@ flowchart LR
 ### U18. MCP server, tools, audit
 
 - **Goal:** The per project MCP server with the eleven tools, token audience and subject validation, and the redacted audit row on every call.
-- **Requirements:** R8, R25, R26, R27, R28, KTD13, KTD14, KTD23, KTD24, AE4.
+- **Requirements:** R8, R25, R26, R27, R28, KTD13, KTD14, KTD23, KTD24, AE4, AE8.
 - **Dependencies:** U3, U7, U19, U25.
 - **Files:** `src/slipway/mcp/server.py`, `src/slipway/mcp/tools.py`, `src/slipway/mcp/audit.py`, `src/slipway/auth.py`, `src/slipway/app.py`, `tests/unit/test_mcp_tools.py`, `tests/integration/test_mcp_isolation.py`.
 - **Approach:**
@@ -1074,7 +1074,7 @@ flowchart LR
 ### U19. Onboard state machine, terminal first
 
 - **Goal:** Guided onboarding as one state machine, served first by the terminal, with validated then saved answers, property checks including the namespace restriction, attestations, and the trivial card handoff. The operator answers one question at a time, picks from live choices where the adapters can list them, and never edits the project file by hand. The MCP front end is U18's, over the same machine (reorder of 2026-10-21).
-- **Requirements:** R29 to R33, R35, KTD6, KTD15, KTD24, AE6, AE8.
+- **Requirements:** R29 to R33, R35, KTD6, KTD15, KTD24, AE6.
 - **Dependencies:** U6, U8, U9, U25.
 - **Files:** `src/slipway/onboard/machine.py`, `src/slipway/onboard/questions.py`, `src/slipway/onboard/checks.py`, `src/slipway/onboard/terminal.py`, `tests/unit/test_onboard.py`.
 - **Approach:**
@@ -1122,7 +1122,7 @@ flowchart LR
 - **Dependencies:** U25, U19.
 - **Files:** `src/slipway/cli.py`, `tests/unit/test_cli.py`.
 - **Approach:**
-  1. Subcommands: the seven verbs `onboard`, `dispatch`, `status`, `land` (with `--override`), `eval` (with `--rerun` and `replay`), `trace`, `watch` (tail events), plus `findings` (with `file`), and the two operator commands the plan needs, `new <slug>` (reserve a project and print its MCP URL) and `migrate`.
+  1. Subcommands in this slice: `onboard`, `dispatch`, `status`, `land` (with `--override`), `watch` (tail events), and `migrate`. Arriving later with their units: `eval` (with `--rerun` and `replay`), `trace`, `findings` (with `file`), and `new <slug>` (reserve a project and print its MCP URL).
   2. Each calls `service.*` with the operator's subject from the operator file as actor; the CLI imports no `mcp` module.
 - **Patterns to follow:** `native-relay/skills/relay/scripts/relay_cli.py` argument style.
 - **Test scenarios:**

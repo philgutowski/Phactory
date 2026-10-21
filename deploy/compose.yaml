@@ -6,6 +6,8 @@
 # Secret values come from the root owned environment file, passed with
 # `docker compose --env-file /etc/slipway/slipway.env up -d`. Compose refuses to
 # start while any `${NAME:?}` below is unset, so no default password can ship.
+# HATCHET_POSTGRES_PASSWORD goes into a URL as is, so use letters and digits
+# only: an @, /, :, or % in it breaks the engine's connection string.
 
 services:
   hatchet-postgres:
