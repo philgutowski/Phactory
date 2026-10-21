@@ -23,9 +23,21 @@ skip, never a crash.
 
 A card is terminal when its issue is closed, or when its item on the
 project's board reads the project's landed status.
+
+Onboarding's listings (U28) use gh's own commands: gh project list for the
+boards the owner holds, gh label list for the repository's labels (a card
+is an issue, and an issue carries the repository's labels), gh project
+field-list for the Status field's options, and gh project view for whether
+the board exists. They are called once per question, not per card, so their
+GraphQL cost is a handful of points an onboarding.
+
+GitHubScratch files the board movement check's scratch card as an issue in
+the repository, without the lane label so watch never dispatches it, and
+closes it as not planned afterwards (KTD27, U28).
 """
 
 import json
+import re
 import subprocess
 
 from slipway.trackers.base import (
@@ -69,6 +81,14 @@ query($owner: String!, $name: String!, $number: Int!, $field: String!, $cursor: 
 }
 """.replace("PAGE_SIZE", str(MEMBERSHIP_PAGE_SIZE))
 
+# How many boards, labels, and fields one listing asks gh for.
+LISTING_LIMIT = 100
+LABEL_LIMIT = 1000
+# What gh says when a project number names no board.
+NO_BOARD = re.compile(r"could not resolve to a projectv2|not found", re.IGNORECASE)
+# The issue number at the end of the URL gh issue create prints.
+ISSUE_URL = re.compile(r"/issues/(\d+)\s*$")
+
 # What gh and the GraphQL API say when the hourly budget is spent.
 BUDGET_SIGNS = ("rate limit", "rate_limited", "secondary rate")
 
@@ -100,12 +120,13 @@ class GitHubTracker:
         self._repository = project.repository
         self._owner, self._name = owner, name
         # board is "<owner>/<number>", or "<number>" for a board owned by the
-        # repository's owner.
+        # repository's owner. Onboarding builds an adapter before the board is
+        # chosen, to list the boards; an empty board names none.
         board_owner, _, number = project.board.rpartition("/")
-        if not number.isdigit():
+        if project.board and not number.isdigit():
             raise ValueError(f"board {project.board!r} is not <owner>/<number> or <number>")
         self._board_owner = (board_owner or owner).lower()
-        self._board_number = int(number)
+        self._board_number = int(number) if number.isdigit() else None
         self._lane = project.lane_label
         self._landed = project.landed_status
         self._run = run or make_run()
@@ -274,3 +295,101 @@ class GitHubTracker:
     def closing_reference(self, key) -> ClosingReference:
         """GitHub closes the issue on merge when the pull request body says Closes #N."""
         return ClosingReference(body_line=f"Closes #{str(key).lstrip('#')}")
+
+    # Onboarding listings (U28).
+    def boards(self):
+        """The repository owner's GitHub Projects boards, as owner/number."""
+        payload, reason = self._gh(["gh", "project", "list", "--owner", self._owner,
+                                    "--limit", str(LISTING_LIMIT), "--format", "json"])
+        if payload is None:
+            return (), reason
+        return tuple(f"{self._owner}/{board.get('number')}"
+                     for board in (payload or {}).get("projects") or []
+                     if board.get("number") is not None and not board.get("closed")), None
+
+    def labels(self):
+        """The repository's labels, which are the labels an issue on the board can carry."""
+        payload, reason = self._gh(["gh", "label", "list", "--repo", self._repository,
+                                    "--limit", str(LABEL_LIMIT), "--json", "name"])
+        if payload is None:
+            return (), reason
+        return _labels(payload), None
+
+    def statuses(self):
+        """The options of the board's Status field, its columns."""
+        if self._board_number is None:
+            return (), "no board is chosen yet"
+        payload, reason = self._gh(["gh", "project", "field-list", str(self._board_number),
+                                    "--owner", self._board_owner,
+                                    "--limit", str(LISTING_LIMIT), "--format", "json"])
+        if payload is None:
+            return (), reason
+        for found in (payload or {}).get("fields") or []:
+            if found.get("name") == STATUS_FIELD:
+                return tuple(str(o.get("name")) for o in found.get("options") or []), None
+        return (), f"the board has no {STATUS_FIELD} field"
+
+    def read_board(self):
+        """Whether the board exists and is open: (True or False, detail), None on a failed read."""
+        if self._board_number is None:
+            return False, "no board is named"
+        name = f"{self._board_owner}/{self._board_number}"
+        payload, reason = self._gh(["gh", "project", "view", str(self._board_number),
+                                    "--owner", self._board_owner, "--format", "json"])
+        if payload is None:
+            if NO_BOARD.search(reason or ""):
+                return False, f"board {name} was not found: {reason}"
+            return None, reason
+        if (payload or {}).get("closed"):
+            return False, f"board {name} is closed"
+        return True, f"board {name} ({(payload or {}).get('title') or 'untitled'}) is open"
+
+
+class GitHubScratch:
+    """Files and closes the board movement check's scratch card, an issue (U28).
+
+    open(title) returns (key, reason), close(key) a reason or None, and
+    leftovers(title) the open issues a crashed run left, as (keys, reason).
+    """
+
+    def __init__(self, project, run=None):
+        self._tracker = GitHubTracker(project, run)
+        self._repository = project.repository
+        self._run = self._tracker._run
+
+    def _command(self, args):
+        """Runs a gh command whose output is text. Returns (stdout, None) or (None, reason)."""
+        try:
+            proc = self._run(list(args), timeout=NETWORK_TIMEOUT_SECONDS)
+        except (OSError, subprocess.SubprocessError) as exc:
+            return None, f"gh could not run: {exc}"
+        if proc.returncode != 0:
+            return None, f"gh exited {proc.returncode}: {(proc.stderr or '').strip()}"
+        return proc.stdout or "", None
+
+    def open(self, title: str):
+        out, reason = self._command([
+            "gh", "issue", "create", "--repo", self._repository, "--title", title, "--body",
+            "Slipway files this card to watch the board move during onboarding, and closes "
+            "it when the check ends."])
+        if out is None:
+            return None, reason
+        found = ISSUE_URL.search(out)
+        if not found:
+            return None, f"gh issue create printed no issue URL: {out.strip()!r}"
+        return found.group(1), None
+
+    def close(self, key) -> str | None:
+        _, reason = self._command(["gh", "issue", "close", str(key).lstrip("#"),
+                                   "--repo", self._repository, "--reason", "not planned"])
+        return reason
+
+    def leftovers(self, title: str):
+        payload, reason = self._tracker._gh([
+            "gh", "issue", "list", "--repo", self._repository, "--state", "open",
+            "--search", f'"{title}" in:title', "--limit", str(LISTING_LIMIT),
+            "--json", "number,title"])
+        if payload is None:
+            return (), reason
+        return tuple(str(i.get("number")) for i in payload or []
+                     if i.get("title") == title), None

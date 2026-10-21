@@ -21,6 +21,19 @@ them: the tests sign each body themselves with an invented secret.
   `github_api_rules_no_queue.json` mirrors what `docs/spikes/merge-paths.md`
   recorded for a user owned repository after `ci` became required.
 
+- `github_api_rulesets.json`, `github_api_ruleset_*.json`: the ruleset list
+  and single ruleset reads U28's restriction check makes. The namespace
+  ruleset is the body `docs/spikes/merge-paths-click-sheet.md` step 12 sends;
+  `current_user_can_bypass` is what GitHub reports for the identity asking.
+  `github_api_upgrade.json`, `github_api_not_found.json`, and
+  `github_api_branch_not_protected.json` are the error bodies GitHub sends
+  for a plan without the feature, a missing resource, and a branch with no
+  classic protection. `github_api_commit.json` and
+  `github_api_matching_refs.json` serve the scratch run's base and sweep.
+- `bitbucket_api_merge_checks*.json`, `bitbucket_api_push_permissions*.json`,
+  `bitbucket_api_user.json`: branch restrictions of the two kinds U28 reads,
+  and the account a repository access token acts as.
+
 Every name, hash, and id is invented. When U2 records live deliveries, a
 recorded file replaces its documented twin under the same name and this
 note shrinks.

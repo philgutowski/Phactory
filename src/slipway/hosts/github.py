@@ -18,6 +18,19 @@ What each method calls:
     pull_request       GET pulls/<n> and GET pulls/<n>/reviews
     probe_landing      GET repos/<owner>/<name> and GET rules/branches/<default>
 
+The onboarding reads and the scratch writes (U28):
+
+    read_repository       GET repos/<owner>/<name>
+    read_required_checks  GET rules/branches/<default>, then GET
+                          branches/<default>/protection/required_status_checks
+    read_restriction      GET rulesets?includes_parents=true, then GET
+                          rulesets/<id> for each active one
+    base_commits          GET commits/<default>
+    branches              GET git/matching-refs/heads/<prefix>
+    delete_branch         DELETE git/refs/heads/<name>
+    open_pull_requests    GET pulls?base=<base>&state=open
+    close_pull_request    PATCH pulls/<n> with state closed
+
 The probe reads the rules that apply to the default branch, which is the
 ruleset view GitHub computes from every active ruleset. A merge_queue rule
 names the queue's merge method. Without one, a required_status_checks rule
@@ -27,6 +40,22 @@ the repository allows auto merge, as the spike measured
 method off a queue is the one Slipway will pass when it arms auto merge: the
 only method the repository allows, or the first of METHOD_PREFERENCE among
 those allowed, squash first because it lands one commit per card.
+
+Required checks come from two places: the rules GitHub computes for the
+default branch from every active ruleset, and classic branch protection,
+GitHub's older per branch setting. Either one requiring a check is enough.
+A 403 or a 404 on both (a private repository on a plan without either
+feature, or a credential without the read permission) is
+ProbeUndetermined, so onboard asks the operator instead.
+
+The restriction (KTD6) holds when one active branch ruleset covers every
+branch (~ALL, or refs/heads/**) except Slipway's namespace, forbids
+creation and update there, and does not let the machine identity bypass
+it. GitHub answers the last part for the credential that asks: a ruleset
+read carries current_user_can_bypass, which is "never" when this identity
+is held by the rules. Where GitHub leaves that field out, an empty bypass
+list still proves it; a non empty one cannot be read for identity, and the
+answer is None.
 
 The pull request body line and the title token come from the tracker's
 closing reference (U8). open_pull_request on a branch that already has one
@@ -51,7 +80,9 @@ from slipway.hosts.base import (
     Client,
     HostError,
     Landing,
+    ProbeUndetermined,
     PullRequest,
+    Reading,
     body_of,
     landing_from,
     message_of,
@@ -98,6 +129,23 @@ mutation($id: ID!, $head: GitObjectID, $method: PullRequestMergeMethod) {
 """
 
 ALREADY_EXISTS = re.compile(r"already exists", re.IGNORECASE)
+
+# What GitHub says on a 404 for a branch that has no protection: the read
+# worked, and the answer is that nothing is required.
+UNPROTECTED = re.compile(r"not protected|not enabled", re.IGNORECASE)
+
+# The ruleset include patterns that cover every branch, and the rules that
+# close a branch to the machine identity's pushes and creations.
+EVERY_BRANCH = ("~ALL", "refs/heads/**")
+CLOSING_RULES = ("creation", "update")
+# current_user_can_bypass when the asking identity is held by the ruleset.
+HELD = "never"
+# Items a page holds, and pages one listing may follow; a repository with
+# more is a reason, not a guess.
+PAGE_SIZE = 100
+PAGE_LIMIT = 10
+# The next page's address in GitHub's Link header.
+NEXT_LINK = re.compile(r'<([^>]+)>\s*;\s*rel="next"')
 
 
 class GitHubHost:
@@ -261,6 +309,165 @@ class GitHubHost:
         why = ("no required status check with the up to date policy" if not strict
                else "auto merge is not allowed on the repository")
         return landing_from(project, PLAIN_MERGE, method, f"{why}; methods allowed {allowed}")
+
+
+    def _pages(self, path: str, params: dict, what: str, first=None) -> list:
+        """Every item of a listing, following the Link header's next page to a bound.
+
+        first is the first page's response when the caller has already read it.
+        """
+        url, query, found = self._path(path), dict(params, per_page=PAGE_SIZE), []
+        for _ in range(PAGE_LIMIT):
+            response, first = first or self._client.get(url, query), None
+            found += self._expect(response, 200, what=what) or []
+            link = next((value for key, value in response.headers.items()
+                         if key.lower() == "link"), "")
+            following = NEXT_LINK.search(link or "")
+            if not following:
+                return found
+            url, query = following.group(1), None
+        raise HostError(f"{what} ran past {PAGE_LIMIT} pages")
+
+    # Onboarding reads (U28).
+    def read_repository(self) -> Reading:
+        response = self._client.get(f"/repos/{self._owner}/{self._name}")
+        if response.status != 200:
+            return Reading(False, f"GitHub answered {message_of(response)} (HTTP "
+                                  f"{response.status}) for {self._repository}")
+        self._repo_cache = response.body
+        branch = (response.body or {}).get("default_branch") or "main"
+        return Reading(True, f"{self._repository} is reachable, default branch {branch}")
+
+    def read_required_checks(self) -> tuple[str, ...]:
+        branch = self._repo().get("default_branch") or "main"
+        names: list[str] = []
+        unread = []
+        rules = self._client.get(self._path(f"rules/branches/{branch}"))
+        if rules.status == 200:
+            for rule in rules.body or []:
+                if isinstance(rule, dict) and rule.get("type") == "required_status_checks":
+                    names += _contexts((rule.get("parameters") or {})
+                                       .get("required_status_checks"))
+        elif rules.status in (403, 404):
+            unread.append(f"rulesets: {message_of(rules)}")
+        else:
+            self._expect(rules, 200, what=f"the rules for {branch!r}")
+        protection = self._client.get(
+            self._path(f"branches/{branch}/protection/required_status_checks"))
+        if protection.status == 200:
+            body = protection.body or {}
+            names += [str(c) for c in body.get("contexts") or []]
+            names += _contexts(body.get("checks"))
+        elif protection.status == 404 and UNPROTECTED.search(message_of(protection)):
+            pass
+        elif protection.status in (403, 404):
+            unread.append(f"branch protection: {message_of(protection)}")
+        else:
+            self._expect(protection, 200, what=f"the protection of {branch!r}")
+        found = tuple(dict.fromkeys(names))
+        if not found and unread:
+            raise ProbeUndetermined(f"GitHub would not show {branch}'s required checks ("
+                                    + "; ".join(unread) + ")")
+        return found
+
+    def read_restriction(self, namespace: str) -> Reading:
+        params = {"includes_parents": "true", "targets": "branch"}
+        listed = self._client.get(self._path("rulesets"), dict(params, per_page=PAGE_SIZE))
+        if listed.status in (403, 404):
+            return Reading(None, f"GitHub would not list rulesets: {message_of(listed)}")
+        summaries = self._pages("rulesets", params, "the ruleset list", first=listed)
+        held, bypassed, unknown = [], [], []
+        for summary in summaries:
+            if not isinstance(summary, dict) or summary.get("enforcement") != "active":
+                continue
+            ruleset = self._ruleset(summary)
+            if ruleset is None or not _closes_outside(ruleset, namespace):
+                continue
+            name = str(ruleset.get("name") or ruleset.get("id"))
+            bypass = ruleset.get("current_user_can_bypass")
+            if bypass == HELD or (bypass is None and ruleset.get("bypass_actors") == []):
+                held.append(name)
+            elif bypass is not None:
+                bypassed.append(f"{name} ({bypass})")
+            else:
+                unknown.append(name)
+        if held:
+            return Reading(True, f"ruleset {held[0]} closes every branch outside {namespace} "
+                                 "to the machine identity, which cannot bypass it")
+        if bypassed:
+            return Reading(False, "the machine identity is on the bypass list of ruleset "
+                                  + ", ".join(bypassed))
+        if unknown:
+            return Reading(None, "GitHub did not say whether the machine identity can "
+                                 "bypass ruleset " + ", ".join(unknown))
+        return Reading(False, f"no active ruleset closes every branch outside {namespace} "
+                              "to creation and update")
+
+    def _ruleset(self, summary: dict) -> dict | None:
+        response = self._client.get(self._path(f"rulesets/{summary.get('id')}"),
+                                    {"includes_parents": "true"})
+        if response.status in (403, 404):
+            return None
+        return self._expect(response, 200, what=f"ruleset {summary.get('id')}")
+
+    # Scratch writes for the board movement check (U28, KTD27).
+    def base_commits(self) -> tuple[str, str, str | None]:
+        branch = self._repo().get("default_branch") or "main"
+        response = self._client.get(self._path(f"commits/{branch}"))
+        body = self._expect(response, 200, what=f"the head of {branch!r}") or {}
+        parents = body.get("parents") or []
+        return branch, str(body.get("sha") or ""), (parents[0].get("sha") if parents else None)
+
+    def branches(self, prefix: str) -> tuple[str, ...]:
+        found = self._pages(f"git/matching-refs/heads/{prefix}", {},
+                            f"the branches under {prefix!r}")
+        heads = "refs/heads/"
+        return tuple(str(ref.get("ref"))[len(heads):] for ref in found
+                     if str((ref or {}).get("ref") or "").startswith(heads + prefix))
+
+    def delete_branch(self, name: str) -> bool:
+        response = self._client.delete(self._path(f"git/refs/heads/{name}"))
+        if response.status == 204:
+            return True
+        if response.status in (404, 422):
+            return False
+        raise HostError(f"GitHub refused to delete the branch {name!r}: "
+                        f"{message_of(response)} (HTTP {response.status})")
+
+    def open_pull_requests(self, base: str) -> tuple[PullRequest, ...]:
+        found = self._pages("pulls", {"base": base, "state": "open"},
+                            f"the pull requests into {base!r}")
+        return tuple(_pull_request(item) for item in found)
+
+    def close_pull_request(self, pr) -> None:
+        number = pr.number if isinstance(pr, PullRequest) else int(str(pr).lstrip("#"))
+        response = self._client.patch(self._path(f"pulls/{number}"), {"state": "closed"})
+        self._expect(response, 200, what=f"closing pull request #{number}")
+
+
+def _contexts(checks) -> list[str]:
+    return [str(c.get("context")) for c in checks or [] if isinstance(c, dict)
+            and c.get("context")]
+
+
+def _closes_outside(ruleset: dict, namespace: str) -> bool:
+    """Whether a ruleset closes every branch except the namespace to creation and update.
+
+    It must include every branch, exclude nothing outside the namespace (an
+    excluded release branch, or ~DEFAULT_BRANCH, would be a branch the
+    identity could push to), and carry both closing rules.
+    """
+    names = ((ruleset.get("conditions") or {}).get("ref_name") or {})
+    include = [str(p) for p in names.get("include") or []]
+    exclude = [str(p) for p in names.get("exclude") or []]
+    stem = namespace.removesuffix("**")
+    if not any(pattern in EVERY_BRANCH for pattern in include):
+        return False
+    if any(not (pattern.startswith(stem) and stem.startswith("refs/heads/")
+                and len(stem) > len("refs/heads/")) for pattern in exclude):
+        return False
+    types = {str((rule or {}).get("type")) for rule in ruleset.get("rules") or []}
+    return all(rule in types for rule in CLOSING_RULES)
 
 
 def _errors_text(response) -> str:

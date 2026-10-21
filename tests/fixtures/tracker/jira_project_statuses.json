@@ -1,0 +1,58 @@
+[
+  {
+    "id": "10001",
+    "name": "Task",
+    "subtask": false,
+    "statuses": [
+      {
+        "id": "10000",
+        "name": "Ready",
+        "statusCategory": {
+          "key": "new"
+        }
+      },
+      {
+        "id": "3",
+        "name": "In Progress",
+        "statusCategory": {
+          "key": "indeterminate"
+        }
+      },
+      {
+        "id": "10002",
+        "name": "In Review",
+        "statusCategory": {
+          "key": "indeterminate"
+        }
+      },
+      {
+        "id": "10003",
+        "name": "Done",
+        "statusCategory": {
+          "key": "done"
+        }
+      }
+    ]
+  },
+  {
+    "id": "10002",
+    "name": "Bug",
+    "subtask": false,
+    "statuses": [
+      {
+        "id": "10000",
+        "name": "Ready",
+        "statusCategory": {
+          "key": "new"
+        }
+      },
+      {
+        "id": "10003",
+        "name": "Done",
+        "statusCategory": {
+          "key": "done"
+        }
+      }
+    ]
+  }
+]

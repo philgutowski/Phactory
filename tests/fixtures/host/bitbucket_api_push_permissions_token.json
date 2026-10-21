@@ -1,0 +1,35 @@
+{
+  "pagelen": 100,
+  "page": 1,
+  "size": 1,
+  "values": [
+    {
+      "type": "branchrestriction",
+      "id": 3202,
+      "kind": "push",
+      "branch_match_kind": "glob",
+      "pattern": "main",
+      "value": null,
+      "users": [
+        {
+          "type": "user",
+          "uuid": "{5b0e7c2a-9d14-4f63-8a51-0c2f6e3d9b17}",
+          "display_name": "Example Operator",
+          "nickname": "example-operator"
+        },
+        {
+          "type": "user",
+          "uuid": "{c3a91f04-6e2b-4d8a-b5f7-19e0d2c4a8b6}",
+          "display_name": "example-app access token",
+          "nickname": "example-app-token"
+        }
+      ],
+      "groups": [],
+      "links": {
+        "self": {
+          "href": "https://api.bitbucket.org/2.0/repositories/example-ws/example-app/branch-restrictions/3202"
+        }
+      }
+    }
+  ]
+}

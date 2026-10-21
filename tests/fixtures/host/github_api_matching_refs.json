@@ -1,0 +1,18 @@
+[
+  {
+    "ref": "refs/heads/slipway/onboard-scratch-base",
+    "node_id": "REF_kwDOAexample1",
+    "object": {
+      "sha": "da38e6c2ec96b89748d4f34ae3cf5b07e5824f7e",
+      "type": "commit"
+    }
+  },
+  {
+    "ref": "refs/heads/slipway/EX-41-scratch",
+    "node_id": "REF_kwDOAexample2",
+    "object": {
+      "sha": "1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d",
+      "type": "commit"
+    }
+  }
+]
