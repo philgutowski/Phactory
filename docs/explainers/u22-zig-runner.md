@@ -81,11 +81,11 @@ Rejection is by commit, so the cron skips it on every instance; the rollback its
 
 ## Deploying an instance
 
-The scripts live on each host at the path `SLIPWAY_RUNNER_SCRIPTS` names in the worker's environment. A host other than the worker's own is reached through the command prefix `SLIPWAY_RUNNER_REMOTES` gives it, as JSON such as `{"laptop": ["ssh", "runner@laptop"]}`. Each host also sets `SLIPWAY_RUNNER_ROOT` (default `~/slipway-runner`), `RUNNER_IMAGE` (the sandbox image), and, for the laptop, `SLIPWAY_RUNNER_TARGET` (for example `aarch64-macos`), since the Linux sandbox cross compiles its binary.
+The scripts live on each host at the path `SLIPWAY_RUNNER_SCRIPTS` names in the worker's environment. It is one absolute path, the same on every host (a leading `~` is quoted, never expanded, on a remote host), so pick a directory that exists on both, such as `/opt/slipway-runner/scripts`, and copy `deploy/runner/` there. A host other than the worker's own is reached through the command prefix `SLIPWAY_RUNNER_REMOTES` gives it, as JSON such as `{"laptop": ["ssh", "runner@laptop"]}`. Each host also sets `SLIPWAY_RUNNER_ROOT` (default `~/slipway-runner`), `RUNNER_IMAGE` (the sandbox image), and, for the laptop, `SLIPWAY_RUNNER_TARGET` (for example `aarch64-macos`), since the Linux sandbox cross compiles its binary.
 
 On the VPS, the worker runs the scripts with the `runner_builds` volume mounted at the same path the runner container mounts it read only, so the links resolve the same in both. The runner container reads its settings and tokens from its own environment file (`RUNNER_ENV_FILE`), which no other service receives (KTD28). It has no Docker socket and joins only the builder network (KTD25).
 
-On the laptop, the plist runs `supervise.sh` under a dedicated user with its own home. Install it as `/Library/LaunchDaemons/com.slipway.zig-runner.plist` with `SLIPWAY_RUNNER_USER` replaced by that user's name, copy `deploy/runner/` to `~/slipway-runner/scripts` in that home, and put the settings `supervise.sh` lists in `~/.slipway-runner.env`, mode 600.
+On the laptop, the plist runs `supervise.sh` under a dedicated user with its own home. Install it as `/Library/LaunchDaemons/com.slipway.zig-runner.plist` with `SLIPWAY_RUNNER_USER` replaced by that user's name and `SLIPWAY_RUNNER_SCRIPTS` by the scripts path, copy `deploy/runner/` to the `SLIPWAY_RUNNER_SCRIPTS` path, readable by that user, and put the settings `supervise.sh` lists in `~/.slipway-runner.env`, mode 600.
 
 ## What this card leaves to the operator
 

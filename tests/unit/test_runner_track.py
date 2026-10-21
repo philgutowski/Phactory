@@ -206,7 +206,20 @@ def test_no_runner_repository_means_nothing_to_track():
 
 
 def test_the_cron_is_not_set_up_without_its_scripts_directory():
-    assert runner_track.real_ports(conn=None, environ={}) is None
+    assert runner_track.real_ports(connect=None, environ={}) is None
+
+
+def test_a_refused_operator_file_opens_no_connection(tmp_path, monkeypatch):
+    fixture = Path(__file__).resolve().parents[1] / "fixtures" / "config" / "operator.toml"
+    text = fixture.read_text().replace('runner_read_api = "http://runner-api.internal:8080"\n', "")
+    (tmp_path / "operator.toml").write_text(text)
+    monkeypatch.setenv("SLIPWAY_HOME", str(tmp_path))
+    opened = []
+
+    with pytest.raises(ValueError, match="runner_read_api"):
+        runner_track.real_ports(lambda: opened.append(1),
+                                environ={runner_track.SCRIPTS_ENV: "/opt/runner"})
+    assert opened == []
 
 
 # The real ports' parsing, without the network or a subprocess.

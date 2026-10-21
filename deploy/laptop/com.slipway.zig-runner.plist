@@ -10,7 +10,7 @@
   <array>
     <string>/bin/sh</string>
     <string>-c</string>
-    <string>set -a; . "$HOME/.slipway-runner.env"; set +a; mkdir -p "$HOME/Library/Logs"; exec "$HOME/slipway-runner/scripts/supervise.sh" &gt;&gt; "$HOME/Library/Logs/slipway-zig-runner.log" 2&gt;&amp;1</string>
+    <string>set -a; . "$HOME/.slipway-runner.env"; set +a; mkdir -p "$HOME/Library/Logs"; exec "SLIPWAY_RUNNER_SCRIPTS/supervise.sh" &gt;&gt; "$HOME/Library/Logs/slipway-zig-runner.log" 2&gt;&amp;1</string>
   </array>
   <key>RunAtLoad</key>
   <true/>

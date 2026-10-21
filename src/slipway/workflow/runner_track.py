@@ -160,8 +160,13 @@ def check_operator():
     return operator
 
 
-def real_ports(conn, environ: Mapping[str, str] | None = None) -> RunnerPorts | None:
-    """RunnerPorts from the environment and SLIPWAY_HOME, or None when not deployed."""
+def real_ports(connect: Callable[[], Any],
+               environ: Mapping[str, str] | None = None) -> RunnerPorts | None:
+    """RunnerPorts from the environment and SLIPWAY_HOME, or None when not deployed.
+
+    The connection is opened last, so a refused operator file or a bad
+    remotes setting leaves no connection behind.
+    """
     environ = os.environ if environ is None else environ
     directory = environ.get(SCRIPTS_ENV)
     if not directory:
@@ -169,7 +174,7 @@ def real_ports(conn, environ: Mapping[str, str] | None = None) -> RunnerPorts | 
     operator = check_operator()
     remotes = json.loads(environ.get(REMOTES_ENV) or "{}")
     return RunnerPorts(
-        records=PostgresRecords(conn),
+        records=PostgresRecords(connect()),
         scripts=ShellScripts(directory, remotes),
         api=ReadApi(operator.runner_read_api),
         head=git_head,

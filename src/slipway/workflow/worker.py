@@ -360,7 +360,7 @@ def vps_worker(hatchet, connect: Callable[[], Any], builder, credential, slots: 
     if os.environ.get(runner_track.SCRIPTS_ENV):
         runner_track.check_operator()  # a missing setting fails at boot, not an hour later
         workflows.append(runner_track.register(
-            hatchet, lambda: runner_track.real_ports(connect()),
+            hatchet, lambda: runner_track.real_ports(connect),
             close=lambda ports: ports.records.conn.close()))
     return hatchet.worker("slipway-worker", slots=slots, workflows=workflows)
 
