@@ -16,6 +16,7 @@ import pytest
 from _service_fakes import BUCKETS, MANAGER, OPERATOR, SLUG, ready_card, world
 from slipway.page import app as page_app
 from slipway.page.login import LoginFailed, OidcIdentity, Signer, b64url
+from slipway.service import status
 from slipway.trackers.base import Card
 from test_imports import SRC, walk
 
@@ -311,6 +312,10 @@ def test_landed_today_shows_both_scores_and_findings_show_their_excerpt(tmp_path
     assert "Deterministic: pass, 3 of 3. Judged: not scored yet." in rows
     [findings] = section(found.text, "findings")
     assert "fp-9" in findings and "step 4: &lt;exit 1&gt;" in findings
+
+
+def test_a_score_with_no_verdict_shows_its_count_alone():
+    assert status.score_line({"total": {"passed": 2, "of": 3}}) == "2 of 3"
 
 
 def test_a_score_that_is_not_an_object_still_renders(tmp_path):

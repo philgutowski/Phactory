@@ -14,6 +14,7 @@ The status page is the operator's read only view of every card Slipway is workin
 - **ID token.** The token in which the provider names who signed in, with their subject, the client it is for, and when it expires.
 - **TLS.** The encryption under https: the server proves who it is with a certificate the client checks, so a reply cannot be forged or read on the way.
 - **HMAC.** A keyed hash. Only the holder of the key can make a value that checks, so a cookie signed with it cannot be forged or edited.
+- **VPS.** The rented virtual server where Slipway's app, worker, and Postgres run (`deploy/`).
 - **Age.** How long a card has been in its current state, such as `40m` or `2h`.
 - **Finding.** A fault Slipway saw in a gate run that is not the card's own, such as a runner step that failed (KTD20).
 

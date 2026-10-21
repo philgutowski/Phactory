@@ -77,7 +77,8 @@ def score_line(result: dict | None) -> str | None:
     total = result.get("total") if isinstance(result.get("total"), dict) else result
     verdict = total.get("verdict")
     if "passed" in total and "of" in total:
-        return f"{verdict}, {total['passed']} of {total['of']}"
+        counted = f"{total['passed']} of {total['of']}"
+        return f"{verdict}, {counted}" if verdict else counted
     if "score" in total:
         return f"{verdict}, {total['score']}" if verdict else str(total["score"])
     return str(verdict) if verdict else "written"
