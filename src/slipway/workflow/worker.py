@@ -131,11 +131,13 @@ class PostgresRecords:
         return self.conn.execute("SELECT count(*) FROM attempts WHERE build_id = %s",
                                  (build_id,)).fetchone()[0]
 
-    def start_attempt(self, build_id: int, binding: ResolvedBinding) -> int:
+    def start_attempt(self, build_id: int, binding: ResolvedBinding,
+                      tools_granted: tuple[str, ...] = ()) -> int:
         return self.conn.execute(
-            "INSERT INTO attempts (project_id, build_id, account, model, effort) "
-            "SELECT project_id, id, %s, %s, %s FROM builds WHERE id = %s RETURNING id",
-            (binding.account.name, binding.model, binding.effort, build_id)).fetchone()[0]
+            "INSERT INTO attempts (project_id, build_id, account, model, effort, tools_granted) "
+            "SELECT project_id, id, %s, %s, %s, %s FROM builds WHERE id = %s RETURNING id",
+            (binding.account.name, binding.model, binding.effort, list(tools_granted),
+             build_id)).fetchone()[0]
 
     def end_attempt(self, build_id: int, result: BuilderResult) -> None:
         self.conn.execute(

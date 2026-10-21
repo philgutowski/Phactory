@@ -44,7 +44,7 @@ BITBUCKET = {
     "roles.builder.effort": "", "roles.builder.time_budget_minutes": "",
     "roles.judge.account": "api-main", "roles.judge.model": "model-medium",
     "roles.judge.effort": "", "roles.judge.time_budget_minutes": "",
-    "builder_worker": "laptop", "checkout": "", "auto_merge": "",
+    "builder_worker": "laptop", "checkout": "", "builder_tools": "", "auto_merge": "",
     "landing_path": "bitbucket_queue", "merge_method": "squash", "branch_template": "",
     "pull_request_title": "", "build_cap": "", "daily_dispatch_cap": "",
     "trace_project": "example-traces", "trace_detail": "",

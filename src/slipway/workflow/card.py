@@ -224,7 +224,8 @@ class Records(Protocol):
     def slots_taken(self, project_id: int) -> int: ...
     def in_flight(self, project_id: int) -> list: ...
     def attempts(self, build_id: int) -> int: ...
-    def start_attempt(self, build_id: int, binding: ResolvedBinding) -> int: ...
+    def start_attempt(self, build_id: int, binding: ResolvedBinding,
+                      tools_granted: tuple[str, ...] = ()) -> int: ...
     def end_attempt(self, build_id: int, result: BuilderResult) -> None: ...
     def ingest_poll(self, project_id: int, normalised: dict) -> bool: ...
 
@@ -504,13 +505,14 @@ def _start(ports: Ports, project, build: Build) -> tuple[Build, dict | None]:
         # one: the trigger carries a child key made from the build id, which
         # the engine dedupes on (worker.laptop_trigger).
         if not ports.records.attempts(build.id):
-            ports.records.start_attempt(build.id, binding)
+            ports.records.start_attempt(build.id, binding, handoff.builder_tools)
         returned = ports.laptop({"build_id": build.id, "handoff": asdict(handoff),
                                  "binding": _binding_json(binding), "budget_seconds": budget},
                                 label)
         build = _move(ports, build, "building",
                       {"worker": label, "started_at": returned["started_at"],
-                       "budget_seconds": budget})
+                       "budget_seconds": budget,
+                       "tools_granted": list(handoff.builder_tools)})
         result = BuilderResult(**returned["result"])
         build = _finish(ports, project, build, result, base, budget)
         return build, {"transcript": returned.get("transcript", ""),
@@ -521,14 +523,15 @@ def _start(ports: Ports, project, build: Build) -> tuple[Build, dict | None]:
         return _end_empty(ports, build, BUILDER_FAILED,
                           reason="a session may have started before a crash and its "
                                  "reference was not recorded; dispatch again"), None
-    ports.records.start_attempt(build.id, binding)
+    ports.records.start_attempt(build.id, binding, handoff.builder_tools)
     try:
         session_ref = builder.start(handoff, binding, ports.credential(project))
     except Exception as error:  # a provider error at start ends the build (KTD22)
         return _end_empty(ports, build, BUILDER_FAILED,
                           reason=scrub(f"the session did not start: {error}")), None
     return _move(ports, build, "building",
-                 {"started_at": ports.clock.now().isoformat(), "budget_seconds": budget},
+                 {"started_at": ports.clock.now().isoformat(), "budget_seconds": budget,
+                  "tools_granted": list(handoff.builder_tools)},
                  {"session_ref": session_ref}), None
 
 

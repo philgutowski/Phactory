@@ -236,6 +236,9 @@ def coerce(ports: Ports, question: Question, value, draft: Mapping):
     _secret(value)
     if isinstance(value, str):
         value = value.strip()
+    if question.kind == LIST and question.default is not None and (
+            (isinstance(value, str) and value.lower() == NO) or value is False):
+        value = ""  # "no" to an opt in keeps the default
     if value in (None, "", []):
         if question.default is not None:
             value = question.default

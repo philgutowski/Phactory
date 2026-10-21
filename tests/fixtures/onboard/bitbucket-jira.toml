@@ -16,6 +16,7 @@ landed_status = "Done"
 gate_command = "make check"
 allowed_builders = ["cli"]
 builder_worker = "laptop"
+builder_tools = ["headless_browser"]
 auto_merge = false
 landing_path = "bitbucket_queue"
 merge_method = "squash"

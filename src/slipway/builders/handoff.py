@@ -8,7 +8,8 @@ shape, in the same order, whatever adapter carries it:
     3. Rules         the operator's rules text for the project, plus the
                      project's machine bound tests (tests that need hardware a
                      remote builder lacks, R16)
-    4. Tools         the fixed tool list (the Tools primitive)
+    4. Tools         the fixed tool list (the Tools primitive), then what the
+                     project's builder_tools grant beyond the shell (U27)
     5. In flight     files other in flight builds declare or have pushed
     6. Done          the done line, from the card's good and test
     7. Credential    the name of the credential git pushes with, never its value
@@ -48,12 +49,14 @@ of the tip its writer read, and no two writers race for it.
 from collections.abc import Iterable
 from dataclasses import dataclass
 
+from slipway.builders.tools import ordered, tool_names
 from slipway.cards.contract import parse
 from slipway.trace.shape import ACTIONS_FILE, TRACE_FILE, side_reference
 from slipway.trackers.base import ClosingReference
 
 # The Tools primitive. Generic capability names; each adapter grants its own
-# tools that provide them and grants nothing else.
+# tools that provide them and grants nothing else. The levels a project's
+# builder_tools grant (builders/tools.py) are named after these.
 TOOLS = ("shell", "file read", "file edit", "git")
 
 # KTD4's in flight files fact counts cards from dispatched to merged. The same
@@ -96,6 +99,9 @@ class Handoff:
     credential_name: str
     side_reference: str
     text: str
+    # The project's builder_tools levels this build is given (U27). The
+    # adapter grants exactly these, and the workflow records them.
+    builder_tools: tuple[str, ...] = ()
 
 
 def in_flight_files(builds: Iterable[InFlightBuild], exclude_key: str | None = None
@@ -201,6 +207,7 @@ def render(project, card, base: str, branch: str, in_flight: Iterable[InFlightBu
         rules = project.rules
     rules_text = _rules(rules, tuple(project.machine_bound_tests))
     done = _done(block.good, block.test, project.gate_command, branch)
+    granted = ordered(project.builder_tools)
 
     lines = [
         f"Slipway handoff for card {card.key}: {card.title}",
@@ -214,7 +221,9 @@ def render(project, card, base: str, branch: str, in_flight: Iterable[InFlightBu
         "3. Rules:",
         _block(rules_text),
         "",
-        f"4. Tools: {', '.join(TOOLS)}.",
+        f"4. Tools: {', '.join((*TOOLS, *tool_names(granted)))}.",
+        f"{_INDENT}This session has these tools and no other; never assume one this list "
+        "does not name.",
         "",
         "5. Files other in flight builds declare or have pushed, which this card must "
         "not touch:",
@@ -236,5 +245,5 @@ def render(project, card, base: str, branch: str, in_flight: Iterable[InFlightBu
     return Handoff(
         card_key=card.key, base=base, branch=branch, rules=rules_text, tools=TOOLS,
         in_flight=files, done=done, credential_name=project.host_credential,
-        side_reference=reference, text="\n".join(lines),
+        side_reference=reference, text="\n".join(lines), builder_tools=granted,
     )

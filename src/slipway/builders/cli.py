@@ -14,8 +14,9 @@ Every session gets its own directory under the adapter's root, named by its
 session reference:
 
     <root>/<session_ref>/
-      run/          token (the git credential, rewritten on refresh) and
-                    handoff.txt; mounted read only into a container
+      run/          token (the git credential, rewritten on refresh),
+                    handoff.txt, and mcp.json (the session's MCP servers);
+                    mounted read only into a container
       workspace/    home/, config/ (an empty CLAUDE_CONFIG_DIR), repo/ (a
                     fresh clone, or a worktree; below), out/ (the CLI's final
                     JSON result)
@@ -42,6 +43,13 @@ checkout's own branch, files, and status are never touched. The session
 user needs write access to the shared checkout's .git folder, which the
 laptop's install gives through the worker's group. clone stays the
 default, and a container always clones.
+
+Builder tools (U27). The handoff carries the project's builder_tools, and
+the adapter turns them into a Grant (builders/tools.py): run/mcp.json, which
+the CLI reads with --mcp-config and --strict-mcp-config so the session has
+exactly those MCP servers, plus any CLI flag, such as --chrome. A container
+refuses the laptop only levels before it makes anything. The levels granted
+are written to state.json as tools_granted.
 
 Credentials. The account token (CLAUDE_CODE_OAUTH_TOKEN for a subscription,
 ANTHROPIC_API_KEY for an API key) reaches the session by environment only:
@@ -98,6 +106,7 @@ from slipway.builders.base import (
     SessionStatus,
 )
 from slipway.builders.handoff import Handoff
+from slipway.builders.tools import MCP_CONFIG_FILE, Grant, ToolRefused, grant, refuse
 from slipway.config.bindings import BindingInvalid, ResolvedBinding
 from slipway.config.operator import AccountKind
 from slipway.config.project import Checkout
@@ -149,8 +158,11 @@ git config --global user.name "$SLIPWAY_GIT_NAME"
 git config --global user.email "$SLIPWAY_GIT_EMAIL"
 git clone --quiet --branch "$SLIPWAY_BRANCH" "$SLIPWAY_REMOTE" "$SLIPWAY_REPO"
 cd "$SLIPWAY_REPO"
+# SLIPWAY_TOOL_FLAGS is unquoted on purpose: it holds only the fixed flags
+# builders/tools.py names, split on spaces, and is empty for most projects.
 exec claude -p --session-id "$SLIPWAY_SESSION_ID" --model "$SLIPWAY_MODEL" \\
   --permission-mode "$SLIPWAY_PERMISSION_MODE" --output-format json \\
+  --mcp-config "$SLIPWAY_MCP_CONFIG" --strict-mcp-config $SLIPWAY_TOOL_FLAGS \\
   < "$SLIPWAY_HANDOFF" > "$SLIPWAY_OUT/result.json"
 """
 
@@ -511,9 +523,14 @@ class Paths:
     def out(self) -> str:
         return f"{self.workspace}/out"
 
+    @property
+    def browser(self) -> str:
+        """Where the headless browser saves screenshots and other files."""
+        return f"{self.out}/browser"
+
 
 def session_env(paths: Paths, handoff: Handoff, binding: ResolvedBinding, git: GitAccess,
-                session_id: str) -> dict[str, str]:
+                session_id: str, flags: Sequence[str] = ()) -> dict[str, str]:
     """The session's variables, none of them secret. The token is added by name."""
     return {
         "HOME": paths.home,
@@ -531,6 +548,8 @@ def session_env(paths: Paths, handoff: Handoff, binding: ResolvedBinding, git: G
         "SLIPWAY_SESSION_ID": session_id,
         "SLIPWAY_MODEL": binding.model,
         "SLIPWAY_PERMISSION_MODE": PERMISSION_MODE,
+        "SLIPWAY_MCP_CONFIG": f"{paths.run}/{MCP_CONFIG_FILE}",
+        "SLIPWAY_TOOL_FLAGS": " ".join(flags),
     }
 
 
@@ -568,17 +587,30 @@ class _Sessions:
     def _save(self, session_ref: str, state: dict) -> None:
         (self.dir(session_ref) / "state.json").write_text(json.dumps(state, sort_keys=True))
 
+    def _grant(self, handoff: Handoff, paths: Paths) -> Grant:
+        """The tools this adapter gives the session (U27)."""
+        raise NotImplementedError
+
+    def _paths(self, top: Path) -> Paths:
+        """The session's directories as the session sees them."""
+        raise NotImplementedError
+
     def _prepare(self, handoff: Handoff, binding: ResolvedBinding,
-                 credential: Credential) -> tuple[str, Path, str, str]:
+                 credential: Credential) -> tuple[str, Path, str, str, Grant]:
         variable, value = account_token(binding, self.environ)
         session_ref = session_name(handoff.card_key)
         top = self.dir(session_ref)
+        # Refused here, a tool the adapter cannot grant leaves nothing behind.
+        tools = self._grant(handoff, self._paths(top))
         workspace = top / "workspace"
         for path, mode in ((top, 0o750), (top / "run", 0o750), (workspace, 0o770),
                            *((workspace / n, 0o770) for n in ("home", "config", "repo", "out"))):
             path.mkdir(parents=True)
             path.chmod(mode)  # chmod, because mkdir's mode is cut by the umask
         (top / "run" / "handoff.txt").write_text(handoff.text)
+        config = top / "run" / MCP_CONFIG_FILE
+        config.write_text(tools.mcp_config())
+        config.chmod(0o640)
         _write_secret(top / "run" / "token", credential.current(), self.TOKEN_MODE)
         self._credentials[session_ref] = credential
         self._injected[session_ref] = [value, credential.current()]
@@ -587,8 +619,9 @@ class _Sessions:
             "card_key": handoff.card_key, "branch": handoff.branch, "base": handoff.base,
             "session_id": session_id, "model": binding.model, "account": binding.account.name,
             "token_variable": variable, "account_env": binding.account.env,
+            "tools_granted": list(tools.tools),
         })
-        return session_ref, top, session_id, value
+        return session_ref, top, session_id, value, tools
 
     def injected(self, session_ref: str) -> tuple[str, ...]:
         """Every value injected into the session that this process still knows."""
@@ -738,6 +771,12 @@ class ContainerBuilder(_Sessions):
             raise ValueError(f"network {network!r} is not an isolated builder network")
         self.image, self.network, self.user = image, network, user
 
+    def _paths(self, top: Path) -> Paths:
+        return Paths(self.RUN, self.WORKSPACE)
+
+    def _grant(self, handoff: Handoff, paths: Paths) -> Grant:
+        return grant(handoff.builder_tools, container=True, output_dir=paths.browser)
+
     def invocation(self, session_ref: str, top: Path, variables: Mapping[str, str],
                    token_variable: str) -> list[str]:
         """The docker run command line. It names the token variable, never its value."""
@@ -760,9 +799,11 @@ class ContainerBuilder(_Sessions):
         return argv
 
     def start(self, handoff: Handoff, binding: ResolvedBinding, credential: Credential) -> str:
-        session_ref, top, session_id, value = self._prepare(handoff, binding, credential)
-        variables = session_env(Paths(self.RUN, self.WORKSPACE), handoff, binding, self.git,
-                                session_id)
+        # Before anything is made: a laptop only tool never reaches a container.
+        refuse(handoff.builder_tools, container=True)
+        session_ref, top, session_id, value, tools = self._prepare(handoff, binding, credential)
+        variables = session_env(self._paths(top), handoff, binding, self.git, session_id,
+                                tools.flags)
         token_variable = self._state(session_ref)["token_variable"]
         client = {k: self.environ[k] for k in DOCKER_CLIENT if k in self.environ}
         client[token_variable] = value
@@ -803,7 +844,11 @@ class LaptopBuilder(_Sessions):
     subscription token, and the git credential. session_user is the second
     user each session runs as, through sudo with only the session's own
     variables kept. path is the PATH the session gets. start blocks until
-    the session exits, which is what worker_process means.
+    the session exits, which is what worker_process means. desktop_server
+    is this machine's computer use MCP server entry (command, args, env),
+    needed only by a project that grants desktop, and browsers_path the
+    folder its Playwright browsers are installed in, needed by one that
+    grants headless_browser (U27).
     """
 
     schedule = Schedule.WORKER_PROCESS
@@ -812,8 +857,11 @@ class LaptopBuilder(_Sessions):
     def __init__(self, root: Path, git: GitAccess, session_user: str, path: str,
                  run: Run = default_run, environ: Mapping[str, str] | None = None,
                  now: Callable[[], datetime] = now_utc, refresh_seconds: float = 60.0,
-                 checkout: Checkout | str = Checkout.CLONE, shared: Path | None = None):
+                 checkout: Checkout | str = Checkout.CLONE, shared: Path | None = None,
+                 desktop_server: Mapping | None = None, browsers_path: str | None = None):
         super().__init__(root, git, run, environ, now)
+        self.desktop_server = dict(desktop_server) if desktop_server else None
+        self.browsers_path = browsers_path
         if session_user in ("", "root"):
             raise ValueError("a laptop session never runs as root")
         self.session_user, self.path, self.refresh_seconds = session_user, path, refresh_seconds
@@ -822,12 +870,20 @@ class LaptopBuilder(_Sessions):
             raise ValueError("a worktree checkout needs the path of the shared checkout")
         self.shared = Path(shared) if shared is not None else None
 
+    def _paths(self, top: Path) -> Paths:
+        return Paths(str(top / "run"), str(top / "workspace"))
+
+    def _grant(self, handoff: Handoff, paths: Paths) -> Grant:
+        return grant(handoff.builder_tools, container=False, output_dir=paths.browser,
+                     desktop_server=self.desktop_server, browsers_path=self.browsers_path)
+
     def environment(self, session_ref: str, handoff: Handoff, binding: ResolvedBinding,
-                    session_id: str, token_value: str) -> dict[str, str]:
+                    session_id: str, token_value: str,
+                    flags: Sequence[str] = ()) -> dict[str, str]:
         """The session's whole environment, built from nothing (KTD12)."""
         top = self.dir(session_ref)
-        variables = session_env(Paths(str(top / "run"), str(top / "workspace")), handoff,
-                                binding, self.git, session_id)
+        variables = session_env(self._paths(top), handoff, binding, self.git, session_id,
+                                flags)
         token_variable = self._state(session_ref)["token_variable"]
         if self.checkout is Checkout.WORKTREE:
             variables["SLIPWAY_SHARED"] = str(self.shared)
@@ -875,7 +931,7 @@ class LaptopBuilder(_Sessions):
                          handoff.base)
 
     def start(self, handoff: Handoff, binding: ResolvedBinding, credential: Credential) -> str:
-        session_ref, top, session_id, value = self._prepare(handoff, binding, credential)
+        session_ref, top, session_id, value, tools = self._prepare(handoff, binding, credential)
         if self.checkout is Checkout.WORKTREE:
             try:
                 self._add_worktree(session_ref, handoff)
@@ -885,7 +941,7 @@ class LaptopBuilder(_Sessions):
                 detail = (error.stderr or "").strip() or f"git exited {error.returncode}"
                 self._finish(session_ref, None, f"the worktree could not be added: {detail}")
                 return session_ref
-        env = self.environment(session_ref, handoff, binding, session_id, value)
+        env = self.environment(session_ref, handoff, binding, session_id, value, tools.flags)
         stop = threading.Event()
         failed: list[CredentialError] = []
 
@@ -956,8 +1012,19 @@ class LaptopReturn:
 
 def laptop_build(builder: LaptopBuilder, handoff: Handoff, binding: ResolvedBinding,
                  credential: Credential) -> LaptopReturn:
-    """The body of the laptop_build child: run one session, return, clean up."""
-    session_ref = builder.start(handoff, binding, credential)
+    """The body of the laptop_build child: run one session, return, clean up.
+
+    A tool the laptop cannot grant (U27) is refused before any session or
+    folder exists, so the build ends returned_empty with the reason on its
+    record, as a refused container start does, rather than failing the task.
+    """
+    try:
+        session_ref = builder.start(handoff, binding, credential)
+    except ToolRefused as refused:
+        result = BuilderResult(handoff.branch, None, f"the session did not start: {refused}",
+                               "", model=binding.model, account=binding.account.name,
+                               halt_class=BUILDER_FAILED)
+        return LaptopReturn(result, "", 0)
     try:
         status = builder.poll(session_ref)
         text = builder.transcript(session_ref) or ""

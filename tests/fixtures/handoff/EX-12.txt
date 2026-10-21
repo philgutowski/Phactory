@@ -14,7 +14,8 @@ Slipway handoff for card EX-12: Add the hello page
    Do not run them here; the project's gate runs them.
    * tests/test_usb_device.py
 
-4. Tools: shell, file read, file edit, git.
+4. Tools: shell, file read, file edit, git, headless browser (the playwright MCP server; it runs as you, inside your session).
+   This session has these tools and no other; never assume one this list does not name.
 
 5. Files other in flight builds declare or have pushed, which this card must not touch:
    * src/footer.py

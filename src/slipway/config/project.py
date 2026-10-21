@@ -54,6 +54,23 @@ placeholder, the namespace a machine identity's push rule holds the builder
 to (KTD6). Onboard reads it in place of a fixed slipway/ prefix and refuses
 an empty one when it pins a machine identity.
 
+Builder tools (U27). builder_tools lists what a builder session may drive
+beyond the shell, from three levels:
+
+    headless_browser   a Playwright browser (a browser with no window,
+                       driven by code) the session reaches through its MCP
+                       server. It runs inside the container or as the laptop
+                       session's own user, so KTD12's isolation holds. The
+                       default, and the only level a container may have.
+    operator_browser   the operator's own signed in Chrome (Claude in Chrome)
+    desktop            the operator's own screen (computer use)
+
+The last two act as the operator, outside the session's dedicated user, so
+each is laptop only: a project with no builder_worker (its builds run in a
+container) is refused at load if it lists either. An absent key means the
+default, ["headless_browser"]; an empty list gives the shell alone.
+builders/tools.py turns the list into the session's MCP configuration.
+
 landing_path also takes external_lander: something that is neither Slipway
 nor the host's queue, such as a project's own watcher session, puts the
 branch on the base branch and pushes, and the host then marks the pull
@@ -121,6 +138,21 @@ class TraceDetail(StrEnum):
     SUMMARY = "summary"
 
 
+class BuilderTool(StrEnum):
+    """What a builder may drive beyond the shell (U27), in the order a grant lists it."""
+
+    HEADLESS_BROWSER = "headless_browser"
+    OPERATOR_BROWSER = "operator_browser"
+    DESKTOP = "desktop"
+
+
+DEFAULT_BUILDER_TOOLS = (BuilderTool.HEADLESS_BROWSER.value,)
+# Why each laptop only level is refused for a container, as the refusal says it.
+LAPTOP_ONLY = {
+    BuilderTool.OPERATOR_BROWSER: "gives the session the operator's own signed in browser",
+    BuilderTool.DESKTOP: "gives the session the operator's own screen",
+}
+
 DEFAULT_BRANCH_TEMPLATE = "slipway/{key}-{build}"
 DEFAULT_PULL_REQUEST_TITLE = "{title}"
 
@@ -172,6 +204,7 @@ class Project:
     branch_template: str = DEFAULT_BRANCH_TEMPLATE
     pull_request_title: str = DEFAULT_PULL_REQUEST_TITLE
     checkout: Checkout = Checkout.CLONE
+    builder_tools: tuple[str, ...] = DEFAULT_BUILDER_TOOLS
 
     def branch_for(self, key: str, title: str, build_id: int | str) -> str:
         """The card's branch name under this project's template."""
@@ -189,7 +222,7 @@ KNOWN = {
     "trivial_card_target", "trace_project", "trace_detail", "tracker_credential",
     "host_credential", "allowed_subjects", "evals_path", "landing_path", "merge_method",
     "runner_labels", "machine_bound_tests", "builder_worker", "rules", "branch_template",
-    "pull_request_title", "checkout",
+    "pull_request_title", "checkout", "builder_tools",
 }
 ROLE_KEYS = {"account", "model", "effort", "time_budget_minutes"}
 RULES_KEYS = ("text", "file")
@@ -269,6 +302,27 @@ def read_branch_template(top: Reader) -> str:
             top.fail("branch_template",
                      f"renders {sample!r}, which is not a legal branch name")
     return template
+
+
+def read_builder_tools(top: Reader, builder_worker: str | None) -> tuple[str, ...]:
+    """The builder_tools list, in BuilderTool order; laptop only levels need a laptop."""
+    if "builder_tools" not in top.data:
+        return DEFAULT_BUILDER_TOOLS
+    listed = top.strs("builder_tools")
+    known = [tool.value for tool in BuilderTool]
+    for index, name in enumerate(listed):
+        if name not in known:
+            top.fail(f"builder_tools[{index}]", f"{name!r} is not one of {', '.join(known)}")
+    if len(set(listed)) != len(listed):
+        top.fail("builder_tools", "lists a tool twice")
+    if builder_worker is None:
+        for tool, power in LAPTOP_ONLY.items():
+            if tool.value in listed:
+                top.fail("builder_tools",
+                         f"{tool.value} is for a laptop builder only: it {power}, outside "
+                         "the session's dedicated user, and this project's builds run in a "
+                         "container (it names no builder_worker)")
+    return tuple(name for name in known if name in listed)
 
 
 def project_path(slug: str, root: Path | None = None) -> Path:
@@ -357,6 +411,7 @@ def parse_project(path: Path, data: dict) -> Project:
         if role not in roles:
             top.fail(f"roles.{role}", "missing")
 
+    builder_worker = top.text("builder_worker", required=False)
     return Project(
         path=path,
         slug=path.stem,
@@ -387,12 +442,13 @@ def parse_project(path: Path, data: dict) -> Project:
         merge_method=top.choice("merge_method", MergeMethod, required=False),
         runner_labels=top.strs("runner_labels", required=False),
         machine_bound_tests=top.strs("machine_bound_tests", required=False),
-        builder_worker=top.text("builder_worker", required=False),
+        builder_worker=builder_worker,
         rules=read_rules(path, top),
         branch_template=read_branch_template(top),
         pull_request_title=_template(top, "pull_request_title", DEFAULT_PULL_REQUEST_TITLE,
                                      TITLE_FIELDS, "title"),
         checkout=top.choice("checkout", Checkout, required=False) or Checkout.CLONE,
+        builder_tools=read_builder_tools(top, builder_worker),
     )
 
 

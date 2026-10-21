@@ -127,9 +127,10 @@ def test_a_card_lands_and_scores_with_every_transition_on_an_allowed_edge(connec
     assert row.branch == f"slipway/EX-20-{build_id}"
     assert row.pr_number == 101 and row.confirmed_commit == sha(1)
     assert row.session_ref == "session-EX-20-1"
-    attempts = records.conn.execute("SELECT model, ended_at IS NOT NULL FROM attempts "
-                                    "WHERE build_id = %s", (build_id,)).fetchall()
-    assert attempts == [("model-large", True)]
+    attempts = records.conn.execute("SELECT model, ended_at IS NOT NULL, tools_granted "
+                                    "FROM attempts WHERE build_id = %s",
+                                    (build_id,)).fetchall()
+    assert attempts == [("model-large", True, ["headless_browser"])]
 
 
 def test_the_edges_migration_004_adds_carry_real_cards(connect, tmp_path):
