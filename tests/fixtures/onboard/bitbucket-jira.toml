@@ -1,0 +1,40 @@
+# Written by Slipway's onboard. Change it by running onboard again, not by hand.
+# Last answer by: ACTOR
+
+host = "bitbucket"
+repository = "example-workspace/example-app"
+host_credential = "example-bitbucket"
+tracker = "jira"
+tracker_site = "example.atlassian.net"
+tracker_credential = "example-jira"
+board = "EX"
+lane_label = "slipway"
+ready_status = "Ready"
+in_progress_status = "In Progress"
+in_review_status = "In Review"
+landed_status = "Done"
+gate_command = "make check"
+allowed_builders = ["cli"]
+builder_worker = "laptop"
+auto_merge = false
+landing_path = "bitbucket_queue"
+merge_method = "squash"
+build_cap = 2
+daily_dispatch_cap = 10
+trace_project = "example-traces"
+trace_detail = "summary"
+allowed_subjects = ["user_operator_example", "agent_manager_example"]
+evals_path = "evals/"
+trivial_card_target = "docs/slipway-onboarding.md"
+
+[roles.builder]
+account = "max-sub"
+model = "model-large"
+effort = "high"
+time_budget_minutes = 90
+
+[roles.judge]
+account = "api-main"
+model = "model-medium"
+effort = "medium"
+time_budget_minutes = 10

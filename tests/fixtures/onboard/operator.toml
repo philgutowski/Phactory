@@ -1,0 +1,44 @@
+# The operator file the onboard tests run against. Every value is invented;
+# every credential is named by the environment variable that would hold it.
+
+operator_subject = "user_operator_example"
+
+[identity_provider]
+issuer = "https://auth.example.test"
+client_id = "client_example"
+client_secret_env = "SLIPWAY_IDP_CLIENT_SECRET"
+
+[accounts.max-sub]
+kind = "subscription"
+env = "SLIPWAY_ACCOUNT_MAX_SUB"
+
+[accounts.api-main]
+kind = "api_key"
+env = "SLIPWAY_ACCOUNT_API_MAIN"
+
+[langfuse_projects.example-traces]
+public_key_env = "LANGFUSE_EXAMPLE_PUBLIC_KEY"
+secret_key_env = "LANGFUSE_EXAMPLE_SECRET_KEY"
+
+[tracker_credentials.example-jira]
+site = "example.atlassian.net"
+email_env = "EXAMPLE_JIRA_EMAIL"
+token_env = "EXAMPLE_JIRA_TOKEN"
+
+[tracker_credentials.example-github]
+site = "github.com"
+token_env = "EXAMPLE_GITHUB_TRACKER_TOKEN"
+
+[host_credentials.example-app]
+host = "github"
+kind = "github_app"
+env = "EXAMPLE_GITHUB_APP_KEY"
+
+[host_credentials.example-bitbucket]
+host = "bitbucket"
+kind = "repository_access_token"
+env = "EXAMPLE_BITBUCKET_TOKEN"
+
+[builder_workers.laptop]
+label = "laptop-builder"
+machine = "laptop"
