@@ -100,9 +100,17 @@ def evaluate(ports: RunnerPorts, gate_run: Mapping[str, Any]) -> dict:
         raise RuntimeError(f"rollback.sh failed on {build.instance}: {script.output[-500:]}")
     restored = records.roll_back(build.id, previous.runner_commit, ports.now())
     if restored is None:
-        # Another evaluation won the compare and set between our read and now.
         build = records.runner_build(build.id)
-        return {**out, **_repeat(ports, gate_run, build, classes)}
+        if build.state == "rejected":
+            # Another evaluation rolled it back between our read and now.
+            return {**out, **_repeat(ports, gate_run, build, classes)}
+        # The cron swapped to a newer build in the same moment. The script
+        # just moved the link to the previous build, so point it back at the
+        # build the records say is active.
+        current = records.active_build(build.instance)
+        if current is not None:
+            ports.scripts.swap(host, build.instance, current.runner_commit)
+        return {**out, "outcome": SUPERSEDED}
 
     finding_id = records.add_finding(finding(
         REGRESSION, f"{REGRESSION}:{build.instance}:{build.runner_commit}",

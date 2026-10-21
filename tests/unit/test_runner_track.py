@@ -270,7 +270,8 @@ def test_a_script_that_cannot_start_is_a_failed_result():
 
     result = instances.ShellScripts("/missing", run=run).swap("vps", "vps", B)
 
-    assert not result.ok and "swap.sh did not finish" in result.output
+    assert not result.ok and not result.finished
+    assert "swap.sh did not finish" in result.output
 
 
 def test_a_finding_excerpt_is_bounded_and_scrubbed():
@@ -334,3 +335,34 @@ def test_check_operator_refuses_a_file_without_the_read_api(tmp_path, monkeypatc
     monkeypatch.setenv("SLIPWAY_HOME", str(tmp_path))
     with pytest.raises(ValueError, match="runner_read_api"):
         runner_track.check_operator()
+
+
+def test_closing_a_build_finding_asks_for_a_retry():
+    w = world()
+    deployed(w, A)
+    w.head = B
+    w.scripts.failing.add(("build", "vps"))
+    runner_track.reconcile(w.ports)
+    w.scripts.failing.clear()
+    w.records.findings[0]["state"] = "closed"
+
+    w.later()
+    out = runner_track.reconcile(w.ports)
+
+    assert out["instances"]["vps"]["outcome"] == runner_track.SWAPPED
+    assert w.records.active_build("vps").runner_commit == B
+
+
+def test_a_build_that_never_finished_records_nothing_and_is_retried():
+    w = world()
+    deployed(w, A)
+    w.head = B
+    w.scripts.unfinished.add(("build", "vps"))
+
+    out = runner_track.reconcile(w.ports)
+
+    assert out["instances"]["vps"]["outcome"] == runner_track.BUILD_UNFINISHED
+    assert w.records.findings == []
+    w.scripts.unfinished.clear()
+    w.later()
+    assert runner_track.reconcile(w.ports)["instances"]["vps"]["outcome"] == runner_track.SWAPPED

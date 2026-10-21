@@ -64,8 +64,9 @@ class FakeRecords:
         return any(b.runner_commit == runner_commit and b.state == "rejected"
                    for b in self.builds)
 
-    def has_finding(self, fingerprint):
-        return any(f["fingerprint"] == fingerprint for f in self.findings)
+    def has_open_finding(self, fingerprint):
+        return any(f["fingerprint"] == fingerprint and f["state"] == "open"
+                   for f in self.findings)
 
     def _replace(self, build_id, **changes):
         self.builds = [replace(b, **changes) if b.id == build_id else b for b in self.builds]
@@ -110,7 +111,7 @@ class FakeRecords:
                "fingerprint": item.fingerprint, "excerpt": item.excerpt,
                "runner_commit": item.runner_commit, "project_id": item.project_id,
                "gate_run_id": item.gate_run_id, "runner_build_id": item.runner_build_id,
-               "related_finding_id": item.related_finding_id}
+               "related_finding_id": item.related_finding_id, "state": "open"}
         self.findings.append(row)
         return row["id"]
 
@@ -136,10 +137,13 @@ class FakeRecords:
 class FakeScripts:
     calls: list[tuple] = field(default_factory=list)
     failing: set[tuple] = field(default_factory=set)  # (script, host) pairs that fail
+    unfinished: set[tuple] = field(default_factory=set)  # pairs that never reach an exit
     output: str = "error: zig build test failed"
 
     def _call(self, script, host, *args):
         self.calls.append((script, host, *args))
+        if (script, host) in self.unfinished:
+            return ScriptResult(False, f"{script}.sh did not finish", finished=False)
         if (script, host) in self.failing:
             return ScriptResult(False, self.output)
         return ScriptResult(True, "")

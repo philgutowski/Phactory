@@ -89,8 +89,13 @@ def finding(finding_class: str, fingerprint: str, runner_commit: str,
 
 @dataclass(frozen=True)
 class ScriptResult:
+    """A script's outcome. finished is False when it never ran to an exit
+    status (it could not start, or timed out), which says nothing about the
+    commit it was given."""
+
     ok: bool
     output: str = ""
+    finished: bool = True
 
 
 class Records(Protocol):
@@ -98,7 +103,7 @@ class Records(Protocol):
     def runner_build(self, build_id: int) -> RunnerBuild | None: ...
     def previous_build(self, build: RunnerBuild) -> RunnerBuild | None: ...
     def rejected(self, runner_commit: str) -> bool: ...
-    def has_finding(self, fingerprint: str) -> bool: ...
+    def has_open_finding(self, fingerprint: str) -> bool: ...
     def activate(self, instance: str, runner_commit: str, expected_id: int | None,
                  at: datetime) -> int | None: ...
     def roll_back(self, build_id: int, runner_commit: str, at: datetime) -> int | None: ...
@@ -210,7 +215,7 @@ class ShellScripts:
             done = self.run(argv, capture_output=True, text=True, timeout=self.timeout,
                             check=False)
         except (OSError, subprocess.TimeoutExpired) as error:
-            return ScriptResult(False, f"{script}.sh did not finish: {error}")
+            return ScriptResult(False, f"{script}.sh did not finish: {error}", finished=False)
         return ScriptResult(done.returncode == 0, (done.stdout or "") + (done.stderr or ""))
 
     def build(self, host: str, repository: RunnerRepository, commit: str) -> ScriptResult:
@@ -262,9 +267,9 @@ class PostgresRecords:
             "SELECT EXISTS (SELECT 1 FROM runner_builds WHERE runner_commit = %s "
             "AND state = 'rejected')", (runner_commit,)).fetchone()[0]
 
-    def has_finding(self, fingerprint: str) -> bool:
-        return self.conn.execute("SELECT EXISTS (SELECT 1 FROM findings WHERE fingerprint = %s)",
-                                 (fingerprint,)).fetchone()[0]
+    def has_open_finding(self, fingerprint: str) -> bool:
+        return self.conn.execute("SELECT EXISTS (SELECT 1 FROM findings WHERE fingerprint = %s "
+                                 "AND state = 'open')", (fingerprint,)).fetchone()[0]
 
     def activate(self, instance: str, runner_commit: str, expected_id: int | None,
                  at: datetime) -> int | None:

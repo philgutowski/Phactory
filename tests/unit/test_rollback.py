@@ -157,3 +157,21 @@ def test_a_repeat_with_no_first_finding_reads_plainly():
 
     assert out["outcome"] == rollback.ALREADY_ROLLED_BACK and out["related_finding"] is None
     assert regressions(w)[-1]["excerpt"].endswith("already rolled back.")
+
+
+def test_losing_the_compare_and_set_to_the_cron_points_the_link_back_at_its_swap():
+    w, b = on_b_after_a()
+    w.records.gate_run(1, "vps", T0 + timedelta(minutes=20))
+    run = w.records.gate_run(1, "vps", b.activated_at + timedelta(minutes=1), rollback.LOG_GAP)
+
+    def cron_won(build_id, commit, at):
+        # The hourly swap to C landed between the evaluator's read and write.
+        w.records.activate("vps", C, build_id, at)
+        return None
+
+    w.records.roll_back = cron_won
+    out = rollback.evaluate(w.ports, run)
+
+    assert out["outcome"] == rollback.SUPERSEDED
+    assert w.scripts.calls == [("rollback", "vps", "vps", A), ("swap", "vps", "vps", C)]
+    assert w.records.active_build("vps").runner_commit == C and regressions(w) == []

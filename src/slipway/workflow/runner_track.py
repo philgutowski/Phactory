@@ -10,9 +10,12 @@ an hour reconcile() does this:
    since a binary built on the VPS does not run on the laptop.
 4. On each host, build the head and run the runner's own tests through the
    deploy/runner scripts, in a sandbox container on that host. A failure
-   writes a runner_build_red finding naming the host and commit, leaves
-   the host's instances where they are, and is not retried for that commit;
-   a newer head is.
+   writes a runner_build_red finding naming the host and commit and leaves
+   the host's instances where they are. The commit is not built again on
+   that host while the finding is open; closing it asks for a retry, and a
+   newer head is built as usual. A script that never reached an exit status
+   (it could not start, or timed out) writes no finding and is retried the
+   next hour.
 5. For each instance on a host that passed, ask the runner's read API
    whether any runner process under the instance's name prefix is busy. A
    busy instance waits for the next hour. An idle one, every process online
@@ -61,6 +64,7 @@ REMOTES_ENV = "SLIPWAY_RUNNER_REMOTES"
 CURRENT = "current"
 BUILD_RED_BEFORE = "build_red_before"
 BUILD_RED_NOW = "build_red"
+BUILD_UNFINISHED = "build_unfinished"
 API_UNREACHABLE = "api_unreachable"
 BUSY = "busy"
 SWAP_ERROR = "swap_error"
@@ -91,13 +95,20 @@ def reconcile(ports: RunnerPorts) -> dict:
 
     for host, members in pending.items():
         fingerprint = f"{BUILD_RED}:{host}:{head}"
-        if records.has_finding(fingerprint):
+        if records.has_open_finding(fingerprint):
             for instance, _ in members:
                 out["instances"][instance.name] = {"outcome": BUILD_RED_BEFORE}
             continue
         result = ports.scripts.build(host, repository, head)
         if result.ok:
             result = ports.scripts.test(host, head)
+        if not result.finished:
+            # It never reached an exit status, which says nothing about the
+            # commit: no finding, and the next hour tries again.
+            for instance, _ in members:
+                out["instances"][instance.name] = {"outcome": BUILD_UNFINISHED,
+                                                   "output": result.output[-500:]}
+            continue
         if not result.ok:
             finding_id = records.add_finding(finding(BUILD_RED, fingerprint, head,
                                                      result.output))

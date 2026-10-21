@@ -120,7 +120,10 @@ def test_a_build_failure_is_a_deployment_finding_with_no_project(conn):
     assert out["instances"]["vps"]["outcome"] == "build_red"
     row = conn.execute("SELECT project_id, class, runner_commit, excerpt FROM findings").fetchone()
     assert row[:3] == (None, instances.BUILD_RED, B) and "zig build test failed" in row[3]
-    assert w.records.has_finding(f"{instances.BUILD_RED}:vps:{B}")
+    fingerprint = f"{instances.BUILD_RED}:vps:{B}"
+    assert w.records.has_open_finding(fingerprint)
+    conn.execute("UPDATE findings SET state = 'closed', closed_at = now()")
+    assert not w.records.has_open_finding(fingerprint)
     assert w.records.active_build("vps") is None
 
 
