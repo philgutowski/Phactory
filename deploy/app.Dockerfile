@@ -46,6 +46,12 @@ RUN test "${SLIPWAY_UID}" != 0 \
  && useradd --uid "${SLIPWAY_UID}" --gid "${SLIPWAY_GID}" --create-home \
       --shell /usr/sbin/nologin slipway
 
+# The worker's git cache is a named volume over SLIPWAY_HOME/cache. Docker
+# copies a fresh volume's ownership from the image, so the folder is made
+# here, owned by the user, or the first build could not write to it.
+RUN mkdir -p /srv/slipway/home/cache \
+ && chown "${SLIPWAY_UID}:${SLIPWAY_GID}" /srv/slipway/home/cache
+
 ENV PYTHONUNBUFFERED=1 \
     SLIPWAY_HOME=/srv/slipway/home
 

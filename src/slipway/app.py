@@ -185,6 +185,19 @@ REFUSED_STATUS = {
 }
 
 
+class DeliveryLog(webhooks.DeliveryLog):
+    """U9's delivery log, plus forgetting a delivery whose storing failed.
+
+    The endpoint records a delivery id before it touches the database, so a
+    retry racing the first try is answered without a second write. When the
+    write then fails, the id is forgotten, so the host's redelivery is
+    stored instead of being answered as a duplicate.
+    """
+
+    def forget(self, host: str, delivery_id: str) -> None:
+        self._seen.pop((str(host), str(delivery_id)), None)
+
+
 class Webhooks:
     """The webhook endpoint (KTD10): verify, dedupe, record, then wake the build.
 
@@ -196,12 +209,12 @@ class Webhooks:
     def __init__(self, secrets: webhooks.SecretsFor,
                  project_for: Callable[[Host, str], str | None],
                  records: Callable[[], WebhookRecords], engine: engine_module.Engine,
-                 deliveries: webhooks.DeliveryLog | None = None):
+                 deliveries: DeliveryLog | None = None):
         self.secrets = secrets
         self.project_for = project_for
         self.records = records
         self.engine = engine
-        self.deliveries = deliveries if deliveries is not None else webhooks.DeliveryLog()
+        self.deliveries = deliveries if deliveries is not None else DeliveryLog()
 
     def handle(self, host_name: str, headers: Mapping[str, str], body: bytes) -> Answer:
         try:
@@ -218,9 +231,8 @@ class Webhooks:
         try:
             return self._handle(host, headers, body, records)
         except Exception as error:
-            # The records could not be read or written. The sender may retry;
-            # the in process log already holds the id, so a retry is answered
-            # as a duplicate, and the run's hourly poll stands in (KTD10).
+            # The records could not be read or written. The delivery's id is
+            # forgotten (_handle), so the host's redelivery is stored.
             return Answer("503 Service Unavailable", "unavailable", type(error).__name__)
         finally:
             for found in opened:
@@ -247,7 +259,15 @@ class Webhooks:
             return Answer("202 Accepted", "dropped", result.reason)
         if self.deliveries.seen(result.host, result.delivery_id):
             return Answer("200 OK", "duplicate", result.delivery_id)
-        project = slug[-1] if slug else self.project_for(host, result.repository)
+        try:
+            return self._store(host, result, slug[-1] if slug else None, records)
+        except Exception:
+            self.deliveries.forget(result.host, result.delivery_id)
+            raise
+
+    def _store(self, host: Host, result: webhooks.Event, project: str | None,
+               records) -> Answer:
+        project = project or self.project_for(host, result.repository)
         if not project:
             return Answer("202 Accepted", "dropped",
                           f"no project file manages {result.repository}")

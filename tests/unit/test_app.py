@@ -411,3 +411,22 @@ def test_an_engine_that_refuses_the_push_leaves_the_event_recorded(tmp_path):
 
     assert status == 202 and text.startswith("recorded") and "ConnectionError" in text
     assert len(built.records.rows) == 1
+
+
+def test_a_delivery_whose_storing_fails_is_stored_on_redelivery(tmp_path):
+    built = Built(tmp_path, builds={104: 7})
+    ingest = built.records.ingest
+
+    def down(slug, normalised):
+        raise ConnectionError("database unreachable")
+
+    built.records.ingest = down
+    body, headers = delivery()
+
+    first = call(built.app, "/webhooks/github", "POST", body, headers)
+    built.records.ingest = ingest
+    again = call(built.app, "/webhooks/github", "POST", body, headers)
+
+    assert first[0] == 503 and "ConnectionError" in first[2]
+    assert again[0] == 202 and again[2].startswith("accepted"), again[2]
+    assert len(built.records.rows) == 1 and len(built.engine.pushes) == 1
