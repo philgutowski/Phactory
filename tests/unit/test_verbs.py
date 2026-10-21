@@ -15,6 +15,7 @@ from slipway.config.bindings import BindingInvalid
 from slipway.halts import COMMIT_MISMATCH, MERGED_CARD_NOT_MOVED
 from slipway.service import status, verbs
 from slipway.service.engine import CARD_RESUME
+from slipway.trackers.base import Card
 
 HALT = {"halt": COMMIT_MISMATCH, "line": "commit mismatch: the merge is not the confirmed commit",
         "evidence": {"expected": "a" * 40, "found": "c" * 40}}
@@ -343,3 +344,15 @@ def test_an_owned_card_the_board_moved_on_still_returns_its_build(tmp_path):
 
     assert result["outcome"] == verbs.OWNED
     assert (result["build_id"], result["state"]) == (build_id, "building")
+
+
+def test_a_token_in_the_trackers_error_is_scrubbed_from_the_audit_result(tmp_path):
+    w = world(tmp_path)
+    token = "ghp_" + "b" * 36
+    w.tracker.read = lambda key: Card(str(key), skipped=f"gh failed with {token}")
+
+    result = verbs.dispatch(w.ports, SLUG, "EX-1", OPERATOR)
+
+    assert result["outcome"] == verbs.REFUSED
+    assert token not in str(w.records.audit_rows[-1]["result"])
+    assert token not in result["reason"]

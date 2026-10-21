@@ -1,0 +1,46 @@
+# A project shaped like the first project's lane (U26), with every value
+# invented: its own watcher lands each branch, its laptop builder works in a
+# worktree of a shared checkout, and its branch names and pull request
+# titles follow its own conventions. Nothing here appears in src/slipway.
+
+repository = "example-workspace/example-lander"
+host = "bitbucket"
+tracker = "jira"
+tracker_site = "example.atlassian.net"
+board = "XY"
+lane_label = "lander-lane"
+# The ready status may be a backlog one: the lane label alone marks the cards.
+ready_status = "Backlog"
+in_progress_status = "In progress"
+in_review_status = "In review"
+landed_status = "Done"
+gate_command = "scripts/example-gate.sh"
+allowed_builders = ["cli"]
+auto_merge = false
+landing_path = "external_lander"
+merge_method = "merge"
+branch_template = "{key}-{slug}"
+pull_request_title = "{key}: {title}"
+checkout = "worktree"
+build_cap = 1
+daily_dispatch_cap = 4
+trivial_card_target = "docs/example-hello.md"
+trace_project = "example-traces"
+trace_detail = "summary"
+tracker_credential = "example-jira"
+host_credential = "example-bitbucket"
+allowed_subjects = ["user_operator_example"]
+evals_path = "evals/"
+builder_worker = "laptop"
+
+[roles.builder]
+account = "max-sub"
+model = "model-large"
+effort = "high"
+time_budget_minutes = 90
+
+[roles.judge]
+account = "api-main"
+model = "model-medium"
+effort = "medium"
+time_budget_minutes = 10

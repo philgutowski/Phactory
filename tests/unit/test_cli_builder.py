@@ -33,6 +33,7 @@ from slipway.builders.cli import (
     PERMISSION_MODE,
     SESSION_SCRIPT,
     TOKEN_VARIABLE,
+    WORKTREE_SCRIPT,
     ContainerBuilder,
     GitAccess,
     LaptopBuilder,
@@ -795,3 +796,167 @@ def test_no_dashes_as_punctuation(path):
             for word in line.split():
                 if "--" in word:
                     assert word.strip("`(),.").startswith("--"), line
+
+
+# U26: the worktree checkout. The session script runs for real under /bin/sh,
+# with a stand in claude on PATH that commits, pushes, and meets the other
+# session twice, before and after it lists the worktrees, so both exist at
+# once while each looks. Only sudo is stripped.
+
+FAKE_CLAUDE = """#!/bin/sh
+cat > /dev/null
+echo "work for $SLIPWAY_BRANCH" > work.txt
+git add work.txt
+git commit --quiet -m "work for $SLIPWAY_BRANCH"
+git push --quiet
+meet() {{
+  mkdir -p "{barrier}/$1"
+  touch "{barrier}/$1/$(echo "$SLIPWAY_BRANCH" | tr / _)"
+  n=0
+  while [ "$(ls "{barrier}/$1" | wc -l)" -lt 2 ] && [ $n -lt 400 ]; do
+    sleep 0.05; n=$((n+1))
+  done
+}}
+meet started
+git worktree list --porcelain > "$SLIPWAY_OUT/worktrees.txt"
+meet listed
+echo '{{"subtype": "success", "total_cost_usd": 0.25}}'
+"""
+
+
+def as_session_user(argv, check=True, **kwargs):
+    """Run what sudo would run, as this user: the session script or the rm."""
+    if argv[0] == "sudo":
+        argv = argv[argv.index("--") + 1:]
+    return default_run(argv, check=check, env=kwargs.get("env"), input=kwargs.get("input"))
+
+
+def shared_checkout(tmp_path, branches):
+    """A bare remote with main and each card branch at one base, and a dirty clone of it."""
+    remote = tmp_path / "remote.git"
+    git(tmp_path, "init", "-q", "--bare", "-b", "main", str(remote))
+    shared = tmp_path / "shared"
+    git(tmp_path, "clone", "-q", str(remote), str(shared))
+    (shared / "README.md").write_text("seed\n")
+    git(shared, "add", "README.md")
+    git(shared, "commit", "-q", "-m", "seed")
+    git(shared, "push", "-q", "origin", "HEAD:refs/heads/main")
+    for branch in branches:
+        git(shared, "push", "-q", "origin", f"HEAD:refs/heads/{branch}")
+    # Another session's work in progress, which must survive both builds.
+    (shared / "README.md").write_text("seed, edited by the operator\n")
+    (shared / "notes.txt").write_text("not committed\n")
+    return remote, shared, git(shared, "rev-parse", "HEAD")
+
+
+def test_two_laptop_builds_run_in_two_worktrees_and_leave_the_shared_checkout_alone(
+        tmp_path, project, binding):
+    keys = ("XY-12", "XY-13")
+    branches = [f"{key}-fix-export" for key in keys]
+    remote, shared, base = shared_checkout(tmp_path, branches)
+    before = (git(shared, "branch", "--show-current"), git(shared, "status", "--porcelain"),
+              git(shared, "branch", "--list"))
+    bin_dir, barrier = tmp_path / "bin", tmp_path / "barrier"
+    bin_dir.mkdir()
+    barrier.mkdir()
+    claude = bin_dir / "claude"
+    claude.write_text(FAKE_CLAUDE.format(barrier=barrier))
+    claude.chmod(0o755)
+    calls: list[list[str]] = []
+
+    def run(argv, check=True, **kwargs):
+        calls.append(list(argv))
+        return as_session_user(argv, check=check, **kwargs)
+
+    builder = LaptopBuilder(tmp_path / "sessions", GitAccess(str(remote), "x-access-token"),
+                            "slipway-session", f"{bin_dir}:/usr/bin:/bin", run=run,
+                            environ=ENVIRON, now=Clock(), checkout="worktree", shared=shared)
+    backs: dict[str, LaptopReturn] = {}
+    worktrees: dict[str, str] = {}
+    real_release = builder.release
+
+    def release(session_ref):
+        # Read what the session saw before release removes it.
+        out = builder.dir(session_ref) / "workspace" / "out" / "worktrees.txt"
+        worktrees[builder._state(session_ref)["branch"]] = out.read_text()
+        real_release(session_ref)
+
+    builder.release = release
+
+    def build(key, branch):
+        card = Card(key=key, title="Fix export", body=BODY, status="Ready")
+        backs[key] = laptop_build(builder, render(project, card, base, branch), binding,
+                                  Credential("example-app", minting(GIT_TOKENS)))
+
+    pairs = list(zip(keys, branches, strict=True))
+    threads = [threading.Thread(target=build, args=pair) for pair in pairs]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=60)
+
+    for key, branch in pairs:
+        result = backs[key].result
+        assert result.outcome == RETURNED, result.reason
+        assert result.commit == git(remote, "rev-parse", f"refs/heads/{branch}") != base
+        # Each session saw its own worktree and the other's beside it.
+        listed = worktrees[branch]
+        assert listed.count("worktree ") == 3
+        assert f"branch refs/heads/{branch}" in listed
+    after = (git(shared, "branch", "--show-current"), git(shared, "status", "--porcelain"),
+             git(shared, "branch", "--list"))
+    assert after == before
+    assert before[0] == "main"
+    assert git(shared, "worktree", "list", "--porcelain").count("worktree ") == 1
+    assert list((tmp_path / "sessions").iterdir()) == []
+    # Every git call on the shared checkout runs as the session user, so the
+    # worktree's files and its record are the session's to write and remove.
+    on_shared = [argv for argv in calls if str(shared) in argv]
+    assert {argv[argv.index("-C") + 2] for argv in on_shared} >= {
+        "rev-parse", "fetch", "worktree", "branch"}
+    for argv in on_shared:
+        assert argv[:4] == ["sudo", "--non-interactive", "--user", "slipway-session"], argv
+
+
+def test_a_branch_the_shared_checkout_already_has_is_neither_reset_nor_deleted(
+        tmp_path, project, binding):
+    branch = "XY-14-fix-export"
+    remote, shared, base = shared_checkout(tmp_path, [branch])
+    git(shared, "branch", branch, base)  # the operator's own local branch of that name
+    builder = LaptopBuilder(tmp_path / "sessions", GitAccess(str(remote), "x-access-token"),
+                            "slipway-session", "/usr/bin:/bin", run=as_session_user,
+                            environ=ENVIRON, now=Clock(), checkout="worktree", shared=shared)
+    card = Card(key="XY-14", title="Fix export", body=BODY, status="Ready")
+    back = laptop_build(builder, render(project, card, base, branch), binding,
+                        Credential("example-app", minting(GIT_TOKENS)))
+    assert back.result.outcome == RETURNED_EMPTY
+    assert git(shared, "rev-parse", f"refs/heads/{branch}") == base
+
+
+def test_a_worktree_checkout_needs_the_shared_path(tmp_path):
+    with pytest.raises(ValueError, match="shared checkout"):
+        LaptopBuilder(tmp_path, GitAccess(REMOTE, "x-access-token"), "slipway-session",
+                      "/usr/bin:/bin", checkout="worktree")
+
+
+def test_the_worktree_script_differs_from_the_clone_script_only_in_the_checkout():
+    assert "git clone" not in WORKTREE_SCRIPT
+    assert "--force" not in WORKTREE_SCRIPT and "reset" not in WORKTREE_SCRIPT
+    assert WORKTREE_SCRIPT.endswith(SESSION_SCRIPT.split('cd "$SLIPWAY_REPO"\n')[1])
+
+
+def test_a_worktree_that_cannot_be_added_ends_the_build_and_cleans_up(tmp_path, project,
+                                                                       binding):
+    branch = "XY-15-fix-export"
+    remote, shared, base = shared_checkout(tmp_path, [])  # the card branch is gone
+    builder = LaptopBuilder(tmp_path / "sessions", GitAccess(str(remote), "x-access-token"),
+                            "slipway-session", "/usr/bin:/bin", run=as_session_user,
+                            environ=ENVIRON, now=Clock(), checkout="worktree", shared=shared)
+    card = Card(key="XY-15", title="Fix export", body=BODY, status="Ready")
+    back = laptop_build(builder, render(project, card, base, branch), binding,
+                        Credential("example-app", minting(GIT_TOKENS)))
+    assert back.result.outcome == RETURNED_EMPTY
+    assert "the worktree could not be added" in back.result.reason
+    assert "no session ran" in back.result.reason
+    assert list((tmp_path / "sessions").iterdir()) == []
+    assert git(shared, "worktree", "list", "--porcelain").count("worktree ") == 1

@@ -136,7 +136,9 @@ def day_start(now: datetime) -> datetime:
 
 
 def other_lanes(ports: Ports, project: Project) -> tuple[str, ...]:
-    """The lane labels of every other configured project (card #47's note).
+    """The lane labels of every other configured project.
+
+    The note card #47 carried onto this card from the review of #45.
 
     The ready rule only catches a card labelled for two lanes when it is
     told the other lanes' words, since a project file names its own alone.
@@ -176,7 +178,7 @@ def dispatch(ports: Ports, project: str, key: str, actor: str, reason: str | Non
         # tracker, so this call still writes its one audit row.
         card = Card(str(key), skipped=str(error))
     result = dispatch_card(ports, found, card, actor, reason, other_lanes(ports, found))
-    _audit(ports, found.slug, actor, "dispatch", {"key": str(key), "reason": reason}, result,
+    audit(ports, found.slug, actor, "dispatch", {"key": str(key), "reason": reason}, result,
            client)
     return result
 
@@ -201,7 +203,7 @@ def dispatch_card(ports: Ports, project: Project, card, actor: str, reason: str 
                 "reason": f"build {latest['build_id']} owns card {key} in {latest['state']}"}
     if card.skipped:
         return {**out, "outcome": REFUSED,
-                "reason": f"the tracker could not be read: {card.skipped}"}
+                "reason": f"the tracker could not be read: {scrub(card.skipped)}"}
     readiness = ready_rule(card, project, lanes)
     if not readiness.ready:
         why = readiness.reason or (f"card {key} is not in {project.ready_status} "
@@ -253,7 +255,7 @@ def land(ports: Ports, project: str, key: str, actor: str, override: bool = Fals
 
     def refuse(why: str, **extra) -> dict:
         result = {**out, "outcome": REFUSED, "reason": why, **extra}
-        _audit(ports, found.slug, actor, "land", arguments, result, client)
+        audit(ports, found.slug, actor, "land", arguments, result, client)
         return result
 
     if override and not reason:
@@ -287,11 +289,27 @@ def halt_of(ports: Ports, build_id: int) -> dict | None:
             "evidence": evidence.get("evidence") or {}}
 
 
-def _audit(ports: Ports, slug: str, actor: str, tool: str, arguments: dict, result: dict,
-           client: str | None) -> None:
-    """One audit row, its free text arguments scrubbed first (KTD24)."""
-    clean = {k: scrub(v) if isinstance(v, str) else v for k, v in arguments.items()}
-    ports.records.audit(slug, actor, tool, clean, result, client)
+def scrubbed(value):
+    """value with every string inside it passed through redact.scrub (KTD24)."""
+    if isinstance(value, str):
+        return scrub(value)
+    if isinstance(value, dict):
+        return {k: scrubbed(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [scrubbed(v) for v in value]
+    if isinstance(value, tuple):
+        return tuple(scrubbed(v) for v in value)
+    return value
+
+
+def audit(ports: Ports, slug: str, actor: str, tool: str, arguments: dict, result: dict,
+          client: str | None = None) -> None:
+    """One audit row, its arguments and result scrubbed first (KTD24).
+
+    A result can carry text Slipway did not write, such as a tracker's own
+    error, so both sides are scrubbed, not only the caller's free text.
+    """
+    ports.records.audit(slug, actor, tool, scrubbed(arguments), scrubbed(result), client)
 
 
 # The records over Postgres.
@@ -349,7 +367,11 @@ class PostgresRecords:
 
     @contextmanager
     def snapshot(self) -> Iterator[None]:
-        """Every read inside sees one snapshot of the records, so counts and lists agree."""
+        """Every read inside sees one snapshot of the records, so counts and lists agree.
+
+        SET TRANSACTION must open its transaction, so this needs the
+        autocommit connection real_ports passes, with no transaction open.
+        """
         with self.conn.transaction():
             self.conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
             yield
@@ -387,7 +409,7 @@ def real_ports(conn, engine: Engine, root: Path | None = None) -> Ports:
     )
 
 
-__all__ = ["DISPATCHED", "NOT_FOUND", "OWNED", "PUSHED", "REFUSED", "WAITING", "Ports",
-           "PostgresRecords", "Records", "configured_slugs", "day_start", "dispatch",
+__all__ = ["DISPATCHED", "NOT_FOUND", "OWNED", "PUSHED", "Ports", "PostgresRecords", "REFUSED",
+           "Records", "WAITING", "audit", "configured_slugs", "day_start", "dispatch",
            "dispatch_card", "halt_of", "host_link", "land", "other_lanes", "real_ports",
-           "start"]
+           "scrubbed", "start"]
