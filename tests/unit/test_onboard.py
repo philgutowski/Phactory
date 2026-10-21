@@ -471,3 +471,34 @@ def test_the_live_probe_asks_for_attestations_it_cannot_read(world):
                           world.ports.clock)
     result = onboard(World(world.root, probe, world.records, ports), BITBUCKET)
     assert result["question"]["id"] == "attest.board_moves"
+
+
+def test_an_unset_tracker_credential_is_a_next_step_not_a_crash(world):
+    from slipway.config.bindings import BindingInvalid
+
+    def tracker_for(project):
+        raise BindingInvalid("tracker_credentials.example-jira.token_env",
+                             "environment variable EXAMPLE_JIRA_TOKEN is unset")
+
+    probe = checks.LiveProbe(load_operator(world.root), tracker_for,
+                             lambda project: world.probe, ("cli",))
+    ports = machine.Ports(world.root, world.ports.operator, probe, world.records,
+                          world.ports.clock)
+    result = onboard(World(world.root, probe, world.records, ports), BITBUCKET)
+    assert result["outcome"] == machine.NEEDS_FIX
+    assert result["property"] == checks.DURABLE_STATE
+    assert "EXAMPLE_JIRA_TOKEN is unset" in result["missing"]
+
+
+def test_a_subject_off_the_list_causes_no_probe_read_on_reentry(world):
+    onboard(world, BITBUCKET)
+    world.probe.reads.clear()
+    world.probe.repository_ok = None
+
+    def counted(project):
+        world.probe.reads.append("repository")
+        return Finding(True)
+
+    world.probe.repository = counted
+    assert machine.start(world.ports, SLUG, STRANGER)["outcome"] == machine.REFUSED
+    assert world.probe.reads == []

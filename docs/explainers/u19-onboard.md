@@ -70,7 +70,7 @@ The final step returns the card: the lane label, a title, a body whose `slipway`
 
 ## Re entry (R32)
 
-`start` on a project that has a file takes the file's values as the answers, then marks as no longer true: the repository if the probe cannot reach it, the board if it is gone, each role's account if the operator file no longer has it, and anything `check_names` refuses. Only those questions are asked. The checks run again, so a restriction removed since then is caught there.
+`start` on a project that has a file takes the file's values as the answers, then marks as no longer true: the repository if the probe cannot reach it, the board if it is gone, each role's account if the operator file no longer has it, and anything `check_names` refuses. Only those questions are asked. The three answers with no project file key (`other_dispatcher`, `independence`, `verification`) live in the state file alone, so a re entry whose state file is gone asks them again, since they are missing. The permission check comes before any of this, so a subject off the allowed list causes no host or tracker read. The checks run again, so a restriction removed since then is caught there.
 
 ## Where this departs from the card, and why
 

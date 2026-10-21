@@ -38,6 +38,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Protocol
 
+from slipway.config.bindings import BindingInvalid
 from slipway.config.operator import Host
 from slipway.config.project import Project, Tracker, branch_namespace
 from slipway.hosts.base import HostError, Landing, ProbeUndetermined
@@ -341,7 +342,9 @@ class LiveProbe:
     def tracker(self, project) -> Finding:
         try:
             _, reason = self._tracker_for(project).ready()
-        except (HostError, ValueError, OSError) as error:
+        except (BindingInvalid, HostError, ValueError, OSError) as error:
+            # An unset credential variable is BindingInvalid, raised while the
+            # adapter is built; it is a failed read with a next step, not a crash.
             return Finding(False, str(error))
         return Finding(False, reason) if reason else Finding(True, "the ready list was read")
 

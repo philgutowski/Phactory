@@ -416,16 +416,25 @@ def start(ports: Ports, slug: str, actor: str) -> dict:
     except ConfigError as error:
         return {"session": slug, "outcome": REFUSED, "reason": error.message}
     path = project_path(slug, ports.root)
+    data = None
     if path.exists():
         try:
-            _reenter(ports, state, read_toml(path))
+            data = read_toml(path)
         except ConfigError as error:
             return {"session": slug, "outcome": REFUSED, "reason": str(error)}
+        # The file's list is the one re entry takes, so it decides who may start.
+        state["answers"]["allowed_subjects"] = data.get("allowed_subjects")
+    # Permission first, so a subject off the list causes no host or tracker read.
     if not _permitted(ports, state, actor):
         result = {"session": slug, "outcome": REFUSED,
                   "reason": f"{actor} is not on this project's allowed subjects"}
         _audit(ports, slug, actor, "onboard_start", {}, result)
         return result
+    if data is not None:
+        try:
+            _reenter(ports, state, data)
+        except ConfigError as error:
+            return {"session": slug, "outcome": REFUSED, "reason": str(error)}
     state["checks"] = None  # a new start re reads the host
     result = _next(ports, state, actor)
     _save(ports.root, state)
