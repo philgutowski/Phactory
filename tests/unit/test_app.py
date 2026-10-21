@@ -430,3 +430,14 @@ def test_a_delivery_whose_storing_fails_is_stored_on_redelivery(tmp_path):
     assert first[0] == 503 and "ConnectionError" in first[2]
     assert again[0] == 202 and again[2].startswith("accepted"), again[2]
     assert len(built.records.rows) == 1 and len(built.engine.pushes) == 1
+
+
+def test_a_managed_repository_without_a_project_file_is_dropped_naming_it(tmp_path):
+    built = Built(tmp_path, builds={104: 7})
+    (tmp_path / "home" / "projects" / f"{SLUG}.toml").unlink()
+    body, headers = delivery()
+
+    status, _, text = call(built.app, "/webhooks/github", "POST", body, headers)
+
+    assert status == 202 and f"no project file manages {REPOSITORY}" in text, text
+    assert built.records.rows == [] and built.engine.pushes == []

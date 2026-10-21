@@ -245,7 +245,7 @@ class Webhooks:
             # Only reached once the signature holds (webhooks.verify).
             slug.append(self.project_for(host, repository))
             if not slug[-1]:
-                return False
+                return True  # _store drops it, naming the missing project file
             return records().build_for(slug[-1], {"pr_number": number}) is not None
 
         try:
