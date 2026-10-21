@@ -270,9 +270,22 @@ def test_a_forged_or_expired_session_is_sent_to_login(tmp_path):
     assert get(page, "/", {page_app.SESSION: good}).status == 302
 
 
-@pytest.mark.parametrize("value", ["//evil.example", "https://evil.example", "\\\\evil", ""])
+@pytest.mark.parametrize("value", ["//evil.example", "https://evil.example", "\\\\evil", "",
+                                   "/x\r\nX-Injected: y", "/x\ty", "/x y"])
 def test_login_returns_only_to_a_path_on_the_page(value):
     assert page_app.safe_next(value) == "/"
+
+
+def test_a_return_path_with_a_line_break_never_reaches_the_location_header(tmp_path):
+    w = world(tmp_path)
+    identity = FakeIdentity()
+    page = make(w, identity)
+    held = get(page, "/login?next=%2Fx%0D%0AX-Injected:y").cookie(page_app.LOGIN)
+
+    back = get(page, f"/callback?code=abc&state={identity.started['state']}",
+               {page_app.LOGIN: held})
+
+    assert back.header("Location") == ["/"]
 
 
 def test_an_unknown_project_is_not_found(tmp_path):

@@ -144,8 +144,14 @@ def message(heading: str, text: str) -> bytes:
 
 
 def safe_next(value: str | None) -> str:
-    """A path on this page to return to after login; anything else becomes /."""
+    """A path on this page to return to after login; anything else becomes /.
+
+    It ends up in a Location header, so it is refused when it could leave
+    the page or carry a character that breaks the header.
+    """
     if not value or not value.startswith("/") or value.startswith("//") or "\\" in value:
+        return "/"
+    if not value.isprintable() or " " in value:  # a header value must not carry CR, LF, or space
         return "/"
     return value
 

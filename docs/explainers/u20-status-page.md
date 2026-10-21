@@ -9,6 +9,8 @@ The status page is the operator's read only view of every card Slipway is workin
 - **OAuth subject.** The stable user id the identity provider puts in a token. The operator file names the operator's own.
 - **Authorization code flow.** The login where the browser goes to the identity provider, comes back with a one time code, and the server trades that code for tokens directly with the provider.
 - **PKCE.** Proof key for code exchange: a random secret, the verifier, whose hash goes out with the browser and whose plain value goes out only with the code, so a code stolen on the way back is useless alone.
+- **OpenID Connect.** The login layer on top of OAuth: the provider publishes its endpoints at a discovery address and returns an ID token naming who signed in.
+- **Content security policy.** A response header that tells the browser what the page may load or do; this one allows no script, no frame, and no form post.
 - **ID token.** The token in which the provider names who signed in, with their subject, the client it is for, and when it expires.
 - **TLS.** The encryption under https: the server proves who it is with a certificate the client checks, so a reply cannot be forged or read on the way.
 - **HMAC.** A keyed hash. Only the holder of the key can make a value that checks, so a cookie signed with it cannot be forged or edited.
