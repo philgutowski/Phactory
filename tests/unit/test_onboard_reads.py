@@ -678,3 +678,25 @@ def test_a_scratch_class_does_only_its_three_things(cls):
     public = {name for name, _ in inspect.getmembers(cls, inspect.isfunction)
               if not name.startswith("_")}
     assert public == set(SCRATCH_INTERFACE)
+
+
+def test_the_github_sweep_follows_every_page_of_branches(project):
+    first = [{"ref": f"refs/heads/slipway/{n}-12", "object": {"sha": HEAD}} for n in range(100)]
+    second = [{"ref": "refs/heads/slipway/onboard-scratch-base", "object": {"sha": PARENT}}]
+    api = FakeApi().route("GET", r"matching-refs/heads/slipway/\?page=2",
+                          body=json.dumps(second))
+    api.route("GET", r"matching-refs/heads/slipway/\?per_page", body=json.dumps(first))
+    next_page = ("https://api.github.com/repos/example-org/example-app/git/matching-refs/"
+                 "heads/slipway/?page=2")
+    original = api.open
+
+    def open_with_link(request, timeout=None):
+        answer = original(request, timeout)
+        if "per_page" in request.get_full_url():
+            answer.headers["Link"] = f'<{next_page}>; rel="next", <{next_page}>; rel="last"'
+        return answer
+
+    api.open = open_with_link
+    found = GitHubHost(project, APP, opener=api).branches("slipway/")
+    assert len(found) == 101
+    assert found[-1] == "slipway/onboard-scratch-base"

@@ -140,8 +140,12 @@ EVERY_BRANCH = ("~ALL", "refs/heads/**")
 CLOSING_RULES = ("creation", "update")
 # current_user_can_bypass when the asking identity is held by the ruleset.
 HELD = "never"
-# Pages of rulesets and of matching refs one read may take.
+# Items a page holds, and pages one listing may follow; a repository with
+# more is a reason, not a guess.
 PAGE_SIZE = 100
+PAGE_LIMIT = 10
+# The next page's address in GitHub's Link header.
+NEXT_LINK = re.compile(r'<([^>]+)>\s*;\s*rel="next"')
 
 
 class GitHubHost:
@@ -307,6 +311,23 @@ class GitHubHost:
         return landing_from(project, PLAIN_MERGE, method, f"{why}; methods allowed {allowed}")
 
 
+    def _pages(self, path: str, params: dict, what: str, first=None) -> list:
+        """Every item of a listing, following the Link header's next page to a bound.
+
+        first is the first page's response when the caller has already read it.
+        """
+        url, query, found = self._path(path), dict(params, per_page=PAGE_SIZE), []
+        for _ in range(PAGE_LIMIT):
+            response, first = first or self._client.get(url, query), None
+            found += self._expect(response, 200, what=what) or []
+            link = next((value for key, value in response.headers.items()
+                         if key.lower() == "link"), "")
+            following = NEXT_LINK.search(link or "")
+            if not following:
+                return found
+            url, query = following.group(1), None
+        raise HostError(f"{what} ran past {PAGE_LIMIT} pages")
+
     # Onboarding reads (U28).
     def read_repository(self) -> Reading:
         response = self._client.get(f"/repos/{self._owner}/{self._name}")
@@ -350,11 +371,11 @@ class GitHubHost:
         return found
 
     def read_restriction(self, namespace: str) -> Reading:
-        listed = self._client.get(self._path("rulesets"), {
-            "includes_parents": "true", "targets": "branch", "per_page": PAGE_SIZE})
+        params = {"includes_parents": "true", "targets": "branch"}
+        listed = self._client.get(self._path("rulesets"), dict(params, per_page=PAGE_SIZE))
         if listed.status in (403, 404):
             return Reading(None, f"GitHub would not list rulesets: {message_of(listed)}")
-        summaries = self._expect(listed, 200, what="the ruleset list") or []
+        summaries = self._pages("rulesets", params, "the ruleset list", first=listed)
         held, bypassed, unknown = [], [], []
         for summary in summaries:
             if not isinstance(summary, dict) or summary.get("enforcement") != "active":
@@ -398,9 +419,8 @@ class GitHubHost:
         return branch, str(body.get("sha") or ""), (parents[0].get("sha") if parents else None)
 
     def branches(self, prefix: str) -> tuple[str, ...]:
-        response = self._client.get(self._path(f"git/matching-refs/heads/{prefix}"),
-                                    {"per_page": PAGE_SIZE})
-        found = self._expect(response, 200, what=f"the branches under {prefix!r}") or []
+        found = self._pages(f"git/matching-refs/heads/{prefix}", {},
+                            f"the branches under {prefix!r}")
         heads = "refs/heads/"
         return tuple(str(ref.get("ref"))[len(heads):] for ref in found
                      if str((ref or {}).get("ref") or "").startswith(heads + prefix))
@@ -415,9 +435,8 @@ class GitHubHost:
                         f"{message_of(response)} (HTTP {response.status})")
 
     def open_pull_requests(self, base: str) -> tuple[PullRequest, ...]:
-        response = self._client.get(self._path("pulls"), {"base": base, "state": "open",
-                                                          "per_page": PAGE_SIZE})
-        found = self._expect(response, 200, what=f"the pull requests into {base!r}") or []
+        found = self._pages("pulls", {"base": base, "state": "open"},
+                            f"the pull requests into {base!r}")
         return tuple(_pull_request(item) for item in found)
 
     def close_pull_request(self, pr) -> None:

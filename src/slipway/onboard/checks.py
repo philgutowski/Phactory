@@ -94,7 +94,12 @@ class Moves:
 
 
 class Probe(Protocol):
-    """Onboard's reads of the host and the tracker. None of them writes a card."""
+    """Onboard's reads of the host and the tracker.
+
+    None of them writes a card, with one exception: board_moves files a
+    scratch card and closes it again (KTD27), through a Scratch class kept
+    apart from the read only tracker adapter (R34).
+    """
 
     def builders(self) -> tuple[str, ...]: ...
 
