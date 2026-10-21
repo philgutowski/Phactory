@@ -1,6 +1,6 @@
 # Deploy: secrets and listeners on the VPS (KTD28)
 
-This page is the rule for which service on the VPS (the virtual private server Slipway runs on) receives which secret, and which ports are reachable from outside. `compose.yaml` arrives with the deploy cards; whatever it says must match this page.
+This page is the rule for which service on the VPS (the virtual private server Slipway runs on) receives which secret, and which ports are reachable from outside. `compose.yaml` must match it.
 
 ## Where secrets live
 
@@ -22,9 +22,23 @@ The operator file (`$SLIPWAY_HOME/operator.toml`) never holds a value either. It
 |:-|:-|:-|
 | `app` (MCP routes, status page, webhooks) | `SLIPWAY_DATABASE_URL`, `HATCHET_CLIENT_TOKEN`, the identity provider settings (the operator file's `identity_provider.client_secret_env`), every webhook secret (`webhook_secrets[].env` and `previous_env`) | Account tokens, tracker and host credentials, Langfuse keys, runner registration tokens |
 | `worker` (card workflow, watch, runner cron) | `SLIPWAY_DATABASE_URL`, `HATCHET_CLIENT_TOKEN`, and the rest of the operator file's variables: `accounts.*.env`, `tracker_credentials.*.token_env` and `email_env`, `host_credentials.*.env`, `langfuse_projects.*.public_key_env` and `secret_key_env` | Runner registration tokens |
-| runner containers (one per instance) | Only that instance's registration tokens, `runner_instances.<name>.repositories[].token_env` and `previous_token_env` | Everything else |
+| runner containers (one per instance) | Only that instance's registration tokens, `runner_instances.<name>.repositories[].token_env` and `previous_token_env`, with the runner's settings and its database URL, all from the runner's own environment file (`RUNNER_ENV_FILE`), which no other service reads | Everything else |
 | builder containers (one per card, started by the worker) | Only the account token for the card's binding and the git credential through a credential helper (KTD12) | Everything else |
-| `hatchet-lite`, `postgres`, `dagger` | Their own settings only. The Hatchet default admin password is replaced on first boot. | Every Slipway secret |
+| `hatchet-lite`, `postgres`, `dagger` (started only with the `dagger` profile) | Their own settings only. The Hatchet default admin password is replaced on first boot. | Every Slipway secret |
+
+## Required compose variables
+
+`compose.yaml` writes each of these as `${NAME:?}`, so `docker compose up` refuses to start while one is unset in the root owned environment file. Set them before the next `up`, even for a Hatchet only boot:
+
+| Variable | What it is |
+|:-|:-|
+| `HATCHET_POSTGRES_PASSWORD`, `HATCHET_SERVER_URL`, `HATCHET_COOKIE_DOMAIN`, `HATCHET_GRPC_BROADCAST_ADDRESS`, `HATCHET_ADMIN_EMAIL`, `HATCHET_ADMIN_PASSWORD` | Hatchet's own settings (U4). |
+| `HATCHET_GRPC_INSECURE` | `t` or `f`, never defaulted, so a boot never picks TLS silently. |
+| `RUNNER_IMAGE` | The tag built from `runner.Dockerfile`. |
+| `RUNNER_ENV_FILE` | The path of the runner's own environment file. |
+| `SLIPWAY_BUILDER_NETWORK` | The isolated builder network's name, the one the worker starts builder containers on. |
+
+`DAGGER_ENGINE_IMAGE` is needed only with the `dagger` profile.
 
 ## `SLIPWAY_HOME` mounts
 
