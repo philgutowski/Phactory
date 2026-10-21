@@ -109,6 +109,10 @@ class Records(Protocol):
 
     def stale_claims(self, project_id: int, older_than: datetime) -> list[dict]: ...
 
+    def events_since(self, project_id: int, cursor: int, limit: int) -> dict: ...
+
+    def migrate(self, database: str | None) -> list[str]: ...
+
     def audit(self, slug: str, subject: str, tool: str, arguments: dict, result: dict,
               client: str | None = None) -> None: ...
 
@@ -377,6 +381,15 @@ class PostgresRecords:
     def stale_claims(self, project_id: int, older_than: datetime) -> list[dict]:
         return [row for row in queries.stale_claims(self.conn, older_than)
                 if row["project_id"] == project_id]
+
+    def events_since(self, project_id: int, cursor: int, limit: int) -> dict:
+        return queries.events_since(self.conn, project_id, cursor, limit)
+
+    def migrate(self, database: str | None) -> list[str]:
+        """Apply the pending migrations (records.migrate); the versions applied come back."""
+        from slipway.records.migrate import apply
+
+        return apply(self.conn, database=database)
 
     def audit(self, slug, subject, tool, arguments, result, client=None) -> None:
         self.conn.execute(
