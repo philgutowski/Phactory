@@ -20,7 +20,7 @@ on Hatchet:
 
 Two workers, two registrations:
 
-    vps_worker(...)     every task except laptop_build
+    vps_worker(...)     every task except laptop_build, and the watch cron
     laptop_worker(...)  laptop_build only, under the label the operator file
                         gives the builder worker (KTD12), with no records
                         connection and no operator file
@@ -47,8 +47,9 @@ from slipway.config.operator import Host, load_operator
 from slipway.config.project import Tracker, load_project
 from slipway.hosts.base import resolve_host_credential
 from slipway.records import queries, store
-from slipway.service.engine import WORKFLOW
-from slipway.workflow import card, events
+from slipway.service import verbs
+from slipway.service.engine import WORKFLOW, HatchetEngine
+from slipway.workflow import card, events, watch
 from slipway.workflow.post_landed import load as load_seams
 
 # The label key a laptop worker registers its builder worker label under.
@@ -354,6 +355,9 @@ def vps_worker(hatchet, connect: Callable[[], Any], builder, credential, slots: 
 
     tasks.update(register(hatchet, make_ports, close=lambda ports: ports.records.conn.close()))
     workflows = [t for name, t in tasks.items() if name != card.LAPTOP_BUILD]
+    workflows.append(watch.register(
+        hatchet, lambda: verbs.real_ports(connect(), HatchetEngine(hatchet)),
+        close=lambda ports: ports.records.conn.close()))
     return hatchet.worker("slipway-worker", slots=slots, workflows=workflows)
 
 
