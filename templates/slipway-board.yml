@@ -18,9 +18,11 @@
 #      issue. It comes first because it is the same link GitHub uses to close
 #      the issue on merge, so the board and the close always agree.
 #   2. Otherwise, and always on create (a branch has no body), the branch name
-#      slipway/u<n>-<slug> maps to the open issue titled "U<n>: ...". The
-#      branch carries the card token, not the issue number, because the branch
-#      is named before anyone reads the issue number back.
+#      names the card in one of two shapes. slipway/<n>-<rest>, which the
+#      default branch template renders with the issue number as the card key,
+#      names issue #<n> directly. slipway/u<n>-<slug>, the shape Slipway's own
+#      board uses, maps to the open issue titled "U<n>: ...", because that
+#      branch is named before anyone reads the issue number back.
 # No issue found is a notice, not a failure.
 
 name: slipway-board
@@ -75,6 +77,10 @@ jobs:
             keyword='(close[sd]?|fix(e[sd])?|resolve[sd]?)[[:space:]]+#[0-9]+'
             issue=$(printf '%s\n' "${PR_BODY:-}" | grep -oiE "$keyword" | head -n 1 \
               | grep -oE '[0-9]+' || true)
+          fi
+          if [ -z "$issue" ] && [[ "$BRANCH" =~ ^slipway/([0-9]+)- ]]; then
+            issue=$(gh issue view "${BASH_REMATCH[1]}" -R "$REPO" --json number,state \
+              | jq -r 'select(.state == "OPEN") | .number' || true)
           fi
           if [ -z "$issue" ] && [[ "$BRANCH" =~ ^slipway/[uU]([0-9]+)- ]]; then
             prefix="U${BASH_REMATCH[1]}:"
