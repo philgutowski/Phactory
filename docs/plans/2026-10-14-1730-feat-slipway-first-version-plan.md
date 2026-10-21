@@ -32,6 +32,8 @@ Phillip approved this order on 2026-10-21, after the build had reached the end o
 
 The Unit Index carries the new dependencies. The ready rule reads each card's own Dependencies line, so the board issues were edited to match on the same day (U18, U19, U21, U24) and U26 and U27 were filed as #83 and #84.
 
+Two notes from the build of step 2, the same day. U26 checks an outside lander with the plain merge rule (the pull request is marked merged and the base tip carries the confirmed tree) rather than the auto merge rule its card named, because the first project's watcher keeps landing other cards on the base branch, so the base tip is rarely the landing commit itself. And U19 shipped with five live reads still taken as operator attestations, since the adapters could not yet list or read them: board movement, the required check, the machine identity restriction, the repository, and the board. U28 (new) adds those reads, ahead of U24, so Integra's onboarding checks them instead of asking.
+
 ---
 
 ## Product Contract
@@ -606,11 +608,11 @@ flowchart LR
   P0[Phase 0 spikes: U1 U2 U3 U4] --> P1[Phase 1 foundation: U5 U6 U7 U8 U9 U10]
   P1 --> P2[Phase 2 builders and loop: U11 U12 U13 U14 U25]
   P2 --> P3[Phase 3 trace and eval: U15 U16 U17]
-  P2 --> P4[Phase 4 surfaces: U18 U19 U20 U21]
+  P2 --> P4[Phase 4 MCP surface: U18]
   P2 --> P5[Phase 5 runner: U22 U23]
   P4 --> P5
   P2 --> P7[Phase 2b first project: U26 U19 U21 U20]
-  P7 --> P8[Phase 2c builder tools: U27]
+  P7 --> P8[Phase 2c builder tools and live onboarding reads: U27 U28]
   P7 --> P6
   P3 --> P6[Phase 6 acceptance: U24]
   P4 --> P6
@@ -647,9 +649,10 @@ flowchart LR
 | U21 | CLI, first slice | `src/slipway/cli.py` | U25, U19 |
 | U22 | Zig runner instances and tracking | `deploy/`, `src/slipway/workflow/runner_track.py` | U7, U14 |
 | U23 | Runner observation, findings, filing | `src/slipway/runner/` | U22, U18 |
-| U24 | Three cold onboardings and the laptop closed day | `docs/spikes/acceptance.md` | U17, U21, U23, U26, U27 |
+| U24 | Three cold onboardings and the laptop closed day | `docs/spikes/acceptance.md` | U17, U21, U23, U26, U27, U28 |
 | U26 | The first project's lane: an outside lander, a worktree build, project branch names | `src/slipway/config/project.py`, `src/slipway/verify.py`, `src/slipway/builders/cli.py`, `src/slipway/workflow/card.py` | U13, U14 |
 | U27 | Builder tools: headless browser, the operator's browser, the desktop | `src/slipway/builders/tools.py`, `deploy/builder.Dockerfile` | U13, U19 |
+| U28 | Live onboarding reads on the host and tracker adapters | `src/slipway/hosts/`, `src/slipway/trackers/`, `src/slipway/onboard/checks.py` | U8, U9, U19 |
 
 ### U1. Spike: Managed Agents session, event log, push
 
@@ -1216,11 +1219,32 @@ flowchart LR
   - Onboard asks the opt in question with the trade off text, and a "no" leaves the default.
 - **Verification:** Unit scenarios green; one live laptop card that takes a headless screenshot recorded in the pull request; the operator records one opt in run of each of the other two levels.
 
+### U28. Live onboarding reads on the host and tracker adapters
+
+- **Goal:** Onboarding reads for itself what U19 shipped asking the operator to attest: the repository, the board, the board's labels and statuses, the required check, the machine identity restriction, and the board moving on a scratch pull request. The operator then picks boards, labels, and statuses from live lists, and the external gate and durable state checks pass or fail on what the host and tracker say.
+- **Requirements:** R29 to R33, KTD6, KTD15, KTD18, KTD27, AE6, AE13.
+- **Dependencies:** U8, U9, U19.
+- **Files:** `src/slipway/hosts/base.py`, `src/slipway/hosts/github.py`, `src/slipway/hosts/bitbucket.py`, `src/slipway/trackers/base.py`, `src/slipway/trackers/github.py`, `src/slipway/trackers/jira.py`, `src/slipway/onboard/checks.py`, `tests/unit/test_onboard_reads.py`, `tests/fixtures/host/`, `tests/fixtures/tracker/`.
+- **Approach:**
+  1. Tracker reads: list boards (GitHub Projects in the owner, Jira boards the token sees), a board's labels and statuses, and a single board read that says whether the board exists. Each returns names only; nothing is written.
+  2. Host reads: a repository read (reachable with the project's credential), the required checks on the base branch (GitHub rulesets and branch protection, Bitbucket merge checks), and whether the machine identity is held out of the base branch and every branch outside its namespace (GitHub rulesets with their bypass list, Bitbucket branch permissions). The namespace is the literal prefix of `branch_template` (U26).
+  3. Board movement (KTD27): the machine identity creates a scratch branch in its namespace and a pull request against a scratch base it also creates, reads the board at each step until the card for the scratch key shows the in progress and in review statuses or a bounded wait ends, then closes the pull request and deletes both branches, on success or failure alike. A leftover from a crashed run is found by its prefix and removed on the next run. Nothing runs project code (KTD18).
+  4. `LiveProbe` in `onboard/checks.py` calls these reads in place of the `None` answers it returns today. A read that fails for a reason the operator can fix answers `False` with the step; a read the host cannot answer at all (a plan tier without rulesets, for one) still answers `None`, so the attestation stays as the fallback.
+- **Patterns to follow:** The adapters' existing `Client` and `message_of` error shape in `hosts/base.py`; the fixture capture style of `tests/fixtures/host/`.
+- **Test scenarios:**
+  - On captured fixtures, a GitHub repository whose ruleset requires the `ci` check and excludes the machine identity from `main` passes the external gate with no attestation asked; one whose bypass list names the machine identity fails it with the fix as the step.
+  - The same pair on Bitbucket fixtures, through merge checks and branch permissions.
+  - The board question offers the boards the fake tracker lists, and the label and status questions offer that board's labels and statuses.
+  - Board movement on a fake host and tracker that move the card passes durable state; one that never moves it fails with the board workflow template as the step (AE13), and both scratch branches and the pull request are gone after either run.
+  - A scratch branch left by an earlier run is removed before the next run starts.
+  - A host that returns 404 for rulesets on its plan answers `None`, and onboarding asks the attestation as before.
+- **Verification:** Unit scenarios green on captured fixtures under the network guard; one live onboarding of a test repository on each host that asks none of the five attestations, recorded in the pull request.
+
 ### U24. Three cold onboardings and the laptop closed day
 
 - **Goal:** The acceptance pass: onboard the three kinds of project with no code change, land one scored card on each, and run a day with the laptop closed.
 - **Requirements:** R35, R41, Success Criteria. Operator lane.
-- **Dependencies:** U17, U21, U23, U26, U27.
+- **Dependencies:** U17, U21, U23, U26, U27, U28.
 - **Files:** `docs/spikes/acceptance.md`.
 - **Approach:**
   1. GitHub with Projects: `Lementknight/zig-actions-runner` (auto merge off) and Slipway itself (auto merge on with the KTD25 review paths).
@@ -1281,3 +1305,4 @@ No release validation applies beyond the rows above.
 | U24 | Report shows three onboardings, three scored cards, one laptop closed day |
 | U26 | Unit scenarios green; one live card of the first project built in a worktree and landed by its watcher |
 | U27 | Unit scenarios green; one live headless screenshot recorded, and one operator run of each opt in level |
+| U28 | Unit scenarios green on captured fixtures; one live onboarding of a test repository on each host with no attestation for the five reads |
