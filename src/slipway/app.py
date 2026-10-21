@@ -257,20 +257,21 @@ class Webhooks:
                           refused.reason)
         if isinstance(result, webhooks.Dropped):
             return Answer("202 Accepted", "dropped", result.reason)
+        project = (slug[-1] if slug else None) or self.project_for(host, result.repository)
+        if not project:
+            # Dropped before the log, so a redelivery once the project file
+            # exists is stored rather than answered as a duplicate.
+            return Answer("202 Accepted", "dropped",
+                          f"no project file manages {result.repository}")
         if self.deliveries.seen(result.host, result.delivery_id):
             return Answer("200 OK", "duplicate", result.delivery_id)
         try:
-            return self._store(host, result, slug[-1] if slug else None, records)
+            return self._store(result, project, records)
         except Exception:
             self.deliveries.forget(result.host, result.delivery_id)
             raise
 
-    def _store(self, host: Host, result: webhooks.Event, project: str | None,
-               records) -> Answer:
-        project = project or self.project_for(host, result.repository)
-        if not project:
-            return Answer("202 Accepted", "dropped",
-                          f"no project file manages {result.repository}")
+    def _store(self, result: webhooks.Event, project: str, records) -> Answer:
         normalised = result.normalised()
         if not records().ingest(project, normalised):
             return Answer("200 OK", "duplicate", result.delivery_id)
@@ -422,8 +423,12 @@ def build(environ: Mapping[str, str], root: Path | None = None,
                            "is unset")
     connections = Connections(connect or connect_database(environ))
     engine = engine if engine is not None else engine_module.HatchetEngine()
+    try:
+        signer_in = identity(provider, client_secret)
+    except ValueError as error:  # OidcIdentity refuses an issuer that is not https
+        raise StartRefused(f"identity_provider: {error}") from None
     page = Page(lambda: verbs.real_ports(connections.open(), engine, root),
-                identity(provider, client_secret), found.session_key, found.base_url)
+                signer_in, found.session_key, found.base_url)
     hooks = Webhooks(secrets_for(operator, environ), project_finder(root),
                      lambda: webhook_records(connections.open()), engine)
     return App(page, hooks, connections)

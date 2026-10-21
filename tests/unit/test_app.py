@@ -441,3 +441,28 @@ def test_a_managed_repository_without_a_project_file_is_dropped_naming_it(tmp_pa
 
     assert status == 202 and f"no project file manages {REPOSITORY}" in text, text
     assert built.records.rows == [] and built.engine.pushes == []
+
+
+def test_an_http_issuer_is_a_named_refusal(tmp_path):
+    root = home(tmp_path)
+    operator = root / "operator.toml"
+    operator.write_text(operator.read_text().replace(
+        'issuer = "https://auth.example.test"', 'issuer = "http://auth.example.test"'))
+
+    with pytest.raises(app_module.StartRefused, match="issuer must be https"):
+        app_module.build(environ(), root, connect=FakeConn, engine=FakeEngine())
+
+
+def test_a_delivery_dropped_for_a_missing_project_file_is_stored_once_the_file_exists(
+        tmp_path):
+    built = Built(tmp_path, builds={104: 7})
+    project = tmp_path / "home" / "projects" / f"{SLUG}.toml"
+    text = project.read_text()
+    project.unlink()
+    body, headers = delivery()
+
+    first = call(built.app, "/webhooks/github", "POST", body, headers)
+    project.write_text(text)
+    again = call(built.app, "/webhooks/github", "POST", body, headers)
+
+    assert first[2].startswith("dropped") and again[2].startswith("accepted"), again[2]
