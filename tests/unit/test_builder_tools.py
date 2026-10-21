@@ -262,6 +262,8 @@ def test_a_laptop_build_with_desktop_records_tools_granted_and_names_it_in_the_h
     run(scenario)
     building = cards.records.evidence(build_id, "building")
     assert building["tools_granted"] == ["headless_browser", "desktop"]
+    (attempt,) = [a for a in cards.records.attempt_rows if a["build_id"] == build_id]
+    assert attempt["tools_granted"] == ["headless_browser", "desktop"]
     assert building["worker"] == "laptop-builder"
     # The laptop's session got the same list, and its handoff names it.
     (sent,) = given
@@ -283,6 +285,7 @@ def test_a_container_build_records_the_default_grant_on_the_build(tmp_path):
     run(scenario)
     assert cards.records.evidence(build_id, "building")["tools_granted"] == [
         "headless_browser"]
+    assert [a["tools_granted"] for a in cards.records.attempt_rows] == [["headless_browser"]]
 
 
 # Onboard asks the opt in question with the trade off text, and a "no"

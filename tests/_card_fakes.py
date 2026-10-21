@@ -149,9 +149,10 @@ class FakeRecords:
         with self.lock:
             return sum(1 for a in self.attempt_rows if a["build_id"] == build_id)
 
-    def start_attempt(self, build_id, binding):
+    def start_attempt(self, build_id, binding, tools_granted=()):
         with self.lock:
-            self.attempt_rows.append({"build_id": build_id, "model": binding.model})
+            self.attempt_rows.append({"build_id": build_id, "model": binding.model,
+                                      "tools_granted": list(tools_granted)})
             return len(self.attempt_rows)
 
     def end_attempt(self, build_id, result):

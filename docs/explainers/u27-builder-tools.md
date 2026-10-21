@@ -20,7 +20,9 @@ Until this card a builder session had a shell, file tools, and git, and nothing 
 | `src/slipway/builders/tools.py` | Turns the list into a `Grant`: the Playwright server entry for `headless_browser`, the `--chrome` flag for `operator_browser`, and the laptop's own computer use server for `desktop`. `refuse` is the container rule again, and `tool_names` is how the handoff names each level. |
 | `src/slipway/builders/cli.py` | Writes the grant to the session's `run/mcp.json`, starts `claude` with `--mcp-config` and `--strict-mcp-config` plus any flag, and records the levels in the session's `state.json` as `tools_granted`. A container refuses a laptop only level before it makes anything; a laptop with no computer use server refuses `desktop` the same way. |
 | `src/slipway/builders/handoff.py` | Section 4 names the fixed tools, then each granted level, then says the session has no other tool. `Handoff.builder_tools` carries the levels to the adapter, including through the laptop's task input. |
-| `src/slipway/workflow/card.py` | Writes `tools_granted` on the build's `building` transition, the build's record, for a container build and a laptop build alike. |
+| `src/slipway/workflow/card.py` | Writes `tools_granted` on the attempt row and on the build's `building` transition, for a container build and a laptop build alike. |
+| `src/slipway/workflow/worker.py` | `PostgresRecords.start_attempt` writes the list into the attempt row's new column. |
+| `src/slipway/records/schema/006_attempt_tools.sql` | Adds `attempts.tools_granted`, a text array; a row written before it holds NULL. |
 | `src/slipway/onboard/questions.py` | The opt in question, with the trade off in its text, placed after the builder worker question. |
 | `src/slipway/onboard/machine.py` | One line: for a list question with a default, the answer "no" means the default, so the opt in is declined in a word. |
 | `deploy/builder.Dockerfile` | Installs the Playwright MCP server at a pinned version (`PLAYWRIGHT_MCP_VERSION`) and the Chromium its own Playwright expects, under `/opt/ms-playwright`. |
@@ -34,7 +36,7 @@ project file           builder_tools = ["headless_browser", "desktop"]
    v
 handoff.render         Handoff.builder_tools, and section 4 names each level
    |
-   +-> workflow/card.py    building transition: tools_granted = [...]
+   +-> workflow/card.py    attempt row and building transition: tools_granted = [...]
    |
    v
 cli adapter start      tools.grant(...) -> run/mcp.json and flags
@@ -55,7 +57,7 @@ The handoff text is the first message of the session's transcript, and the trans
 
 ## The record
 
-`tools_granted` is on the build's `building` transition (its evidence, the JSON every transition carries) and in the session's `state.json`. The card also asked for it on the attempt row. That row is written by `PostgresRecords.start_attempt` in `src/slipway/workflow/worker.py`, which U29 holds while this card is built, so the column and its write are a follow up once U29 lands; the transition carries the same list meanwhile.
+`tools_granted` is in three places: the attempt row (one row per builder session, where cost and usage also live), the build's `building` transition (its evidence, the JSON every transition carries), and the session's `state.json`. The attempt row is the one to query: `SELECT build_id FROM attempts WHERE 'desktop' = ANY (tools_granted)` lists every session that had the operator's screen.
 
 ## For the operator
 
