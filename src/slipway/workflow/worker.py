@@ -435,7 +435,8 @@ def container_builders(environ: Mapping[str, str]) -> Callable[[Any, ResolvedBin
     return builder
 
 
-def host_credentials(environ: Mapping[str, str]) -> Callable[[Any], Credential]:
+def host_credentials(environ: Mapping[str, str],
+                     root: Path | None = None) -> Callable[[Any], Credential]:
     """card.Ports.credential: the project's host credential as a builder Credential.
 
     The operator file's host credentials are static tokens in the
@@ -445,7 +446,7 @@ def host_credentials(environ: Mapping[str, str]) -> Callable[[Any], Credential]:
 
     def credential(project) -> Credential:
         def mint():
-            return resolve_host_credential(project, load_operator(), environ).token, None
+            return resolve_host_credential(project, load_operator(root), environ).token, None
 
         return Credential(project.host_credential, mint)
 
@@ -523,7 +524,7 @@ def main(argv: list[str] | None = None, environ=None) -> int:
     environ.update(git_helper_config())
     dsn = environ[DATABASE_URL]
     worker = vps_worker(Hatchet(), lambda: psycopg.connect(dsn, autocommit=True),
-                        container_builders(environ), host_credentials(environ))
+                        container_builders(environ), host_credentials(environ, home(environ)))
     worker.start()
     return 0
 

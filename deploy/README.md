@@ -22,7 +22,7 @@ The operator file (`$SLIPWAY_HOME/operator.toml`) never holds a value either. It
 | `SLIPWAY_BUILDER_USER` | worker | The non root `uid:gid` builder containers run as; it must own `SLIPWAY_SESSIONS`. |
 | `SLIPWAY_SESSIONS` | worker | The writable folder builder sessions live in, mounted at the same path inside the worker and on the VPS, because Docker resolves a builder container's bind mounts on the VPS. |
 
-The app refuses to start while `SLIPWAY_SESSION_KEY` or `SLIPWAY_BASE_URL` is unset, while the key is shorter than 32 bytes, or while the base URL is not https. The worker refuses to start, naming each one, while a worker variable above is unset. Compose also sets the Hatchet client's own `HATCHET_CLIENT_HOST_PORT` and `HATCHET_CLIENT_TLS_STRATEGY` for both, so they reach the engine on the compose network, where it speaks plain gRPC.
+The app refuses to start while `SLIPWAY_SESSION_KEY` or `SLIPWAY_BASE_URL` is unset, while the key is shorter than 32 bytes, or while the base URL is not https. The worker refuses to start, naming each one, while a worker variable above is unset. Compose also sets the Hatchet client's own `HATCHET_CLIENT_HOST_PORT`, `HATCHET_CLIENT_TLS_STRATEGY`, and `HATCHET_CLIENT_SERVER_URL` for both, so their gRPC and REST calls reach the engine on the compose network, where it speaks plain gRPC, instead of the addresses the token names for outside clients.
 
 ## Which service receives which variables
 

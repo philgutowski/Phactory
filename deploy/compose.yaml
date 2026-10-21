@@ -136,6 +136,9 @@ services:
       # gRPC; only the public port carries TLS.
       HATCHET_CLIENT_HOST_PORT: hatchet-lite:7077
       HATCHET_CLIENT_TLS_STRATEGY: none
+      # The REST API too: the token names HATCHET_SERVER_URL, the tunnel's
+      # address, which is not the engine from inside a container.
+      HATCHET_CLIENT_SERVER_URL: http://hatchet-lite:8888
       SLIPWAY_BASE_URL: https://${SLIPWAY_DOMAIN:?the public name of the VPS}
       SLIPWAY_SESSION_KEY: ${SLIPWAY_SESSION_KEY:?at least 32 random bytes}
     env_file:
@@ -164,6 +167,9 @@ services:
       HATCHET_CLIENT_TOKEN: ${HATCHET_CLIENT_TOKEN:?}
       HATCHET_CLIENT_HOST_PORT: hatchet-lite:7077
       HATCHET_CLIENT_TLS_STRATEGY: none
+      # The REST API too: the token names HATCHET_SERVER_URL, the tunnel's
+      # address, which is not the engine from inside a container.
+      HATCHET_CLIENT_SERVER_URL: http://hatchet-lite:8888
       SLIPWAY_BUILDER_IMAGE: ${SLIPWAY_BUILDER_IMAGE:?the tag built from deploy/builder.Dockerfile}
       SLIPWAY_BUILDER_NETWORK: ${SLIPWAY_BUILDER_NETWORK:?}
       SLIPWAY_BUILDER_USER: ${SLIPWAY_BUILDER_USER:?the uid:gid that owns SLIPWAY_SESSIONS}

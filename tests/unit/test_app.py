@@ -258,8 +258,8 @@ def worker_variables() -> set[str]:
 
 
 APP_VARIABLES = {"SLIPWAY_HOME", "SLIPWAY_DATABASE_URL", "HATCHET_CLIENT_TOKEN",
-                 "HATCHET_CLIENT_HOST_PORT", "HATCHET_CLIENT_TLS_STRATEGY", "SLIPWAY_BASE_URL",
-                 "SLIPWAY_SESSION_KEY"}
+                 "HATCHET_CLIENT_HOST_PORT", "HATCHET_CLIENT_TLS_STRATEGY",
+                 "HATCHET_CLIENT_SERVER_URL", "SLIPWAY_BASE_URL", "SLIPWAY_SESSION_KEY"}
 
 
 def test_compose_gives_the_app_none_of_the_workers_variables():
@@ -329,11 +329,10 @@ def test_the_worker_builds_a_container_per_card_or_hands_the_laptop_its_build(tm
     assert found.git.username == "x-access-token"
 
 
-def test_the_worker_mints_the_projects_host_credential_without_expiry(tmp_path, monkeypatch):
+def test_the_worker_mints_the_projects_host_credential_without_expiry(tmp_path):
     root = home(tmp_path)
-    monkeypatch.setenv("SLIPWAY_HOME", str(root))
 
-    found = worker.host_credentials({"EXAMPLE_GITHUB_APP_KEY": "host-token"})(
+    found = worker.host_credentials({"EXAMPLE_GITHUB_APP_KEY": "host-token"}, root)(
         load_project(SLUG, root))
 
     assert found.current() == "host-token" and found.expires_at is None
