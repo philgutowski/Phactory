@@ -194,6 +194,8 @@ _REPORTS = (
     # "FAILED tests/test_a.py::test_one - AssertionError"
     re.compile(r"^(?P<word>PASSED|FAILED|ERROR|SKIPPED|XFAIL|XPASS) "
                r"(?P<id>[^\s\[]+(?:\[[^\]]*\])?)(?: - .*)?$"),
+    # pytest -rA prints a skip by file and line: "SKIPPED [1] tests/test_a.py:12: why"
+    re.compile(r"^(?P<word>SKIPPED) \[\d+\] (?P<id>[^\s:]+):\d+"),
     # pytest's default progress: "tests/test_a.py ..F.   [ 40%]"
     re.compile(r"^(?P<id>\S+\.py) (?P<marks>[.FEsxX]+)(?:\s+\[\s*\d+%\])?$"),
     # Jest and Vitest: "PASS src/a.test.ts", "FAIL src/b.test.ts"
@@ -275,8 +277,11 @@ def _runs_item(block: Block | None, gate: Gate | None, tree: Container[str] | No
     if all(report.outcome == SKIPPED for report in matched):
         return Item("runs", FAIL, {"test": test, "reason": "the named test was skipped",
                                    "source": gate.source})
-    passed = sum(report.outcome == PASSED for report in matched)
-    return Item("runs", PASS, {"test": test, "passed": passed, "source": gate.source})
+    # A count of report lines, not of tests: a file's progress line and its
+    # tests' summary lines each count once.
+    reported = sum(report.outcome == PASSED for report in matched)
+    return Item("runs", PASS, {"test": test, "passed_reports": reported,
+                               "source": gate.source})
 
 
 def _gate_item(gate: Gate | None) -> Item:

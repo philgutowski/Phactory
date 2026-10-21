@@ -93,7 +93,7 @@ def test_covers_ae7_a_named_test_absent_from_the_gate_log_fails_that_item_alone(
 def test_a_named_test_in_the_gate_log_that_passed_passes_the_runs_item():
     result = score(BUILD, ["src/page.py"], green(), parse(CARD))
     assert result.runs.status == PASS
-    assert result.runs.detail["passed"] == 3  # the progress line and two summary lines
+    assert result.runs.detail["passed_reports"] == 3  # the progress line and two summaries
     assert result.total()["verdict"] == PASS
 
 
@@ -104,9 +104,10 @@ def test_a_named_test_that_failed_or_was_skipped_fails_the_runs_item():
     assert result.runs.detail["failed"] == ["tests/test_page.py",
                                             "tests/test_page.py::test_title"]
     assert result.gate.status == FAIL
-    skipped = "SKIPPED tests/test_page.py::test_renders\n"
-    assert score(BUILD, [], green(skipped), parse(CARD)).runs.detail["reason"] == (
-        "the named test was skipped")
+    for skipped in ("SKIPPED tests/test_page.py::test_renders\n",
+                    "SKIPPED [1] tests/test_page.py:12: needs a device\n"):
+        assert score(BUILD, [], green(skipped), parse(CARD)).runs.detail["reason"] == (
+            "the named test was skipped")
 
 
 def test_a_named_test_file_missing_from_the_landed_tree_fails_even_without_a_log():

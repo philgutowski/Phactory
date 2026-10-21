@@ -35,7 +35,7 @@ runs    the named test ran and passed   pass | fail (why) | none named | not rea
 
 **gate** folds the gate's own word for how it ended into pass or fail: `success` passes, `failure`, `timed_out`, `cancelled` and their kin fail, and anything else (neutral, skipped, still running) records `no conclusion`.
 
-**paths** compares every file the landed change touches with the card's `paths`. An entry covers a file when it is the file, a directory above it (with or without a trailing slash), or a glob that matches it. Any file no entry covers fails the item, and the record lists those files beside the declared paths.
+**paths** compares every file the landed change touches with the card's `paths`. An entry covers a file when it is the file, a directory above it (with or without a trailing slash), or a glob that matches it (a glob is a path pattern in which `*` and `?` stand for any characters and `[...]` for any one of a set). Any file no entry covers fails the item, and the record lists those files beside the declared paths.
 
 **runs** reads the gate log for the test the card names (AE7). The test can be a file (`tests/test_page.py`) or a test id (`tests/test_page.py::test_renders`). It fails when:
 
@@ -44,7 +44,9 @@ runs    the named test ran and passed   pass | fail (why) | none named | not rea
 - a report line says it failed;
 - every report line says it was skipped.
 
-The log reader knows the report lines of pytest (verbose, the `-rA` summary, the failure summary, and the default progress line), Jest and Vitest, and `go test`. It takes off GitHub Actions' per line timestamps and colour escapes first. A project whose gate prints no test ids (pytest with `-q` alone prints dots) fails the runs item on every card that names a test, which is the honest answer: Slipway cannot see that the test ran.
+The log reader knows the report lines of pytest (verbose, the `-rA` summary including its file and line form for skips, the failure summary, and the default progress line), Jest and Vitest, and `go test`. It takes off GitHub Actions' per line timestamps and colour escapes first. A project whose gate prints no test ids (pytest with `-q` alone prints dots) fails the runs item on every card that names a test, which is the honest answer: Slipway cannot see that the test ran.
+
+A passing runs item records `passed_reports`, the number of report lines that said the test passed. It counts lines, not tests: a file's progress line and each of its tests' summary lines count once each.
 
 **The total** counts what passed and what failed and names what was absent. Its verdict is `fail` when any item failed, `pass` when all three passed, and `partial` when nothing failed but something was absent. A card with no block and a green gate is `partial`, never `fail`.
 
