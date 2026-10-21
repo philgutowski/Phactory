@@ -7,6 +7,12 @@ without having tested anything. So when the CI environment variable is set
 (GitHub Actions sets CI=true) or the require integration option is passed,
 a skipped integration test is reported as a failure instead.
 
+One kind is left out by name: a test marked operator_smoke, which needs an
+engine only the operator runs (KTD19: "the Hatchet live test stays an
+operator run smoke"). Its skip stays a skip, and its reason says how to run
+it. The marker is the only way out, so a test that merely lacks Postgres
+still fails the gate.
+
 pyproject.toml loads this module with "-p _gate".
 """
 
@@ -48,7 +54,8 @@ def pytest_collection_modifyitems(config, items):
 def pytest_runtest_makereport(item, call):
     outcome = yield
     report = outcome.get_result()
-    if report.skipped and _required(item.config) and _is_integration(item):
+    smoke = item.get_closest_marker("operator_smoke") is not None
+    if report.skipped and _required(item.config) and _is_integration(item) and not smoke:
         reason = report.longrepr[2] if isinstance(report.longrepr, tuple) else report.longrepr
         report.outcome = "failed"
         report.longrepr = (
