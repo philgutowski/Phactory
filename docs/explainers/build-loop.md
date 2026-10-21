@@ -41,7 +41,7 @@ start session(handoff)   ....>  checkout the branch
 Two details are worth knowing:
 
 - **A branch is the dispatched mark.** The conductor creates the branch before starting the session, so a second conductor running a minute later sees the card as dispatched. This is the same move Slipway makes at dispatch (KTD27), and it is what moves the board to In progress.
-- **An operator spike whose findings are recorded but whose issue stays open** is passed by name with `--assume-done U2`. The rule never guesses that a spike is done. Today U2's merge method findings are recorded and U9 needs them, while steps 4 to 6 of U2 stay open.
+- **An operator spike whose findings are recorded but whose issue stays open** is passed by name with `--assume-done U2`. The rule never guesses that a spike is done. Today two are passed, each with its own `--assume-done`: U2, whose merge method findings U9 needs while steps 4 to 6 stay open, and U4, whose Hatchet findings (`docs/spikes/hatchet.md`) U14 needs while step 1, sizing on the VPS, stays open.
 
 `render` writes the handoff in the plan's shape, five numbered items then the card body. It differs from Slipway's own eight item handoff (`src/slipway/builders/handoff.py`) in three ways: the builder opens its own pull request, because there is no Slipway to open it yet; there is no credential item, because the cloud session holds its own; and there is no side reference item, because the session cannot push outside its branch.
 

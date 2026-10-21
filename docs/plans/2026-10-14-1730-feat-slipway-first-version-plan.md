@@ -19,6 +19,18 @@ execution: code
 - **Execution profile:** Slipway is built from its own GitHub Projects board. Every unit below is one card. Cloud lane cards are built by a Claude Code cloud session that pushes a branch and opens a pull request, which auto merges on a green gate except on the paths KTD25 names. Operator lane cards (the four spikes, deploys, and the acceptance pass) need Phillip's accounts, phone, or host and are run by hand. The card template and lane rules are under Build Process in the Planning Contract.
 - **Stop conditions:** A spike that disproves the fact it exists to prove stops the phase that depends on it and comes back to Phillip with the fallback the plan names. Evidence that a settled decision cannot work stops the work and comes back to Phillip; it is never resolved silently.
 - **Open blockers:** None before building. Four spikes (U1 to U4) gate everything after Phase 0. One permission question (Outstanding Questions, resolve before acceptance) gates U24's Bitbucket onboarding only.
+- **First customer:** Integra Workbench, a Bitbucket Cloud repository with its cards on Jira. Slipway stays project agnostic; the order below serves that project first. See "Reorder of 2026-10-21".
+
+### Reorder of 2026-10-21
+
+Phillip approved this order on 2026-10-21, after the build had reached the end of Phase 2 apart from the loop itself. Three things move to the front: the loop that runs a card, the Bitbucket and Jira path as the first class one, and onboarding that can be finished in one sitting. Builders that drive a browser or a desktop are new scope (U27); the plan had none. Nothing already merged changes. The order:
+
+1. **The loop.** U4 (proved locally on 2026-10-21, `docs/spikes/hatchet.md`), then U14, then U25.
+2. **The first project.** U26, the Integra lane (new); U19 terminal first, with its MCP front end moved to U18; U21 in a first slice; U20.
+3. **Builder tools.** U27, a headless browser for every project, and the operator's real browser and desktop as a per project opt in (new).
+4. **Later.** U16 soon after step 2, since it needs no outside service. Then U1 and U12 (Managed Agents mounts GitHub repositories only, and the first project builds on the laptop), U3 and U18 (the MCP surface and voice), U15 and U17 (they wait on the Integrel export question), U22 and U23 (the Zig runner), and U24 last, with Integra Workbench as its first cold onboarding.
+
+The Unit Index carries the new dependencies, so the ready rule and the dispatch skill pick the order up from the board.
 
 ---
 
@@ -550,7 +562,7 @@ How Slipway's own cards are built, which is also the first dogfood of R41.
 - **Handoff on a cloud card.** The issue comment that starts a session carries the fixed shape: base commit on `main`, branch `slipway/u<n>-<slug>`, rules (`CLAUDE.md` in the repo, plus "define jargon on first use and write the explainer under `docs/explainers/`"), files other open cards declare, and the done line "tests, ruff, and the import test green, PR opened with `Closes #<issue>` in the body".
 - **Session.** Phillip starts a Claude Code cloud session on the repository from the web or the phone, pastes the handoff, and the session pushes the branch and opens the pull request. The Claude GitHub app is installed on the repository for this; the repository's `CLAUDE.md` carries the environment setup the session runs first.
 - **Gate and landing.** `ci.yml` starts a local Postgres in a `run:` step, then runs `ruff check .`, `python -m pytest -q` with the integration suite required, and the import graph test on the pull request; a ruleset requires that check, "require branches to be up to date", approval for fork workflows, and one review on the KTD25 paths through `CODEOWNERS`; auto merge is on. The repository's `CLAUDE.md` starts the same Postgres so a cloud session can run the integration scenarios before it opens a pull request. Once U22 lands, the repository variable flips `runs-on` to the instance's labels. Slipway's own board carries the KTD27 workflow from U5, so its cards move the same way a customer's do.
-- **Order.** Phase 0 cards are all operator lane and run first. Within a later phase, cards without a dependency on an unbuilt unit may run in parallel; the Unit Index carries the dependencies.
+- **Order.** Phase 0 cards are all operator lane and run first. Within a later phase, cards without a dependency on an unbuilt unit may run in parallel; the Unit Index carries the dependencies. Since 2026-10-21 the order across phases follows "Reorder of 2026-10-21" under the Goal Capsule.
 
 ### System-Wide Impact
 
@@ -597,6 +609,9 @@ flowchart LR
   P2 --> P4[Phase 4 surfaces: U18 U19 U20 U21]
   P2 --> P5[Phase 5 runner: U22 U23]
   P4 --> P5
+  P2 --> P7[Phase 2b first project: U26 U19 U21 U20]
+  P7 --> P8[Phase 2c builder tools: U27]
+  P7 --> P6
   P3 --> P6[Phase 6 acceptance: U24]
   P4 --> P6
   P5 --> P6
@@ -627,12 +642,14 @@ flowchart LR
 | U16 | Deterministic score and check_card | `src/slipway/evals/deterministic.py` | U8, U9, U10, U14 |
 | U17 | Judged score and replay as a Langfuse experiment | `src/slipway/evals/judged.py`, `replay.py` | U15, U16 |
 | U18 | MCP server, tools, audit | `src/slipway/mcp/`, `src/slipway/app.py` | U3, U7, U25 |
-| U19 | Onboard state machine, two front ends | `src/slipway/onboard/` | U6, U8, U9, U18 |
+| U19 | Onboard state machine, terminal first | `src/slipway/onboard/` | U6, U8, U9, U25 |
 | U20 | Status page | `src/slipway/page/` | U7, U25 |
-| U21 | CLI | `src/slipway/cli.py` | U25, U18, U19 |
+| U21 | CLI, first slice | `src/slipway/cli.py` | U25, U19 |
 | U22 | Zig runner instances and tracking | `deploy/`, `src/slipway/workflow/runner_track.py` | U7, U14 |
 | U23 | Runner observation, findings, filing | `src/slipway/runner/` | U22, U18 |
-| U24 | Three cold onboardings and the laptop closed day | `docs/spikes/acceptance.md` | U17, U21, U23 |
+| U24 | Three cold onboardings and the laptop closed day | `docs/spikes/acceptance.md` | U17, U21, U23, U26, U27 |
+| U26 | The first project's lane: an outside lander, a worktree build, project branch names | `src/slipway/config/project.py`, `src/slipway/verify.py`, `src/slipway/builders/cli.py`, `src/slipway/workflow/card.py` | U13, U14 |
+| U27 | Builder tools: headless browser, the operator's browser, the desktop | `src/slipway/builders/tools.py`, `deploy/builder.Dockerfile` | U13, U19 |
 
 ### U1. Spike: Managed Agents session, event log, push
 
@@ -1040,7 +1057,7 @@ flowchart LR
 - **Files:** `src/slipway/mcp/server.py`, `src/slipway/mcp/tools.py`, `src/slipway/mcp/audit.py`, `src/slipway/auth.py`, `src/slipway/app.py`, `tests/unit/test_mcp_tools.py`, `tests/integration/test_mcp_isolation.py`.
 - **Approach:**
   1. One ASGI app serving one parameterised route `/mcp/p/{slug}` and its protected resource metadata path, resolving the project file at request time and answering not found for an unreserved slug; `auth.py`'s verifier from U3 with `validate_token_resource` on, issuer pinned, no audience refused, subject checked against the project's allowed subjects, and the operator's subject known from the operator file.
-  2. Reads first: `status`, `project_rules`, `card`, `in_flight`, `events`, `trace`, `eval`, `findings`, `check_card`; then writes `dispatch`, `land`; all through `service`. U19 adds its three onboard wrappers in its own card.
+  2. Reads first: `status`, `project_rules`, `card`, `in_flight`, `events`, `trace`, `eval`, `findings`, `check_card`; then writes `dispatch`, `land`; all through `service`; and the three onboard wrappers over U19's state machine (`onboard_start`, `onboard_answer`, `onboard_status`), moved here from U19 by the reorder of 2026-10-21.
   3. Project from the token; a key from another project returns not found; every call writes an audit row with redacted arguments before returning.
 - **Patterns to follow:** `docs/research/2026-10-14-plan/agent-native.md` tool list; U3's stub.
 - **Test scenarios:**
@@ -1051,14 +1068,15 @@ flowchart LR
   - A slug reserved after the app started answers on its URL without a restart; an unreserved slug is not found.
   - An argument containing a token pattern is stored in the audit row as hash and length.
   - No tool schema contains an approval argument, and `mcp/` imports nothing from `workflow/`.
+  - Covers AE8, moved from U19. The same scripted answers through the terminal client and the MCP client produce identical question sequences and identical project files except the actor.
 - **Verification:** Tool tests with an in process client; the isolation test against two projects; the Claude app and Grok each connect to a project URL and call `status` by voice, recorded in the pull request.
 
-### U19. Onboard state machine, two front ends
+### U19. Onboard state machine, terminal first
 
-- **Goal:** Guided onboarding as one state machine served over MCP and the terminal, with validated then saved answers, property checks including the namespace restriction, attestations, and the trivial card handoff.
+- **Goal:** Guided onboarding as one state machine, served first by the terminal, with validated then saved answers, property checks including the namespace restriction, attestations, and the trivial card handoff. The operator answers one question at a time, picks from live choices where the adapters can list them, and never edits the project file by hand. The MCP front end is U18's, over the same machine (reorder of 2026-10-21).
 - **Requirements:** R29 to R33, R35, KTD6, KTD15, KTD24, AE6, AE8.
-- **Dependencies:** U6, U8, U9, U18.
-- **Files:** `src/slipway/onboard/machine.py`, `src/slipway/onboard/questions.py`, `src/slipway/onboard/checks.py`, `src/slipway/onboard/terminal.py`, `src/slipway/mcp/tools.py` (the three wrappers), `tests/unit/test_onboard.py`.
+- **Dependencies:** U6, U8, U9, U25.
+- **Files:** `src/slipway/onboard/machine.py`, `src/slipway/onboard/questions.py`, `src/slipway/onboard/checks.py`, `src/slipway/onboard/terminal.py`, `tests/unit/test_onboard.py`.
 - **Approach:**
   1. Questions as data: id, text, choices (enumerated live by the adapters where possible: boards, labels, builders), free text allowed, default, why asked, and an operator only flag (KTD15). Accounts by name and Langfuse projects are offered as choices only to the operator's subject.
   2. `start(slug, actor)`, `answer(session, qid, value, actor)`, `status(session)`; an operator only question answered by any other subject is refused with "the operator sets this" and the file is unchanged; every accepted answer validated, then saved to the project file with `verified = false`; secret looking answers refused server side and recorded through `redact.refusal_record`; gate and test commands stored and never executed.
@@ -1068,7 +1086,7 @@ flowchart LR
   6. Refuses to finish while "another system dispatches this board" is answered yes.
 - **Patterns to follow:** `agent-config/skills/board-lanes/SKILL.md` `up` checklist for the question order.
 - **Test scenarios:**
-  - Covers AE8. The same scripted answers through the terminal client and the MCP client produce identical question sequences and identical project files except the actor.
+  - The terminal client run on scripted answers for a Bitbucket repository with a Jira board writes the same project file a hand written fixture holds, apart from the actor. (AE8's parity test moves to U18 with the MCP front end.)
   - Covers AE6. A repository with no required check stops at the gate property with the fix as the next step; so does one whose ruleset does not restrict the machine identity.
   - An answer that looks like a token is refused, and the audit row holds a hash, not the value.
   - A manager agent's subject on the project's allowed list answering the accounts question is refused and the project file is unchanged; the same subject is offered no account or Langfuse project names as choices.
@@ -1076,7 +1094,7 @@ flowchart LR
   - A dropped session resumes from `status` with the saved answers.
   - Re entry on a project whose board was deleted asks only the board question.
   - A wrong gate command passes intake, the trivial card fails its gate on the host, and onboard returns to the gate question with the host's output; nothing ran on the control plane.
-- **Verification:** All scenarios with fake adapters; a cold onboarding of a fresh test repository through the Claude app is recorded in the pull request.
+- **Verification:** All scenarios with fake adapters; a cold onboarding of a fresh test repository through the terminal is recorded in the pull request.
 
 ### U20. Status page
 
@@ -1097,11 +1115,11 @@ flowchart LR
   - No template contains a form that posts an approval, and `page/` imports nothing from `mcp/` or `workflow/`.
 - **Verification:** Template tests on fixture records; a screenshot at phone width is attached to the pull request.
 
-### U21. CLI
+### U21. CLI, first slice
 
-- **Goal:** The `slipway` terminal with the seven verbs as thin clients of `service`, the same functions the MCP tools call.
+- **Goal:** The `slipway` terminal with the verbs as thin clients of `service`, the same functions the MCP tools call. The first slice (reorder of 2026-10-21) carries `onboard`, `dispatch`, `status`, `land`, `watch`, and `migrate`; `eval`, `trace`, `findings`, and `new` are added by the units that build their services (U16 and U17, U15, U23, U18), one subcommand each, with this file's test pattern.
 - **Requirements:** R25, R33, KTD23.
-- **Dependencies:** U25, U18, U19.
+- **Dependencies:** U25, U19.
 - **Files:** `src/slipway/cli.py`, `tests/unit/test_cli.py`.
 - **Approach:**
   1. Subcommands: the seven verbs `onboard`, `dispatch`, `status`, `land` (with `--override`), `eval` (with `--rerun` and `replay`), `trace`, `watch` (tail events), plus `findings` (with `file`), and the two operator commands the plan needs, `new <slug>` (reserve a project and print its MCP URL) and `migrate`.
@@ -1161,15 +1179,52 @@ flowchart LR
   - Findings for project A are invisible to a token for B.
 - **Verification:** Classification on fixtures captured from a real run; one live finding filed on a test issue in a fork and then closed, recorded in the pull request.
 
+### U26. The first project's lane: an outside lander, a worktree build, project branch names
+
+- **Goal:** Integra Workbench, the first project, runs through Slipway with no code naming it: its own watcher lands every branch, its laptop builder works in a worktree beside other sessions, and its branches and titles follow its own conventions. Every value is project file configuration (R1); this unit adds the fields and the code paths that read them.
+- **Requirements:** R1, R9, R17, R19, R20, KTD7, KTD12, KTD18, KTD27.
+- **Dependencies:** U13, U14.
+- **Files:** `src/slipway/config/project.py`, `src/slipway/verify.py`, `src/slipway/builders/cli.py`, `src/slipway/workflow/card.py`, `tests/unit/test_config.py`, `tests/unit/test_verify.py`, `tests/unit/test_cli_builder.py`, `tests/fixtures/config/`.
+- **Approach:**
+  1. A landing path `external_lander`: something other than Slipway and other than the host's queue (on Integra, the project's watcher session) puts the branch on the base branch and pushes, and the host then marks the pull request merged. Slipway still never merges. Verify uses the tree relation of the auto merge path: the base tip after the merged event carries the confirmed tree. The landing probe accepts the value only from the project file, since no host setting reveals it.
+  2. A field `branch_template` with `{key}` and `{slug}` (default `slipway/{key}-{slug}`, today's shape), validated at load to stay a legal ref and to keep `{key}`, which the board automation and verify key on. Integra sets `{key}-{slug}`. The namespace check of onboard (KTD6) reads the template's literal prefix instead of a fixed `slipway/`; a template with no literal prefix is refused, so the machine identity always has a namespace to be held to.
+  3. A field `pull_request_title` with `{key}` and `{title}` (default today's), and the `rules` field from #80 carrying the rest of the project's conventions into the handoff.
+  4. The laptop builder's `checkout = "worktree"` mode: the worker adds a git worktree under its own directory on the branch from the base, runs the session there, and removes the worktree on release; the shared checkout is never touched. `clone`, the container default, is unchanged.
+  5. The ready status may be any status, including a backlog one; the lane label alone marks Slipway's cards. This is already config (`ready_status`, `lane_label`); this unit adds the onboard question text that says so.
+- **Test scenarios:**
+  - A project file with `landing_path = "external_lander"` loads; verify on a fixture where the base tip's tree equals the confirmed tree returns landed, and one where it differs returns `commit_mismatch`.
+  - `branch_template = "{key}-{slug}"` renders `IW-12-fix-export` for a fixture card; a template without `{key}` and one that renders an illegal ref are refused at load.
+  - Two laptop builds on one repository run in two worktrees, and the shared checkout's branch and status are unchanged after both.
+  - No string from the first project appears in `src/slipway`; the fixture project file holds them.
+- **Verification:** Unit scenarios green under the network guard; one live Integra card built in a worktree and landed by its watcher, recorded in the pull request.
+
+### U27. Builder tools: a headless browser, the operator's browser, the desktop
+
+- **Goal:** A per project switch for what a builder may drive beyond the shell, in three levels, so a card can check a page it changed or use an app outside the browser.
+- **Requirements:** R12, R14, R16, KTD12, KTD24, KTD26.
+- **Dependencies:** U13, U19.
+- **Files:** `src/slipway/builders/tools.py`, `src/slipway/builders/cli.py`, `src/slipway/config/project.py`, `deploy/builder.Dockerfile`, `src/slipway/onboard/questions.py`, `tests/unit/test_builder_tools.py`.
+- **Approach:**
+  1. A field `builder_tools` in the project file, a list drawn from `headless_browser`, `operator_browser`, `desktop`; the default is `["headless_browser"]`.
+  2. `headless_browser`: a Playwright browser (a browser with no window, driven by code) and its MCP server installed in the builder image and named in the session's MCP configuration. It runs inside the container or the laptop builder's own user, so KTD12's isolation is unchanged. This covers screenshot checks such as the first project's visual rule.
+  3. `operator_browser` (Claude in Chrome) and `desktop` (computer use): laptop builder only, refused at load for a container binding. Each gives the session the operator's own signed in browser or screen, which is outside KTD12's dedicated user, so each is off by default, is asked about by onboard as an explicit opt in with that trade off stated in the question, and is written on the build's record and its trace (`tools_granted`), so every run that had the power says so.
+  4. The handoff names the tools the build was given, so a builder never assumes one it lacks.
+- **Test scenarios:**
+  - A container binding with `operator_browser` or `desktop` is refused at load with the reason.
+  - The default project gives the session the headless browser's MCP entry and nothing else.
+  - A laptop binding with `desktop` writes `tools_granted` on the attempt row and in the handoff.
+  - Onboard asks the opt in question with the trade off text, and a "no" leaves the default.
+- **Verification:** Unit scenarios green; one live laptop card that takes a headless screenshot recorded in the pull request; the operator records one opt in run of each of the other two levels.
+
 ### U24. Three cold onboardings and the laptop closed day
 
 - **Goal:** The acceptance pass: onboard the three kinds of project with no code change, land one scored card on each, and run a day with the laptop closed.
 - **Requirements:** R35, R41, Success Criteria. Operator lane.
-- **Dependencies:** U17, U21, U23.
+- **Dependencies:** U17, U21, U23, U26, U27.
 - **Files:** `docs/spikes/acceptance.md`.
 - **Approach:**
   1. GitHub with Projects: `Lementknight/zig-actions-runner` (auto merge off) and Slipway itself (auto merge on with the KTD25 review paths).
-  2. Bitbucket Cloud with Jira: Integrel's support-workbench with Phillip's credentials, one card bound to the laptop builder for its machine bound tests, with `trace_detail` set by the answer under Outstanding Questions.
+  2. Bitbucket Cloud with Jira: Integra Workbench with Phillip's credentials, onboarded first, its cards built by the laptop builder in a worktree and landed by its own watcher (U26), with `trace_detail` set by the answer under Outstanding Questions.
   3. Never seen: a fresh repository created that day.
   4. Then close the laptop for a day with cards filed on the GitHub projects, and read the page the next morning.
   5. Record every code change that was needed as a finding against R35, and fix before calling it done.
@@ -1220,7 +1275,9 @@ No release validation applies beyond the rows above.
 | U14 | Integration scenarios green against the CI Postgres; the Hatchet smoke recorded by the operator |
 | U9, U12, U13, U15, U17 | Unit scenarios green plus one live smoke recorded |
 | U18 | Isolation, subject, audience, and slug scenarios green; both clients connect and call status live |
-| U19 | Parity and operator only scenarios green; a cold onboarding through the Claude app recorded |
+| U19 | Operator only and terminal scenarios green; a cold onboarding through the terminal recorded |
 | U20, U21 | Scenarios green; phone width screenshot attached; a manager agent subject refused on the page |
 | U22, U23 | Slipway's own CI green on an instance; one finding filed and closed live; a red gate observed while the card stayed in gate red |
 | U24 | Report shows three onboardings, three scored cards, one laptop closed day |
+| U26 | Unit scenarios green; one live card of the first project built in a worktree and landed by its watcher |
+| U27 | Unit scenarios green; one live headless screenshot recorded, and one operator run of each opt in level |
