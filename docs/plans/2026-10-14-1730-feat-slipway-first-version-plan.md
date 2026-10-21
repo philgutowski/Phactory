@@ -611,10 +611,10 @@ flowchart LR
   P1 --> P2[Phase 2 builders and loop: U11 U12 U13 U14 U25]
   P2 --> P3[Phase 3 trace and eval: U15 U16 U17]
   P2 --> P4[Phase 4 MCP surface: U18]
-  P2 --> P5[Phase 5 runner and serving: U22 U29 U23]
+  P2 --> P5[Phase 5 runner: U22 U23]
   P4 --> P5
   P2 --> P7[Phase 2b first project: U26 U19 U21 U20]
-  P7 --> P8[Phase 2c builder tools and live onboarding reads: U27 U28]
+  P7 --> P8[Phase 2c builder tools, live onboarding reads, serving: U27 U28 U29]
   P7 --> P6
   P3 --> P6[Phase 6 acceptance: U24]
   P4 --> P6
@@ -654,8 +654,8 @@ flowchart LR
 | U24 | Three cold onboardings and the laptop closed day | `docs/spikes/acceptance.md` | U17, U21, U23, U26, U27, U28 |
 | U26 | The first project's lane: an outside lander, a worktree build, project branch names | `src/slipway/config/project.py`, `src/slipway/verify.py`, `src/slipway/builders/cli.py`, `src/slipway/workflow/card.py` | U13, U14 |
 | U27 | Builder tools: headless browser, the operator's browser, the desktop | `src/slipway/builders/tools.py`, `deploy/builder.Dockerfile` | U13, U19 |
-| U29 | Serve the app and the worker on the VPS | `src/slipway/app.py`, `deploy/compose.yaml`, `deploy/app.Dockerfile`, `deploy/Caddyfile` | U9, U14, U20, U22 |
 | U28 | Live onboarding reads on the host and tracker adapters | `src/slipway/hosts/`, `src/slipway/trackers/`, `src/slipway/onboard/checks.py` | U8, U9, U19, U26 |
+| U29 | Serve the app and the worker on the VPS | `src/slipway/app.py`, `src/slipway/workflow/worker.py`, `deploy/` | U9, U14, U20 |
 
 ### U1. Spike: Managed Agents session, event log, push
 
@@ -1222,26 +1222,6 @@ flowchart LR
   - Onboard asks the opt in question with the trade off text, and a "no" leaves the default.
 - **Verification:** Unit scenarios green; one live laptop card that takes a headless screenshot recorded in the pull request; the operator records one opt in run of each of the other two levels.
 
-### U29. Serve the app and the worker on the VPS
-
-- **Goal:** Slipway answers on the internet the way `deploy/README.md` and KTD28 say it does: one `app` process behind a certificate on port 443 serving the status page and the webhook endpoint, one `worker` process running the card workflow, both in `deploy/compose.yaml` beside the Hatchet engine, each with only its own variables.
-- **Requirements:** R3, R6, R16, KTD13, KTD23, KTD28.
-- **Dependencies:** U9, U14, U20, U22.
-- **Files:** `src/slipway/app.py`, `src/slipway/workflow/worker.py`, `deploy/compose.yaml`, `deploy/app.Dockerfile`, `deploy/Caddyfile`, `deploy/README.md`, `tests/unit/test_app.py`.
-- **Approach:**
-  1. `src/slipway/app.py`, the composition root (the one module that builds the running app from its parts): it loads the operator file, builds U20's page with `OidcIdentity` from `identity_provider` and the value of its `client_secret_env`, and serves on one listener the page and a webhook endpoint, which checks each delivery with U9's `hosts.webhooks.verify` (its `secrets_for` built from `webhook_secrets`), records it in U9's delivery log, and hands the event to `service.engine.push_host_event` for the build it names, so the app reaches the workflow only through `service`. It reads two variables Slipway fixes, `SLIPWAY_SESSION_KEY` (the key that signs the page's cookies, at least 32 random bytes) and `SLIPWAY_BASE_URL` (the https address the page is served at, which the login callback is built from), and refuses to start when either is unset or the base URL is not https. U18 adds the MCP routes to this file later.
-  2. The worker's entry point, `python -m slipway.workflow.worker`, if U14 left none.
-  3. `deploy/app.Dockerfile`, one image for both processes, run as a non root user. `deploy/compose.yaml` gains `app`, `worker`, Slipway's own Postgres database, and Caddy (a web server that obtains and renews its own certificate) terminating TLS on 443 for the app and on the public gRPC port for the Hatchet engine, which closes the TLS gap the U4 seed left; `HATCHET_GRPC_INSECURE` is then not needed on the public port. The environment and mount split follows `deploy/README.md` exactly.
-  4. `deploy/README.md`: the two new variables in the first table, the `app` row gaining them, and the steps to bring the stack up and to rotate the session key (which signs every operator out).
-- **Patterns to follow:** `deploy/README.md` for every variable and mount; the U4 seed's `${NAME:?}` rule, so no default secret ships.
-- **Test scenarios:**
-  - The app built from a fixture operator file with a fake identity provider serves the page's login redirect, and its callback address is `SLIPWAY_BASE_URL` plus `/callback`.
-  - The app refuses to start with `SLIPWAY_SESSION_KEY` unset, with a key shorter than 32 bytes, and with an `http://` base URL.
-  - A signed delivery for a managed repository reaches the webhook endpoint and is accepted; one for an unmanaged repository is dropped.
-  - Parsing `deploy/compose.yaml` shows the `app` service receives none of the worker's variables (account tokens, host and tracker credentials, Langfuse keys), and that only 443 and the gRPC port are published.
-  - `app.py` imports no module from `workflow/`.
-- **Verification:** Unit scenarios green under the network guard; the operator brings the stack up on the VPS, signs in to the page through the real identity provider, and sends one signed test delivery to the webhook endpoint, recorded in the pull request.
-
 ### U28. Live onboarding reads on the host and tracker adapters
 
 - **Goal:** Onboarding reads for itself what U19 was built asking the operator to attest: the repository, the board, the board's labels and statuses, the required check, the machine identity restriction, and the board moving on a scratch pull request. The operator then picks boards, labels, and statuses from live lists, and the external gate and durable state checks pass or fail on what the host and tracker say.
@@ -1262,6 +1242,27 @@ flowchart LR
   - A scratch branch left by an earlier run is removed before the next run starts.
   - A host that returns 404 for rulesets on its plan answers `None`, and onboarding asks the attestation as before.
 - **Verification:** Unit scenarios green on captured fixtures under the network guard; one live onboarding of a test repository on each host that asks none of the five attestations, recorded in the pull request.
+
+### U29. Serve the app and the worker on the VPS
+
+- **Goal:** Slipway answers on the internet the way `deploy/README.md` and KTD28 say it does: one `app` process behind a certificate on port 443 serving the status page and the webhook endpoint, one `worker` process running the card workflow, both in `deploy/compose.yaml` beside the Hatchet engine, each with only its own variables.
+- **Requirements:** R3, R6, R16, KTD13, KTD23, KTD28.
+- **Dependencies:** U9, U14, U20.
+- **Files:** `src/slipway/app.py`, `src/slipway/workflow/worker.py`, `deploy/compose.yaml`, `deploy/app.Dockerfile`, `deploy/Caddyfile`, `deploy/README.md`, `tests/unit/test_app.py`.
+- **Approach:**
+  1. `src/slipway/app.py`, the composition root (the one module that builds the running app from its parts): it loads the operator file, builds U20's page with `OidcIdentity` from `identity_provider` and the value of its `client_secret_env`, and serves on one listener the page and a webhook endpoint, which checks each delivery with U9's `hosts.webhooks.verify` (its `secrets_for` built from `webhook_secrets`), records it in U9's delivery log, and hands the event to `service.engine.push_host_event` for the build it names, so the app reaches the workflow only through `service`. It reads two variables Slipway fixes, `SLIPWAY_SESSION_KEY` (the key that signs the page's cookies, at least 32 random bytes) and `SLIPWAY_BASE_URL` (the https address the page is served at, which the login callback is built from), and refuses to start when either is unset or the base URL is not https. U18 adds the MCP routes to this file later.
+  2. The worker's entry point, `python -m slipway.workflow.worker`, if U14 left none.
+  3. `deploy/app.Dockerfile`, one image for both processes, run as a non root user. `deploy/compose.yaml` gains `app`, `worker`, Slipway's own Postgres database, and Caddy (a web server that obtains and renews its own certificate) terminating TLS on 443 for the app and on the public gRPC port for the Hatchet engine, which closes the TLS gap the U4 seed left; `HATCHET_GRPC_INSECURE` is then not needed on the public port. The environment and mount split follows `deploy/README.md` exactly.
+  4. `deploy/README.md`: the two new variables in the first table, the `app` row gaining them, and the steps to bring the stack up and to rotate the session key (which signs every operator out).
+  5. Extends `deploy/compose.yaml` on top of whatever U22 has landed; the ready rule holds this card while U22, which shares that file, is in flight.
+- **Patterns to follow:** `deploy/README.md` for every variable and mount; the U4 seed's `${NAME:?}` rule, so no default secret ships.
+- **Test scenarios:**
+  - The app built from a fixture operator file with a fake identity provider serves the page's login redirect, and its callback address is `SLIPWAY_BASE_URL` plus `/callback`.
+  - The app refuses to start with `SLIPWAY_SESSION_KEY` unset, with a key shorter than 32 bytes, and with an `http://` base URL.
+  - A signed delivery for a managed repository reaches the webhook endpoint and is accepted; one for an unmanaged repository is dropped.
+  - Parsing `deploy/compose.yaml` shows the `app` service receives none of the worker's variables (account tokens, host and tracker credentials, Langfuse keys), and that only 443 and the gRPC port are published.
+  - `app.py` imports no module from `workflow/`.
+- **Verification:** Unit scenarios green under the network guard; the operator brings the stack up on the VPS, signs in to the page through the real identity provider, and sends one signed test delivery to the webhook endpoint, recorded in the pull request.
 
 ### U24. Three cold onboardings and the laptop closed day
 
@@ -1328,5 +1329,5 @@ No release validation applies beyond the rows above.
 | U24 | Report shows three onboardings, three scored cards, one laptop closed day |
 | U26 | Unit scenarios green; one live card of the first project built in a worktree and landed by its watcher |
 | U27 | Unit scenarios green; one live headless screenshot recorded, and one operator run of each opt in level |
-| U29 | Unit scenarios green; the operator signs in to the page on the VPS through the real identity provider, and a signed test delivery reaches the webhook endpoint, both recorded |
 | U28 | Unit scenarios green on captured fixtures; one live onboarding of a test repository on each host with no attestation for the five reads |
+| U29 | Unit scenarios green; the operator signs in to the page on the VPS through the real identity provider, and a signed test delivery reaches the webhook endpoint, both recorded |
