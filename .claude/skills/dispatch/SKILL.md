@@ -64,7 +64,7 @@ It prints every open cloud card with `ready` true or the reasons it is not: a de
 
 - At most **three** cards in flight at once (open pull requests from `slipway/` branches plus sessions started this run). Each in flight card holds its declared files, and each pull request that lands moves `main` under the others, so more in flight means more rebases and more held files, not faster landing.
 - At most **two** new dispatches per run.
-- Prefer, in order: a plan unit on the critical path in the order of "Reorder of 2026-10-21" in the plan (U14, then U25, then U26, U19, U21, U20, U16, U27, U28, U29, then U12, U18, U15, U17, U22, U23), then follow ups oldest first.
+- Prefer, in order: a plan unit on the critical path in the order of "Reorder of 2026-10-21" in the plan (U14, then U25, then U26, U19, U21, U20, U16, U27, U28, U29, U30, then U12, U18, U15, U17, U22, U23), then follow ups oldest first.
 - Skip a card whose issue has a comment from the operator saying to hold it.
 - Two cards chosen in the same run must not share a declared path. The ready rule checks each card only against the cards already in flight, so check the chosen pair against each other and take the next card down when they overlap.
 
