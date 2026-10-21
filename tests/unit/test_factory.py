@@ -220,6 +220,30 @@ def test_facts_name_outside_paths_clashes_and_closes():
     assert any(d.startswith("commit 1: en dash") for d in facts.dashes)
 
 
+def test_a_bare_branch_holds_its_cards_paths_for_the_review():
+    branches = [{"name": "slipway/u7-polled-host-events"}]
+    held = review.in_flight_paths(BOARD, [], branches, 80, (12,), "slipway/u9-host-adapters")
+    assert held == ("src/slipway/records/schema/", "src/slipway/records/store.py")
+
+
+def test_the_reviews_in_flight_set_is_the_ready_rules():
+    pulls = [pull(70, "slipway/u7-anything", "Closes #42\nBase: abc"),
+             pull(71, "claude/other", "Closes #39")]
+    branches = [{"name": "slipway/u7-polled-host-events"}]
+    held = review.in_flight_paths(BOARD, pulls, branches, 80, (12,), "slipway/u9-host-adapters")
+    ready = {v.card.number: v for v in handoff.ready(BOARD, pulls, branches)}
+    assert held == ready[12].in_flight
+
+
+def test_the_review_leaves_out_its_own_card_branch_and_pull_request():
+    pulls = [pull(70, "slipway/u7-anything", "Closes #42")]
+    branches = [{"name": "slipway/u7-polled-host-events"}]
+    assert review.in_flight_paths(BOARD, pulls, branches, 70, (42,), "slipway/u7-anything") == (
+        "src/slipway/records/schema/", "src/slipway/records/store.py")
+    assert review.in_flight_paths(BOARD, [], branches, 70, (),
+                                  "slipway/u7-polled-host-events") == ()
+
+
 def test_prompt_holds_brief_card_facts_and_diff_in_order():
     facts = review.facts_from(DIFF, "src/slipway/hosts/base.py\n", (), (), ("m",), "")
     text = review.prompt_for("BRIEF", "U9: hosts", block(good="all good"), facts, DIFF)

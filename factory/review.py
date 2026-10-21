@@ -38,7 +38,7 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from factory.handoff import closes, overlaps
+from factory.handoff import cards_of, closes, dispatched, in_flight_files, overlaps
 from slipway.cards.contract import parse
 
 HERE = Path(__file__).resolve().parent
@@ -47,7 +47,6 @@ DEFAULT_MODEL = "claude-fable-5-1"
 DEFAULT_EFFORT = "high"
 DEFAULT_BUDGET_USD = "8"
 DIFF_INLINE_LIMIT = 400_000  # bytes; a larger diff is left in a file for the model to read
-BRANCH_PREFIX = "slipway/"
 # One of these must be set: a subscription token from `claude setup-token`, or an API key.
 CREDENTIALS = ("CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY")
 
@@ -284,6 +283,23 @@ def review_body(verdict: Verdict, model: str, run_url: str | None = None) -> str
     return "\n".join(lines) + "\n"
 
 
+def in_flight_paths(issues: list[dict], pulls: list[dict], branches: list[dict],
+                    pr_number: int, own: tuple[int, ...], head: str) -> tuple[str, ...]:
+    """Paths held by every card in flight except the one under review.
+
+    In flight is the ready rule's own: factory.handoff.dispatched counts an open
+    slipway/ pull request by its Closes line and a bare branch under a card's
+    name, so a card whose builder has not yet opened its pull request still
+    holds its files. The pull request under review, the cards it closes, and
+    its head branch are left out, since a card never clashes with itself.
+    """
+    cards = cards_of(issues)
+    others = [p for p in pulls if p.get("number") != pr_number]
+    active = {number: branch for number, branch in dispatched(cards, others, branches).items()
+              if number not in own and branch != head}
+    return in_flight_files(cards, active)
+
+
 # Everything below touches git, gh, or the model, and is not under unit test.
 
 def _run(args, **kw) -> str:
@@ -298,18 +314,20 @@ def _gh(path: str, method: str = "GET", body: dict | None = None):
     return json.loads(out) if out.strip() else None
 
 
-def _other_dispatched_paths(repo: str, pr_number: int) -> tuple[str, ...]:
-    """Paths declared by the cards other open slipway/ pull requests close."""
-    paths: set[str] = set()
-    for pull in _gh(f"repos/{repo}/pulls?state=open&per_page=100") or ():
-        if pull["number"] == pr_number:
-            continue
-        if not (pull.get("head") or {}).get("ref", "").startswith(BRANCH_PREFIX):
-            continue
-        for number in closes(pull.get("body") or ""):
-            issue = _gh(f"repos/{repo}/issues/{number}")
-            paths.update(parse(issue.get("body") or "").paths)
-    return tuple(sorted(paths))
+def _gh_all(path: str) -> list[dict]:
+    """Every page of a REST listing, as one list."""
+    pages = json.loads(_run(["gh", "api", "--paginate", "--slurp", path]) or "[]")
+    return [item for page in pages for item in page]
+
+
+def _other_dispatched_paths(repo: str, pr_number: int, pr_body: str, head: str
+                            ) -> tuple[str, ...]:
+    """The in flight paths of every other card, from the same listings the ready rule reads."""
+    return in_flight_paths(
+        _gh_all(f"repos/{repo}/issues?state=all&per_page=100"),
+        _gh_all(f"repos/{repo}/pulls?state=open&per_page=100"),
+        _gh_all(f"repos/{repo}/branches?per_page=100"),
+        pr_number, closes(pr_body), head)
 
 
 def run_review(env: dict) -> int:
@@ -331,6 +349,7 @@ def run_review(env: dict) -> int:
 
     pull = _gh(f"repos/{repo}/pulls/{number}")
     pr_body = pull.get("body") or ""
+    pull_head = (pull.get("head") or {}).get("ref") or ""
     card_title, card_body = "", ""
     closed = closes(pr_body)
     if closed:
@@ -342,7 +361,8 @@ def run_review(env: dict) -> int:
     messages = tuple(m for m in _run(
         ["git", "log", "--format=%B%x00", f"{base}..{head}"]).split("\0") if m.strip())
     facts = facts_from(diff, name_only, parse(card_body).paths,
-                       _other_dispatched_paths(repo, number), messages, pr_body)
+                       _other_dispatched_paths(repo, number, pr_body, pull_head),
+                       messages, pr_body)
 
     diff_path = None
     if len(diff.encode()) > DIFF_INLINE_LIMIT:
