@@ -148,7 +148,7 @@ QUESTIONS: tuple[Question, ...] = (
        command=True),
     _q("allowed_builders", "Which builders may build this project's cards?",
        "Dispatch refuses a builder the project does not allow.",
-       kind=LIST, choices_from=BUILDERS),
+       kind=LIST, choices_from=BUILDERS, free_text=False),
     *_role("builder", 90, "high"),
     *_role("judge", 10, "medium"),
     _q("builder_worker", "Which builder worker runs this project's laptop builds, if any?",

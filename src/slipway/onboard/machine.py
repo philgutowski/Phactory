@@ -415,6 +415,12 @@ def _write_project(ports: Ports, state: dict, actor: str) -> None:
         _mark(state, error)
         return
     _write(path, to_toml(data, actor))
+    state["written"] = _data_print(data)
+
+
+def _data_print(data: Mapping) -> str:
+    """A fingerprint of a project file's data, to tell onboard's own file from an edited one."""
+    return hashlib.sha256(json.dumps(data, sort_keys=True).encode("utf-8")).hexdigest()
 
 
 def _mark(state: dict, error: ConfigError, keep: bool = False) -> None:
@@ -468,7 +474,16 @@ def start(ports: Ports, slug: str, actor: str) -> dict:
 
 
 def _reenter(ports: Ports, state: dict, data: dict) -> None:
-    """Take the file's values as the answers, then mark what is no longer true."""
+    """Take the file's values as the answers, then mark what is no longer true.
+
+    When the file is the one onboard last wrote, the state holds the same
+    answers or newer ones (an answer the whole file refused on another key
+    is in the state but not the file), so the state's are kept with their
+    marks. Any other file, edited or with no state beside it, is the truth.
+    """
+    if state.get("written") == _data_print(data):
+        _restale(ports, state)
+        return
     state["base"] = {k: v for k, v in data.items() if not questions.by_field(k)}
     for question in QUESTIONS:
         if not question.field:
@@ -494,6 +509,18 @@ def _reenter(ports: Ports, state: dict, data: dict) -> None:
     except ConfigError as error:
         _mark(state, error)
         return
+    if project is None:
+        return
+    _restale(ports, state, project)
+
+
+def _restale(ports: Ports, state: dict, project: Project | None = None) -> None:
+    """Mark what the host, the tracker, or the operator file says is no longer true."""
+    if project is None:
+        try:
+            project = _project(ports, state)
+        except ConfigError:
+            return  # a mark the state already holds names the fault
     if project is None:
         return
     state["stale"].update(checks.stale(ports.probe, project, ports.operator().accounts))

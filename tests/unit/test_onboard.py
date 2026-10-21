@@ -535,3 +535,18 @@ def test_a_site_no_credential_serves_is_refused_up_front(world):
     result = machine.answer(world.ports, SLUG, "tracker_site", "other.atlassian.net", OPERATOR)
     assert result["outcome"] == machine.REFUSED
     assert "no tracker credential" in result["reason"]
+
+
+def test_reentry_keeps_an_answer_the_file_did_not_take(world):
+    onboard(world, BITBUCKET)
+    machine.answer(world.ports, SLUG, "host", "github", OPERATOR)  # the credential is Bitbucket's
+
+    result = machine.start(world.ports, SLUG, OPERATOR)  # the terminal run again
+    assert result["answers"]["host"] == "github"
+    assert result["question"]["id"] == "host_credential"
+
+
+def test_a_builder_outside_the_list_is_refused(world):
+    machine.start(world.ports, SLUG, OPERATOR)
+    result = machine.answer(world.ports, SLUG, "allowed_builders", "clie", OPERATOR)
+    assert result["outcome"] == machine.REFUSED
