@@ -203,7 +203,7 @@ def dispatch_card(ports: Ports, project: Project, card, actor: str, reason: str 
                 "reason": f"build {latest['build_id']} owns card {key} in {latest['state']}"}
     if card.skipped:
         return {**out, "outcome": REFUSED,
-                "reason": f"the tracker could not be read: {card.skipped}"}
+                "reason": f"the tracker could not be read: {scrub(card.skipped)}"}
     readiness = ready_rule(card, project, lanes)
     if not readiness.ready:
         why = readiness.reason or (f"card {key} is not in {project.ready_status} "
@@ -295,8 +295,10 @@ def scrubbed(value):
         return scrub(value)
     if isinstance(value, dict):
         return {k: scrubbed(v) for k, v in value.items()}
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, list):
         return [scrubbed(v) for v in value]
+    if isinstance(value, tuple):
+        return tuple(scrubbed(v) for v in value)
     return value
 
 
@@ -407,7 +409,7 @@ def real_ports(conn, engine: Engine, root: Path | None = None) -> Ports:
     )
 
 
-__all__ = ["DISPATCHED", "NOT_FOUND", "OWNED", "PUSHED", "REFUSED", "WAITING", "Ports",
-           "PostgresRecords", "Records", "configured_slugs", "day_start", "dispatch",
-           "audit", "dispatch_card", "halt_of", "host_link", "land", "other_lanes", "real_ports",
+__all__ = ["DISPATCHED", "NOT_FOUND", "OWNED", "PUSHED", "Ports", "PostgresRecords", "REFUSED",
+           "Records", "WAITING", "audit", "configured_slugs", "day_start", "dispatch",
+           "dispatch_card", "halt_of", "host_link", "land", "other_lanes", "real_ports",
            "scrubbed", "start"]

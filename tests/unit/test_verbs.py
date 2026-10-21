@@ -355,3 +355,4 @@ def test_a_token_in_the_trackers_error_is_scrubbed_from_the_audit_result(tmp_pat
 
     assert result["outcome"] == verbs.REFUSED
     assert token not in str(w.records.audit_rows[-1]["result"])
+    assert token not in result["reason"]
