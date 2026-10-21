@@ -27,12 +27,14 @@ Phillip approved this order on 2026-10-21, after the build had reached the end o
 
 1. **The loop.** U4 (proved locally on 2026-10-21, `docs/spikes/hatchet.md`), then U14, then U25.
 2. **The first project.** U26, the Integra lane (new); U19 terminal first, with its MCP front end moved to U18; U21 in a first slice; U20.
-3. **Builder tools and live onboarding reads.** U27, a headless browser for every project, and the operator's real browser and desktop as a per project opt in (new). Then U28, the onboarding reads U19 left as attestations (new, added the same day).
+3. **Builder tools and live onboarding reads.** U27, a headless browser for every project, and the operator's real browser and desktop as a per project opt in (new). Then U28, the onboarding reads U19 left as attestations, and U29, serving the app and the worker on the VPS (both new, added the same day).
 4. **Later.** U16 soon after step 2, since it needs no outside service. Then U1 and U12 (Managed Agents mounts GitHub repositories only, and the first project builds on the laptop), U3 and U18 (the MCP surface and voice), U15 and U17 (they wait on the Integrel export question), U22 and U23 (the Zig runner), and U24 last, with Integra Workbench as its first cold onboarding.
 
 The Unit Index carries the new dependencies. The ready rule reads each card's own Dependencies line, so the board issues were edited to match on the same day (U18, U19, U21, U24) and U26 and U27 were filed as #83 and #84.
 
 Two notes from the build of step 2, the same day. U26 checks an outside lander with the plain merge rule rather than the auto merge rule its card named, because the first project's watcher keeps landing other cards on the base branch. The plain merge rule finds the landing commit (the first commit on the base branch's first parent line that holds the confirmed commit) and compares its tree with the tree of merging the confirmed commit into that commit's first parent, so later landings on top of it do not matter. And U19 was built with five live reads still taken as operator attestations, since the adapters could not yet list or read them: board movement, the required check, the machine identity restriction, the repository, and the board. U28 (new, filed as #94) adds those reads, ahead of U24, so Integra's onboarding checks them instead of asking.
+
+A third note, after U20 landed. No unit owned serving Slipway on the VPS: the process that answers on port 443, its certificate, the page's cookie signing key and base URL, and the `app` and `worker` compose services `deploy/README.md` describes. U29 (new) owns them, and writes the first `src/slipway/app.py` with the status page and the webhook endpoint; U18 later adds the MCP routes to that file, so U18 now depends on U29.
 
 ---
 
@@ -609,7 +611,7 @@ flowchart LR
   P1 --> P2[Phase 2 builders and loop: U11 U12 U13 U14 U25]
   P2 --> P3[Phase 3 trace and eval: U15 U16 U17]
   P2 --> P4[Phase 4 MCP surface: U18]
-  P2 --> P5[Phase 5 runner: U22 U23]
+  P2 --> P5[Phase 5 runner and serving: U22 U29 U23]
   P4 --> P5
   P2 --> P7[Phase 2b first project: U26 U19 U21 U20]
   P7 --> P8[Phase 2c builder tools and live onboarding reads: U27 U28]
@@ -643,7 +645,7 @@ flowchart LR
 | U15 | Trace export to Langfuse | `src/slipway/trace/langfuse.py` | U7, U11, U12, U13, U14 |
 | U16 | Deterministic score and check_card | `src/slipway/evals/deterministic.py` | U8, U9, U10, U14 |
 | U17 | Judged score and replay as a Langfuse experiment | `src/slipway/evals/judged.py`, `replay.py` | U15, U16 |
-| U18 | MCP server, tools, audit | `src/slipway/mcp/`, `src/slipway/app.py` | U3, U7, U19, U25 |
+| U18 | MCP server, tools, audit | `src/slipway/mcp/`, `src/slipway/app.py` | U3, U7, U19, U25, U29 |
 | U19 | Onboard state machine, terminal first | `src/slipway/onboard/` | U6, U8, U9, U25 |
 | U20 | Status page | `src/slipway/page/` | U7, U25 |
 | U21 | CLI, first slice | `src/slipway/cli.py` | U25, U19 |
@@ -652,6 +654,7 @@ flowchart LR
 | U24 | Three cold onboardings and the laptop closed day | `docs/spikes/acceptance.md` | U17, U21, U23, U26, U27, U28 |
 | U26 | The first project's lane: an outside lander, a worktree build, project branch names | `src/slipway/config/project.py`, `src/slipway/verify.py`, `src/slipway/builders/cli.py`, `src/slipway/workflow/card.py` | U13, U14 |
 | U27 | Builder tools: headless browser, the operator's browser, the desktop | `src/slipway/builders/tools.py`, `deploy/builder.Dockerfile` | U13, U19 |
+| U29 | Serve the app and the worker on the VPS | `src/slipway/app.py`, `deploy/compose.yaml`, `deploy/app.Dockerfile`, `deploy/Caddyfile` | U9, U14, U20, U22 |
 | U28 | Live onboarding reads on the host and tracker adapters | `src/slipway/hosts/`, `src/slipway/trackers/`, `src/slipway/onboard/checks.py` | U8, U9, U19, U26 |
 
 ### U1. Spike: Managed Agents session, event log, push
@@ -1056,10 +1059,10 @@ flowchart LR
 
 - **Goal:** The per project MCP server with the eleven tools, token audience and subject validation, and the redacted audit row on every call.
 - **Requirements:** R8, R25, R26, R27, R28, KTD13, KTD14, KTD23, KTD24, AE4, AE8.
-- **Dependencies:** U3, U7, U19, U25.
+- **Dependencies:** U3, U7, U19, U25, U29.
 - **Files:** `src/slipway/mcp/server.py`, `src/slipway/mcp/tools.py`, `src/slipway/mcp/audit.py`, `src/slipway/auth.py`, `src/slipway/app.py`, `tests/unit/test_mcp_tools.py`, `tests/integration/test_mcp_isolation.py`.
 - **Approach:**
-  1. One ASGI app serving one parameterised route `/mcp/p/{slug}` and its protected resource metadata path, resolving the project file at request time and answering not found for an unreserved slug; `auth.py`'s verifier from U3 with `validate_token_resource` on, issuer pinned, no audience refused, subject checked against the project's allowed subjects, and the operator's subject known from the operator file.
+  1. Added to U29's `src/slipway/app.py`, beside the page and the webhook endpoint: one parameterised route `/mcp/p/{slug}` and its protected resource metadata path, resolving the project file at request time and answering not found for an unreserved slug; `auth.py`'s verifier from U3 with `validate_token_resource` on, issuer pinned, no audience refused, subject checked against the project's allowed subjects, and the operator's subject known from the operator file.
   2. Reads first: `status`, `project_rules`, `card`, `in_flight`, `events`, `trace`, `eval`, `findings`, `check_card`; then writes `dispatch`, `land`; all through `service`; and the three onboard wrappers over U19's state machine (`onboard_start`, `onboard_answer`, `onboard_status`), moved here from U19 by the reorder of 2026-10-21.
   3. Project from the token; a key from another project returns not found; every call writes an audit row with redacted arguments before returning.
 - **Patterns to follow:** `docs/research/2026-10-14-plan/agent-native.md` tool list; U3's stub.
@@ -1219,6 +1222,26 @@ flowchart LR
   - Onboard asks the opt in question with the trade off text, and a "no" leaves the default.
 - **Verification:** Unit scenarios green; one live laptop card that takes a headless screenshot recorded in the pull request; the operator records one opt in run of each of the other two levels.
 
+### U29. Serve the app and the worker on the VPS
+
+- **Goal:** Slipway answers on the internet the way `deploy/README.md` and KTD28 say it does: one `app` process behind a certificate on port 443 serving the status page and the webhook endpoint, one `worker` process running the card workflow, both in `deploy/compose.yaml` beside the Hatchet engine, each with only its own variables.
+- **Requirements:** R3, R6, R16, KTD13, KTD23, KTD28.
+- **Dependencies:** U9, U14, U20, U22.
+- **Files:** `src/slipway/app.py`, `src/slipway/workflow/worker.py`, `deploy/compose.yaml`, `deploy/app.Dockerfile`, `deploy/Caddyfile`, `deploy/README.md`, `tests/unit/test_app.py`.
+- **Approach:**
+  1. `src/slipway/app.py`, the composition root (the one module that builds the running app from its parts): it loads the operator file, builds U20's page with `OidcIdentity` from `identity_provider` and the value of its `client_secret_env`, and serves on one listener the page and a webhook endpoint, which checks each delivery with U9's `hosts.webhooks.verify` (its `secrets_for` built from `webhook_secrets`), records it in U9's delivery log, and hands the event to `service.engine.push_host_event` for the build it names, so the app reaches the workflow only through `service`. It reads two variables Slipway fixes, `SLIPWAY_SESSION_KEY` (the key that signs the page's cookies, at least 32 random bytes) and `SLIPWAY_BASE_URL` (the https address the page is served at, which the login callback is built from), and refuses to start when either is unset or the base URL is not https. U18 adds the MCP routes to this file later.
+  2. The worker's entry point, `python -m slipway.workflow.worker`, if U14 left none.
+  3. `deploy/app.Dockerfile`, one image for both processes, run as a non root user. `deploy/compose.yaml` gains `app`, `worker`, Slipway's own Postgres database, and Caddy (a web server that obtains and renews its own certificate) terminating TLS on 443 for the app and on the public gRPC port for the Hatchet engine, which closes the TLS gap the U4 seed left; `HATCHET_GRPC_INSECURE` is then not needed on the public port. The environment and mount split follows `deploy/README.md` exactly.
+  4. `deploy/README.md`: the two new variables in the first table, the `app` row gaining them, and the steps to bring the stack up and to rotate the session key (which signs every operator out).
+- **Patterns to follow:** `deploy/README.md` for every variable and mount; the U4 seed's `${NAME:?}` rule, so no default secret ships.
+- **Test scenarios:**
+  - The app built from a fixture operator file with a fake identity provider serves the page's login redirect, and its callback address is `SLIPWAY_BASE_URL` plus `/callback`.
+  - The app refuses to start with `SLIPWAY_SESSION_KEY` unset, with a key shorter than 32 bytes, and with an `http://` base URL.
+  - A signed delivery for a managed repository reaches the webhook endpoint and is accepted; one for an unmanaged repository is dropped.
+  - Parsing `deploy/compose.yaml` shows the `app` service receives none of the worker's variables (account tokens, host and tracker credentials, Langfuse keys), and that only 443 and the gRPC port are published.
+  - `app.py` imports no module from `workflow/`.
+- **Verification:** Unit scenarios green under the network guard; the operator brings the stack up on the VPS, signs in to the page through the real identity provider, and sends one signed test delivery to the webhook endpoint, recorded in the pull request.
+
 ### U28. Live onboarding reads on the host and tracker adapters
 
 - **Goal:** Onboarding reads for itself what U19 was built asking the operator to attest: the repository, the board, the board's labels and statuses, the required check, the machine identity restriction, and the board moving on a scratch pull request. The operator then picks boards, labels, and statuses from live lists, and the external gate and durable state checks pass or fail on what the host and tracker say.
@@ -1305,4 +1328,5 @@ No release validation applies beyond the rows above.
 | U24 | Report shows three onboardings, three scored cards, one laptop closed day |
 | U26 | Unit scenarios green; one live card of the first project built in a worktree and landed by its watcher |
 | U27 | Unit scenarios green; one live headless screenshot recorded, and one operator run of each opt in level |
+| U29 | Unit scenarios green; the operator signs in to the page on the VPS through the real identity provider, and a signed test delivery reaches the webhook endpoint, both recorded |
 | U28 | Unit scenarios green on captured fixtures; one live onboarding of a test repository on each host with no attestation for the five reads |
