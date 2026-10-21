@@ -67,6 +67,8 @@ class FakeServiceRecords:
         self.transitions: list[dict] = []
         self.audit_rows: list[dict] = []
         self.claims: list[dict] = []
+        self.score_rows: dict[int, dict[str, dict]] = {}
+        self.findings: list[dict] = []
         self.snapshots = 0
 
     def project_id(self, slug):
@@ -134,6 +136,24 @@ class FakeServiceRecords:
                          if (r["project_id"], r["card_key"]) == (project_id, key)),
                         key=lambda r: r["build_id"], reverse=True)
         return {"card_key": key, "builds": builds} if builds else None
+
+    def scores(self, build_ids):
+        return {b: dict(self.score_rows[b]) for b in build_ids if b in self.score_rows}
+
+    def score(self, build_id, kind, result):
+        """A score row, as the scoring steps would write it."""
+        self.score_rows.setdefault(build_id, {})[kind] = result
+
+    def finding(self, cls, fingerprint, excerpt="", project=SLUG, build_id=None, at=None):
+        """An open finding, as the gate reader would record it."""
+        self.findings.append({"id": len(self.findings) + 1, "project_id": self.project_id(project),
+                              "build_id": build_id, "class": cls, "fingerprint": fingerprint,
+                              "excerpt": excerpt, "state": "open",
+                              "created_at": at or self.clock()})
+
+    def open_findings(self, project_id):
+        return [dict(f) for f in self.findings
+                if f["project_id"] == project_id and f["state"] == "open"]
 
     def stale_claims(self, project_id, older_than):
         return [dict(r) for r in self.builds.values()
