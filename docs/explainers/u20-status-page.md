@@ -11,6 +11,7 @@ The status page is the operator's read only view of every card Slipway is workin
 - **PKCE.** Proof key for code exchange: a random secret, the verifier, whose hash goes out with the browser and whose plain value goes out only with the code, so a code stolen on the way back is useless alone.
 - **OpenID Connect.** The login layer on top of OAuth: the provider publishes its endpoints at a discovery address and returns an ID token naming who signed in.
 - **Content security policy.** A response header that tells the browser what the page may load or do; this one allows no script, no frame, and no form post.
+- **State and nonce.** Two random values made for one login. The provider echoes the state back on the callback, and puts the nonce inside the ID token, so the page can tell that both belong to the login it started.
 - **ID token.** The token in which the provider names who signed in, with their subject, the client it is for, and when it expires.
 - **TLS.** The encryption under https: the server proves who it is with a certificate the client checks, so a reply cannot be forged or read on the way.
 - **HMAC.** A keyed hash. Only the holder of the key can make a value that checks, so a cookie signed with it cannot be forged or edited.
