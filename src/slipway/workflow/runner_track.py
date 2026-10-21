@@ -139,15 +139,23 @@ def _swap(ports: RunnerPorts, host: str, name: str, prefix: str, active, head: s
             "previous": active.runner_commit if active else None}
 
 
+def check_operator():
+    """The operator file, refused when it lacks what the cron needs."""
+    operator = load_operator()
+    if not operator.runner_read_api:
+        raise ValueError("the operator file names no runner_read_api")
+    if operator.runner_repository is None or not operator.runner_instances:
+        raise ValueError("the operator file names no runner_repository or runner_instances")
+    return operator
+
+
 def real_ports(conn, environ: Mapping[str, str] | None = None) -> RunnerPorts | None:
     """RunnerPorts from the environment and SLIPWAY_HOME, or None when not deployed."""
     environ = os.environ if environ is None else environ
     directory = environ.get(SCRIPTS_ENV)
     if not directory:
         return None
-    operator = load_operator()
-    if not operator.runner_read_api:
-        raise ValueError("the operator file names no runner_read_api")
+    operator = check_operator()
     remotes = json.loads(environ.get(REMOTES_ENV) or "{}")
     return RunnerPorts(
         records=PostgresRecords(conn),
@@ -176,4 +184,4 @@ def register(hatchet, make_ports: Callable[[], RunnerPorts],
                         execution_timeout=EXECUTION, retries=0)(runner_track)
 
 
-__all__ = ["CRON", "EXECUTION", "TASK", "real_ports", "reconcile", "register"]
+__all__ = ["CRON", "EXECUTION", "TASK", "check_operator", "real_ports", "reconcile", "register"]

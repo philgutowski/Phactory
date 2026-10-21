@@ -26,6 +26,20 @@ The operator file (`$SLIPWAY_HOME/operator.toml`) never holds a value either. It
 | builder containers (one per card, started by the worker) | Only the account token for the card's binding and the git credential through a credential helper (KTD12) | Everything else |
 | `hatchet-lite`, `postgres`, `dagger` (started only with the `dagger` profile) | Their own settings only. The Hatchet default admin password is replaced on first boot. | Every Slipway secret |
 
+## Required compose variables
+
+`compose.yaml` writes each of these as `${NAME:?}`, so `docker compose up` refuses to start while one is unset in the root owned environment file. Set them before the next `up`, even for a Hatchet only boot:
+
+| Variable | What it is |
+|:-|:-|
+| `HATCHET_POSTGRES_PASSWORD`, `HATCHET_SERVER_URL`, `HATCHET_COOKIE_DOMAIN`, `HATCHET_GRPC_BROADCAST_ADDRESS`, `HATCHET_ADMIN_EMAIL`, `HATCHET_ADMIN_PASSWORD` | Hatchet's own settings (U4). |
+| `HATCHET_GRPC_INSECURE` | `t` or `f`, never defaulted, so a boot never picks TLS silently. |
+| `RUNNER_IMAGE` | The tag built from `runner.Dockerfile`. |
+| `RUNNER_ENV_FILE` | The path of the runner's own environment file. |
+| `SLIPWAY_BUILDER_NETWORK` | The isolated builder network's name, the one the worker starts builder containers on. |
+
+`DAGGER_ENGINE_IMAGE` is needed only with the `dagger` profile.
+
 ## `SLIPWAY_HOME` mounts
 
 | Service | Mount |

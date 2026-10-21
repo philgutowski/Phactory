@@ -12,6 +12,10 @@ Slipway's own gate, and any project that opts in, can run on the operator's own 
 - **Swap.** Pointing an instance at another build. The binary a running job uses is never touched; the supervisor launches the new one after the job ends.
 - **Compare and set.** A database update that applies only when the row still holds the value the caller read, so two writers racing on one row never both win.
 - **Runner class finding.** A finding that blames the runner, not the project: an unsupported step, a gap in the runner's log sequence, a failed write to its database, or a conclusion that disagrees with the host's check (R39). A project's own red test is never one.
+- **Port.** The narrow interface a piece of logic reaches the world through (the records, the scripts, the read API, the clock), so a test hands it a fake and the deployment hands it the real thing.
+- **launchd.** macOS's service manager, which starts a job at boot and restarts it when it exits; the laptop instance is a launchd job.
+- **Dagger.** A tool that runs build pipelines in containers through its own engine; some projects' jobs call it.
+- **Compose profile.** A name that marks a compose service as optional: it starts only when `docker compose --profile <name>` names it.
 - **Sandbox container.** A throwaway container with no access to the host's files, its Docker socket, or any credential, used to build and test runner commits.
 
 ## The loop
@@ -35,7 +39,7 @@ gate completion (U23 observe, then rollback.evaluate)
 |:-|:-|
 | `src/slipway/runner/instances.py` | The ports the cron and the evaluator share: `Records` with `PostgresRecords` over `runner_builds` and `findings`; `Scripts` with `ShellScripts`, which runs the deploy scripts on the instance's host; `ReadApi` over the runner's `/api/runners`; `git_head` over `git ls-remote`; and `finding()`, which bounds and scrubs an excerpt before it is written (KTD24). |
 | `src/slipway/runner/rollback.py` | `evaluate(ports, gate_run)`, the rollback evaluator, and `RUNNER_CLASSES`, the finding classes that count. |
-| `src/slipway/workflow/runner_track.py` | `reconcile(ports)`, one tracking pass; `real_ports`, from the environment and the operator file; `register`, the hourly cron on Hatchet. |
+| `src/slipway/workflow/runner_track.py` | `reconcile(ports)`, one tracking pass; `real_ports`, from the environment and the operator file; `check_operator`, which the worker calls at boot so a missing runner setting fails then, not an hour later; `register`, the hourly cron on Hatchet. |
 | `src/slipway/workflow/worker.py` | `vps_worker` registers the cron when `SLIPWAY_RUNNER_SCRIPTS` is set. |
 | `src/slipway/records/schema/005_runner_findings.sql` | Lets a finding belong to the deployment rather than a project, and adds `runner_commit`, `gate_run_id`, and `related_finding_id` to `findings`. |
 | `deploy/runner/lib.sh` | What the scripts share: the root layout, argument checks, and `in_sandbox`, which pipes the source into a sandbox container as a tar archive and the build back out the same way, so the sandbox mounts nothing from the host. |
@@ -67,7 +71,7 @@ If the compare and set loses (the evaluator rolled the instance back in the same
 `evaluate(ports, gate_run)` takes the `gate_runs` row U23 just wrote, after U23 wrote that run's findings with `gate_run_id` set. It answers with an outcome and changes nothing unless every test passes:
 
 1. The run carries a runner class finding. Otherwise `no_runner_finding`: a project red changes nothing.
-2. The run is attributed to a build (`unattributed` if not) that is still active or already rolled back. A build a normal swap replaced is `superseded`.
+2. The run is attributed to a build (`unattributed` if not) that is still active or already rolled back. A build a normal swap replaced is `superseded`, and an instance the operator file no longer names is `unknown_instance`.
 3. The build has a previous build on the instance (`no_previous` for the first build ever), and this project has a gate run on it (`no_baseline` if not, since there is nothing to compare).
 4. That baseline run carries no runner class finding. If it does, the finding is not new, and the run is `not_counted`.
 
@@ -88,4 +92,5 @@ On the laptop, the plist runs `supervise.sh` under a dedicated user with its own
 - How the runner treats TERM. `supervise.sh` sends it to a process launched before a swap, expecting the runner to exit at once when idle and after its job when busy; the smoke confirms it.
 - The runner's own command line. Its README and `docs/SPEC.md` are not readable from this repository's sessions, so `supervise.sh` passes the settings as environment (`RUNNER_REPOSITORY`, `RUNNER_TOKEN`, `RUNNER_NAME_PREFIX`, `RUNNER_LABELS`, `DATABASE_URL`) plus `RUNNER_ARGS`, and the live smoke confirms or maps them. The same holds for the shape of `/api/runners`: `busy_under` accepts a `busy` flag or a `busy` status.
 - The runner read API service. It is one per deployment and listens on the compose network only (KTD28); its command is the runner's to say, so it is added with the smoke.
+- Recording the runner commit Slipway's CI first runs green on, on the pull request or issue, after the smoke and before flipping `SLIPWAY_RUNS_ON` (the second half of the card's done line).
 - Flipping `SLIPWAY_RUNS_ON` to the instance's labels once the first instance runs Slipway's CI green (card step 5).

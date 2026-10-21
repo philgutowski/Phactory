@@ -358,6 +358,7 @@ def vps_worker(hatchet, connect: Callable[[], Any], builder, credential, slots: 
         close=lambda ports: ports.records.conn.close()))
     # The runner tracking cron, only where the deployment set its scripts up (U22).
     if os.environ.get(runner_track.SCRIPTS_ENV):
+        runner_track.check_operator()  # a missing setting fails at boot, not an hour later
         workflows.append(runner_track.register(
             hatchet, lambda: runner_track.real_ports(connect()),
             close=lambda ports: ports.records.conn.close()))

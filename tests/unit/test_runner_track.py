@@ -322,3 +322,15 @@ def test_swap_refuses_an_unbuilt_commit_a_branch_name_and_a_path_as_instance(tmp
     assert branch.returncode and "not a full commit" in branch.stderr
     assert escape.returncode and "not an instance name" in escape.stderr
     assert not (tmp_path / "instances").exists()
+
+
+def test_check_operator_refuses_a_file_without_the_read_api(tmp_path, monkeypatch):
+    fixture = Path(__file__).resolve().parents[1] / "fixtures" / "config" / "operator.toml"
+    monkeypatch.setenv("SLIPWAY_HOME", str(fixture.parent))
+    assert runner_track.check_operator().runner_read_api
+
+    text = fixture.read_text().replace('runner_read_api = "http://runner-api.internal:8080"\n', "")
+    (tmp_path / "operator.toml").write_text(text)
+    monkeypatch.setenv("SLIPWAY_HOME", str(tmp_path))
+    with pytest.raises(ValueError, match="runner_read_api"):
+        runner_track.check_operator()

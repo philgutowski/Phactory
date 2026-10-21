@@ -50,6 +50,7 @@ SUPERSEDED = "superseded"
 NO_PREVIOUS = "no_previous"
 NO_BASELINE = "no_baseline"
 NOT_COUNTED = "not_counted"
+UNKNOWN_INSTANCE = "unknown_instance"
 ROLLED_BACK = "rolled_back"
 ALREADY_ROLLED_BACK = "already_rolled_back"
 
@@ -87,7 +88,12 @@ def evaluate(ports: RunnerPorts, gate_run: Mapping[str, Any]) -> dict:
     if build.state == "rejected":
         return {**out, **_repeat(ports, gate_run, build, classes)}
 
-    host = ports.operator().runner_instances[build.instance].host
+    configured = ports.operator().runner_instances.get(build.instance)
+    if configured is None:
+        # The operator file no longer names the instance, so there is no host
+        # to run the script on. A named outcome, never a step retried forever.
+        return {**out, "outcome": UNKNOWN_INSTANCE}
+    host = configured.host
     script = ports.scripts.rollback(host, build.instance, previous.runner_commit)
     if not script.ok:
         # Nothing is recorded, so the step fails and the engine runs it again.
@@ -117,7 +123,7 @@ def _repeat(ports: RunnerPorts, gate_run: Mapping[str, Any], build, classes) -> 
         REGRESSION, f"{REGRESSION}:{build.instance}:{build.runner_commit}",
         build.runner_commit,
         f"{', '.join(classes)} on {build.instance} at runner {build.runner_commit}, "
-        f"already rolled back (finding {first}).",
+        "already rolled back" + (f" (finding {first})." if first is not None else "."),
         project_id=gate_run["project_id"], gate_run_id=gate_run["id"],
         runner_build_id=build.id, related_finding_id=first))
     return {"outcome": ALREADY_ROLLED_BACK, "finding_id": finding_id, "related_finding": first}

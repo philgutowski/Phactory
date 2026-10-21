@@ -1,5 +1,6 @@
 """U22 test scenarios for the rollback evaluator, with fixture gate_runs rows."""
 
+from dataclasses import replace
 from datetime import timedelta
 
 import pytest
@@ -134,3 +135,25 @@ def test_losing_the_compare_and_set_records_a_repeat_not_a_second_rollback():
 
     assert out["outcome"] == rollback.ALREADY_ROLLED_BACK
     assert [b.state for b in w.records.builds] == ["previous", "rejected", "active"]
+
+
+def test_an_instance_gone_from_the_operator_file_is_a_named_outcome():
+    w, b = on_b_after_a()
+    w.records.gate_run(1, "vps", T0 + timedelta(minutes=20))
+    run = w.records.gate_run(1, "vps", b.activated_at + timedelta(minutes=1), rollback.LOG_GAP)
+    w.operator = replace(w.operator, runner_instances={})
+
+    assert rollback.evaluate(w.ports, run)["outcome"] == rollback.UNKNOWN_INSTANCE
+    assert w.scripts.calls == [] and w.records.active_build("vps").runner_commit == B
+
+
+def test_a_repeat_with_no_first_finding_reads_plainly():
+    w, b = on_b_after_a()
+    w.records.gate_run(1, "vps", T0 + timedelta(minutes=20))
+    w.records.roll_back(b.id, A, b.activated_at + timedelta(minutes=5))
+    run = w.records.gate_run(1, "vps", b.activated_at + timedelta(minutes=1), rollback.LOG_GAP)
+
+    out = rollback.evaluate(w.ports, run)
+
+    assert out["outcome"] == rollback.ALREADY_ROLLED_BACK and out["related_finding"] is None
+    assert regressions(w)[-1]["excerpt"].endswith("already rolled back.")
