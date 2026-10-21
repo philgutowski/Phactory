@@ -28,12 +28,44 @@ directory, so a project file cannot pull in another file on the machine.
 It is read with the project file, and its text passes the same secret check
 as every string in the project file. Project.rules is the text either way,
 and an empty string when the table is absent.
+
+Conventions (U26). Three optional fields let a project keep its own names
+without code naming the project:
+
+    branch_template     the card's branch, from {key} (the card key), {slug}
+                        (the card title in lower case words joined by
+                        hyphens), and {build} (the build id). The default,
+                        slipway/{key}-{build}, is the shape every build has
+                        used so far. {key} is required, because the board
+                        automation and verify find the card by it, and the
+                        rendered name must be a legal git branch name.
+    pull_request_title  the pull request's title, from {key} and {title}
+                        (the card title). The default, {title}, is today's
+                        title; the host still puts its tracker token in front
+                        when the title does not already carry it.
+    checkout            how a laptop session gets its working copy: clone
+                        (the default, a fresh clone, as in a container) or
+                        worktree (a git worktree, a second working folder of
+                        one repository, added from the laptop's shared
+                        checkout; builders/cli.py).
+
+branch_namespace gives the literal text in front of the template's first
+placeholder, the namespace a machine identity's push rule holds the builder
+to (KTD6). Onboard reads it in place of a fixed slipway/ prefix and refuses
+an empty one when it pins a machine identity.
+
+landing_path also takes external_lander: something that is neither Slipway
+nor the host's queue, such as a project's own watcher session, puts the
+branch on the base branch and pushes, and the host then marks the pull
+request merged. No host setting reveals it, so the probe takes it only from
+this file.
 """
 
 import re
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
+from string import Formatter
 
 from slipway.config import (
     LOOKS_LIKE_ENV_NAME,
@@ -58,6 +90,10 @@ class LandingPath(StrEnum):
     AUTO_MERGE_STRICT = "auto_merge_strict"  # GitHub auto merge, branch kept up to date
     BITBUCKET_QUEUE = "bitbucket_queue"
     PLAIN_MERGE = "plain_merge"  # GitHub auto merge, no required up to date check
+    # Neither Slipway nor the host's queue lands the branch: a lander of the
+    # project's own pushes it and the host marks the pull request merged.
+    # Slipway never arms auto merge on this path. Only a project file sets it.
+    EXTERNAL_LANDER = "external_lander"
 
 
 class MergeMethod(StrEnum):
@@ -73,9 +109,20 @@ class Tracker(StrEnum):
     JIRA = "jira"
 
 
+class Checkout(StrEnum):
+    """How a laptop session gets its working copy of the repository."""
+
+    CLONE = "clone"
+    WORKTREE = "worktree"
+
+
 class TraceDetail(StrEnum):
     FULL = "full"
     SUMMARY = "summary"
+
+
+DEFAULT_BRANCH_TEMPLATE = "slipway/{key}-{build}"
+DEFAULT_PULL_REQUEST_TITLE = "{title}"
 
 
 @dataclass(frozen=True)
@@ -122,6 +169,17 @@ class Project:
     machine_bound_tests: tuple[str, ...] = ()
     builder_worker: str | None = None
     rules: str = ""
+    branch_template: str = DEFAULT_BRANCH_TEMPLATE
+    pull_request_title: str = DEFAULT_PULL_REQUEST_TITLE
+    checkout: Checkout = Checkout.CLONE
+
+    def branch_for(self, key: str, title: str, build_id: int | str) -> str:
+        """The card's branch name under this project's template."""
+        return render_branch(self.branch_template, key, title, build_id)
+
+    def title_for(self, key: str, title: str) -> str:
+        """The pull request title under this project's template."""
+        return self.pull_request_title.format(key=key, title=title)
 
 
 KNOWN = {
@@ -130,7 +188,8 @@ KNOWN = {
     "allowed_builders", "roles", "auto_merge", "build_cap", "daily_dispatch_cap",
     "trivial_card_target", "trace_project", "trace_detail", "tracker_credential",
     "host_credential", "allowed_subjects", "evals_path", "landing_path", "merge_method",
-    "runner_labels", "machine_bound_tests", "builder_worker", "rules",
+    "runner_labels", "machine_bound_tests", "builder_worker", "rules", "branch_template",
+    "pull_request_title", "checkout",
 }
 ROLE_KEYS = {"account", "model", "effort", "time_budget_minutes"}
 RULES_KEYS = ("text", "file")
@@ -138,6 +197,73 @@ RULES_KEYS = ("text", "file")
 # roles.<role>.account, are checked for the shape of an environment variable
 # name; a status label or board key in capitals is a legitimate value.
 NAME_FIELDS = ("tracker_credential", "host_credential", "trace_project", "builder_worker")
+
+
+BRANCH_FIELDS = ("key", "slug", "build")
+TITLE_FIELDS = ("key", "title")
+SLUG_WORDS = re.compile(r"[a-z0-9]+")
+SLUG_LIMIT = 40
+# What git refuses in a branch name (git check-ref-format): a control or
+# space character, ~ ^ : ? * [ \\, two dots, @{, a component starting with a
+# dot or ending in .lock, an empty component, a leading hyphen, a trailing
+# dot, and the name @ alone.
+ILLEGAL_REF = re.compile(r"[\x00-\x20\x7f~^:?*\[\\]|\.\.|@\{|(^|/)\.|\.lock(/|$)|//|^/|/$|\.$|^-")
+# Values a template is rendered with at load, to prove every card renders a
+# legal name. They are shaped like the real ones and hold only legal text.
+SAMPLE = {"key": "AB-1", "slug": "a-card", "build": "1", "title": "A card"}
+
+
+def slugify(title: str) -> str:
+    """The card title as lower case words joined by hyphens, at most SLUG_LIMIT long."""
+    words = SLUG_WORDS.findall(title.lower())
+    slug = ""
+    for word in words:
+        joined = f"{slug}-{word}" if slug else word
+        if len(joined) > SLUG_LIMIT:
+            break
+        slug = joined
+    return slug or (words[0][:SLUG_LIMIT] if words else "card")
+
+
+def render_branch(template: str, key: str, title: str, build_id: int | str) -> str:
+    return template.format(key=key, slug=slugify(title), build=build_id)
+
+
+def illegal_ref(name: str) -> bool:
+    """Whether git would refuse name as a branch name."""
+    return name == "@" or bool(ILLEGAL_REF.search(name))
+
+
+def branch_namespace(template: str) -> str:
+    """The literal text in front of the template's first placeholder."""
+    return next(iter(Formatter().parse(template)), ("", None))[0]
+
+
+def _template(top: Reader, name: str, default: str, allowed: tuple[str, ...],
+              required: str) -> str:
+    """A template field: known placeholders only, the required one present."""
+    template = top.text(name, required=False) or default
+    try:
+        parts = [(field, spec, conv) for _, field, spec, conv in Formatter().parse(template)
+                 if field is not None]
+    except ValueError as error:
+        top.fail(name, f"is not a template: {error}")
+    used = {field for field, _, _ in parts}
+    bad = [field for field, spec, conv in parts if field not in allowed or spec or conv]
+    if bad:
+        names = ", ".join("{" + f + "}" for f in allowed)
+        top.fail(name, f"may use only {names}, found {{{bad[0]}}}")
+    if required not in used:
+        top.fail(name, f"must carry {{{required}}}")
+    return template
+
+
+def read_branch_template(top: Reader) -> str:
+    template = _template(top, "branch_template", DEFAULT_BRANCH_TEMPLATE, BRANCH_FIELDS, "key")
+    sample = template.format(**SAMPLE)
+    if illegal_ref(sample):
+        top.fail("branch_template", f"renders {sample!r}, which is not a legal branch name")
+    return template
 
 
 def project_path(slug: str, root: Path | None = None) -> Path:
@@ -258,6 +384,10 @@ def parse_project(path: Path, data: dict) -> Project:
         machine_bound_tests=top.strs("machine_bound_tests", required=False),
         builder_worker=top.text("builder_worker", required=False),
         rules=read_rules(path, top),
+        branch_template=read_branch_template(top),
+        pull_request_title=_template(top, "pull_request_title", DEFAULT_PULL_REQUEST_TITLE,
+                                     TITLE_FIELDS, "title"),
+        checkout=top.choice("checkout", Checkout, required=False) or Checkout.CLONE,
     )
 
 
