@@ -80,6 +80,7 @@ from slipway.cards.contract import parse
 from slipway.cards.contract import ready as ready_rule
 from slipway.config.bindings import BindingInvalid, ResolvedBinding
 from slipway.config.operator import Account
+from slipway.config.project import LandingPath
 from slipway.halts import (
     BINDING_INVALID,
     BUILDER_EXPIRED,
@@ -276,9 +277,16 @@ class Engine(Protocol):
     async def wait(self, signal: str, build_id: int) -> Wake: ...
 
 
-def branch_name(card_key: str, build_id: int) -> str:
-    """The card's branch: one per build, so a reopened card gets a new name (KTD3)."""
-    return f"slipway/{card_key}-{build_id}"
+def branch_name(ports: Ports, project, card_key: str, build_id: int) -> str:
+    """The card's branch under the project's branch_template (U26).
+
+    The default template carries the build id, so a reopened card gets a new
+    name (KTD3). The card's title is read only when the template uses {slug}.
+    """
+    title = ""
+    if "{slug}" in project.branch_template:
+        title = ports.tracker(project).read(card_key).title or ""
+    return project.branch_for(card_key, title, build_id)
 
 
 # The parent.
@@ -449,11 +457,19 @@ def _dispatch(ports: Ports, project, build: Build) -> Build:
     except BindingInvalid as error:
         return _end_empty(ports, build, BINDING_INVALID, role="builder", reason=error.message,
                           field=error.field)
-    branch = build.branch or branch_name(build.card_key, build.id)
+    branch = build.branch or branch_name(ports, project, build.card_key, build.id)
     base = ports.git.base(project)
     try:
         ports.host(project).create_branch(branch, base)
     except BranchConflict as conflict:
+        if "{build}" not in project.branch_template:
+            # Without the build id the name is the card's alone, so the branch
+            # may be an earlier build's, and building on it would start from
+            # that build's work. Nothing here can tell, so the build ends and
+            # names the branch a person deletes before the card is claimed again.
+            return _end_empty(ports, build, BUILDER_FAILED,
+                              reason=f"branch {branch} already exists at {conflict.found}; "
+                                     "delete it to build this card again")
         # A re executed step whose first try created the branch before the
         # base moved: the branch name carries the build id, so nobody else
         # made it, and the commit it sits at is this build's base.
@@ -616,12 +632,14 @@ def open_pull_request(ports: Ports, input: Mapping) -> dict:
         return _summary(_move(ports, build, "abandoned", {"reason": why, "commit": commit}))
     ports.git.hold(project, build.branch, commit)
     card = tracker.read(build.card_key)
-    pr = host.open_pull_request(build.branch, card.title or f"card {build.card_key}",
-                                tracker.closing_reference(build.card_key))
+    title = project.title_for(build.card_key, card.title or f"card {build.card_key}")
+    pr = host.open_pull_request(build.branch, title, tracker.closing_reference(build.card_key))
     check = host.post_check(commit, CHECK_DETERMINISTIC, CheckState.SUCCESS.value, None,
                             f"{commit} is the commit Slipway confirmed")
     evidence = {"pr_number": pr.number, "url": pr.url, "confirmed": commit}
-    if project.auto_merge:
+    # On the external lander path a lander of the project's own lands the
+    # branch, so Slipway arms nothing, whatever auto_merge says (U26).
+    if project.auto_merge and project.landing_path is not LandingPath.EXTERNAL_LANDER:
         try:
             evidence["enqueue"] = host.enqueue(pr)
         except HostError as error:
@@ -831,6 +849,9 @@ def verify(ports: Ports, input: Mapping) -> dict:
             break
         ports.clock.sleep(NOT_MOVED_RECHECK_SECONDS)
     checks = {c.name: c.result for c in verdict.checks}
+    # The commit verify judged: on the external lander path with no merge
+    # commit from the host, verify names the lander's push (verify.landed_at).
+    merged = verdict.evidence.get("merged") or merged
     if verdict.landed:
         return _summary(_move(ports, build, "landed",
                               {"merged": merged, "checks": checks, "reads": reads,
