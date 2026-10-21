@@ -31,7 +31,7 @@ from importlib.resources import files
 from string import Template
 
 from slipway.config import ConfigError
-from slipway.page.login import Identity, LoginFailed, Signer, pkce_pair
+from slipway.page.login import Identity, LoginFailed, Signer, pkce_pair, same
 from slipway.service import status
 from slipway.service.verbs import Ports
 
@@ -195,7 +195,7 @@ class Page:
                 {"next": target}))], b""
         ports = self.ports()
         operator = ports.operator().operator_subject
-        if not secrets.compare_digest(str(session.get("sub", "")), operator):
+        if not same(session.get("sub", ""), operator):
             return self.forbidden()
         if path == "/":
             found = status.across(ports, operator)
@@ -254,7 +254,7 @@ class Page:
         held = self.signer.loads(cookies.get(LOGIN))
         state = (query.get("state") or [""])[0]
         code = (query.get("code") or [""])[0]
-        if held is None or not state or not secrets.compare_digest(state, held["state"]):
+        if held is None or not state or not same(state, held.get("state", "")):
             return "400 Bad Request", [clear], message(
                 "Sign in expired", "Open the page again to sign in.")
         if not code:
@@ -265,7 +265,7 @@ class Page:
                                            held["nonce"])
         except LoginFailed as error:
             return "403 Forbidden", [clear], message("Sign in refused", str(error))
-        if not secrets.compare_digest(subject, self.ports().operator().operator_subject):
+        if not same(subject, self.ports().operator().operator_subject):
             refused, _, body = self.forbidden()
             return refused, [clear], body
         session = self._cookie(SESSION, self.signer.dumps({"sub": subject}, SESSION_AGE),

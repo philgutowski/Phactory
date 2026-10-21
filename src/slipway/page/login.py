@@ -48,6 +48,15 @@ class LoginFailed(Exception):
     """The provider's answer could not be trusted or read; the message says why."""
 
 
+def same(a, b) -> bool:
+    """A constant time comparison of two values as UTF 8 bytes.
+
+    hmac.compare_digest raises TypeError on a str holding a non ASCII
+    character, and any of these values can come from a visitor.
+    """
+    return hmac.compare_digest(str(a).encode(), str(b).encode())
+
+
 def b64url(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
 
@@ -84,7 +93,7 @@ class Signer:
         if not token or token.count(".") != 1:
             return None
         body, mac = token.split(".")
-        if not hmac.compare_digest(mac, self._mac(body)):
+        if not same(mac, self._mac(body)):
             return None
         try:
             payload = json.loads(unb64url(body))
@@ -166,19 +175,22 @@ class OidcIdentity:
             claims = json.loads(unb64url(str(id_token).split(".")[1]))
         except (IndexError, ValueError) as error:
             raise LoginFailed("the token endpoint returned no readable ID token") from error
+        if not isinstance(claims, dict):
+            raise LoginFailed("the ID token's claims are not an object")
         audience = claims.get("aud")
         audiences = audience if isinstance(audience, list) else [audience]
-        if claims.get("iss", "").rstrip("/") != self.provider.issuer.rstrip("/"):
+        if str(claims.get("iss", "")).rstrip("/") != self.provider.issuer.rstrip("/"):
             raise LoginFailed("the ID token names another issuer")
         if self.provider.client_id not in audiences:
             raise LoginFailed("the ID token is for another client")
         if not isinstance(claims.get("exp"), int | float) or claims["exp"] <= self.clock():
             raise LoginFailed("the ID token has expired")
-        if not hmac.compare_digest(str(claims.get("nonce", "")), nonce):
+        if not same(claims.get("nonce", ""), nonce):
             raise LoginFailed("the ID token's nonce is not the one this login sent")
         if not claims.get("sub"):
             raise LoginFailed("the ID token names no subject")
         return str(claims["sub"])
 
 
-__all__ = ["Identity", "LoginFailed", "OidcIdentity", "Signer", "fetch_json", "pkce_pair"]
+__all__ = ["Identity", "LoginFailed", "OidcIdentity", "Signer", "fetch_json", "pkce_pair",
+           "same"]

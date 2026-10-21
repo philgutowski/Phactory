@@ -237,6 +237,7 @@ def test_a_manager_agent_signing_in_gets_no_session(tmp_path):
 
 
 @pytest.mark.parametrize("query", ["code=abc&state=wrong", "code=bad&state={state}",
+                                   "code=abc&state=%C3%A9",
                                    "error=access_denied&state={state}"])
 def test_a_callback_that_cannot_be_trusted_sets_no_session(tmp_path, query):
     w = world(tmp_path)
@@ -249,6 +250,12 @@ def test_a_callback_that_cannot_be_trusted_sets_no_session(tmp_path, query):
 
     assert back.status in (400, 403)
     assert back.cookie(page_app.SESSION) is None
+
+
+def test_a_session_cookie_with_a_non_ascii_signature_is_sent_to_login(tmp_path):
+    w = world(tmp_path)
+    body = session(w)[page_app.SESSION].split(".")[0]
+    assert get(make(w), "/", {page_app.SESSION: f"{body}.\u00e9"}).status == 302
 
 
 def test_a_forged_or_expired_session_is_sent_to_login(tmp_path):
@@ -357,6 +364,13 @@ def test_an_id_token_with_a_wrong_claim_is_refused(tmp_path, claims):
     oidc = _oidc(tmp_path, _id_token(**claims), [])
     with pytest.raises(LoginFailed):
         oidc.finish("abc", "verifier", f"{BASE}/callback", "n1")
+
+
+@pytest.mark.parametrize("payload", [[1, 2], {"iss": 7}, {"nonce": "\u00e9"}])
+def test_a_malformed_id_token_is_refused_not_raised(tmp_path, payload):
+    token = f"{b64url(b'{}')}.{b64url(json.dumps(payload).encode())}.sig"
+    with pytest.raises(LoginFailed):
+        _oidc(tmp_path, token, []).finish("abc", "verifier", f"{BASE}/callback", "n1")
 
 
 def test_the_page_package_names_no_project():
