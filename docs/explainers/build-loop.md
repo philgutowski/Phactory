@@ -64,7 +64,7 @@ Auto merge waits for the required status checks and for nothing else. `ci` prove
 The workflow is the same two step shape as `ci.yml`, one checkout and one run step. The run step installs the Claude Code CLI and runs `factory/review.py`, which:
 
 1. Reads the pull request, finds the card it closes, and reads the card's block.
-2. Takes the diff and the list of touched files, and settles the facts a script settles better than a model: files outside the card's declared paths, files another in flight card declares, added lines or commit messages with an em dash or en dash, and added lines with a bare double hyphen for the model to judge as flag or punctuation.
+2. Takes the diff and the list of touched files, and settles the facts a script settles better than a model: files outside the card's declared paths, files another in flight card declares (in flight by the ready rule's own test, `handoff.dispatched`, so a bare branch under a card's name holds its files before its pull request exists), added lines or commit messages with an em dash or en dash, and added lines with a bare double hyphen for the model to judge as flag or punctuation.
 3. Writes one prompt: `factory/review-brief.md`, then the card, the facts, then the diff (inline up to 400 KB, otherwise in a file the model reads in parts).
 4. Runs `claude -p` with the reviewer model, read only tools (`Read`, `Glob`, `Grep`, and `git diff`, `git log`, `git show`), a JSON schema for the answer, and a dollar cap.
 5. Posts the verdict as a pull request review (a comment, never an approval: approving is the operator's) and exits 1 when any finding is blocking.
