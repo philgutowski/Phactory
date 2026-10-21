@@ -4,6 +4,7 @@
 #   docker build -f deploy/builder.Dockerfile \
 #     --build-arg BASE_IMAGE=<a Node image with the toolchains your projects need> \
 #     --build-arg CLAUDE_CODE_VERSION=<a pinned version> \
+#     --build-arg PLAYWRIGHT_MCP_VERSION=<a pinned @playwright/mcp version> \
 #     --build-arg BUILDER_UID=<the uid that owns the worker's session directories> \
 #     --build-arg BUILDER_GID=<its gid> \
 #     -t <tag> .
@@ -14,11 +15,18 @@
 # Docker socket, the isolated builder network, every capability dropped, and
 # the account token passed by environment only. The session script, the git
 # credential helper, and every path come from the adapter at run time.
+#
+# The headless browser (U27): the Playwright MCP server and the Chromium it
+# drives, so a project's default builder_tools, headless_browser, works in
+# the container. The adapter names the server in the session's MCP
+# configuration (src/slipway/builders/tools.py) and runs it with no window
+# and no Chromium sandbox, since the container itself is the sandbox.
 
 ARG BASE_IMAGE
 FROM ${BASE_IMAGE}
 
 ARG CLAUDE_CODE_VERSION
+ARG PLAYWRIGHT_MCP_VERSION
 ARG BUILDER_UID
 ARG BUILDER_GID
 
@@ -33,6 +41,18 @@ RUN test -n "${CLAUDE_CODE_VERSION}" \
  && test -n "${BUILDER_UID}" && test "${BUILDER_UID}" != 0 \
  && test -n "${BUILDER_GID}" \
  && npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
+ && npm cache clean --force
+
+# The Playwright MCP server at a pinned version, and the Chromium build its
+# own Playwright expects, with the system libraries Chromium needs. The
+# browsers go under /opt, read only at run time, where every user finds them.
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
+RUN test -n "${PLAYWRIGHT_MCP_VERSION}" \
+ && npm install -g "@playwright/mcp@${PLAYWRIGHT_MCP_VERSION}" \
+ && cd "$(npm root -g)/@playwright/mcp" \
+ && npx --no-install playwright install --with-deps chromium \
+ && command -v playwright-mcp \
+ && rm -rf /var/lib/apt/lists/* \
  && npm cache clean --force
 
 # The non root user. Its home is inside the workspace, the one writable mount,

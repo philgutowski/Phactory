@@ -19,7 +19,9 @@ A question carries:
                    (accounts by name), or live from the adapters (boards,
                    labels, statuses, builders), which the probe lists
     free_text      whether an answer outside the choices is taken
-    default        what an empty answer means, or None when there is none
+    default        what an empty answer means, or None when there is none.
+                   For a LIST question with a default, "no" means the
+                   default too, so an opt in question is declined in a word
     operator_only  KTD15: only the operator's subject answers it, and only
                    the operator is shown its choices
     required       False for an optional key: an empty answer leaves it out
@@ -34,7 +36,15 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from slipway.config.operator import Host
-from slipway.config.project import Checkout, LandingPath, MergeMethod, TraceDetail, Tracker
+from slipway.config.project import (
+    DEFAULT_BUILDER_TOOLS,
+    BuilderTool,
+    Checkout,
+    LandingPath,
+    MergeMethod,
+    TraceDetail,
+    Tracker,
+)
 
 TEXT, CHOICE, LIST, NUMBER, YES_NO = "text", "choice", "list", "number", "yes_no"
 
@@ -42,7 +52,7 @@ TEXT, CHOICE, LIST, NUMBER, YES_NO = "text", "choice", "list", "number", "yes_no
 # operator file; LIVE ones are listed by the probe (checks.py).
 HOSTS, TRACKERS = "hosts", "trackers"
 LANDING_PATHS, MERGE_METHODS, TRACE_DETAILS = "landing_paths", "merge_methods", "trace_details"
-CHECKOUTS = "checkouts"
+CHECKOUTS, BUILDER_TOOLS = "checkouts", "builder_tools"
 ACCOUNTS, LANGFUSE_PROJECTS = "accounts", "langfuse_projects"
 TRACKER_CREDENTIALS, HOST_CREDENTIALS = "tracker_credentials", "host_credentials"
 TRACKER_SITES, BUILDER_WORKERS = "tracker_sites", "builder_workers"
@@ -55,6 +65,7 @@ FIXED = {
     MERGE_METHODS: tuple(m.value for m in MergeMethod),
     TRACE_DETAILS: tuple(d.value for d in TraceDetail),
     CHECKOUTS: tuple(c.value for c in Checkout),
+    BUILDER_TOOLS: tuple(t.value for t in BuilderTool),
 }
 OPERATOR = (ACCOUNTS, LANGFUSE_PROJECTS, TRACKER_CREDENTIALS, HOST_CREDENTIALS, TRACKER_SITES,
             BUILDER_WORKERS)
@@ -158,6 +169,16 @@ QUESTIONS: tuple[Question, ...] = (
     _q("checkout", "How does a laptop build get its working copy? Leave empty for a fresh "
        "clone.", "A worktree is a second working folder added from the laptop's own checkout.",
        kind=CHOICE, choices_from=CHECKOUTS, free_text=False, required=False),
+    # The opt in (U27). The trade off is in the question itself, because the
+    # answer hands a build the operator's own sign ins.
+    _q("builder_tools", "A builder always has the headless browser, a browser with no window "
+       "that runs inside its own session. Should a laptop build also drive your own signed in "
+       "Chrome (operator_browser) or your screen (desktop)? Either one acts as you, outside "
+       "the build's dedicated user, wherever you are signed in. Answer no to keep the "
+       "headless browser alone, or list the tools to grant.",
+       "Each is off unless you list it here, is refused for a container build, and is named "
+       "on every build that has it.", kind=LIST, choices_from=BUILDER_TOOLS, free_text=False,
+       default=DEFAULT_BUILDER_TOOLS, operator_only=True),
     _q("auto_merge", "May the host merge a pull request on its own once the gate is green?",
        "Auto merge lands without a person; without it a person approves each one.",
        kind=YES_NO, free_text=False, default=NO, operator_only=True),

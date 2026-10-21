@@ -510,7 +510,8 @@ def _start(ports: Ports, project, build: Build) -> tuple[Build, dict | None]:
                                 label)
         build = _move(ports, build, "building",
                       {"worker": label, "started_at": returned["started_at"],
-                       "budget_seconds": budget})
+                       "budget_seconds": budget,
+                       "tools_granted": list(handoff.builder_tools)})
         result = BuilderResult(**returned["result"])
         build = _finish(ports, project, build, result, base, budget)
         return build, {"transcript": returned.get("transcript", ""),
@@ -528,7 +529,8 @@ def _start(ports: Ports, project, build: Build) -> tuple[Build, dict | None]:
         return _end_empty(ports, build, BUILDER_FAILED,
                           reason=scrub(f"the session did not start: {error}")), None
     return _move(ports, build, "building",
-                 {"started_at": ports.clock.now().isoformat(), "budget_seconds": budget},
+                 {"started_at": ports.clock.now().isoformat(), "budget_seconds": budget,
+                  "tools_granted": list(handoff.builder_tools)},
                  {"session_ref": session_ref}), None
 
 
