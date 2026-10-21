@@ -27,14 +27,18 @@ Phillip approved this order on 2026-10-21, after the build had reached the end o
 
 1. **The loop.** U4 (proved locally on 2026-10-21, `docs/spikes/hatchet.md`), then U14, then U25.
 2. **The first project.** U26, the Integra lane (new); U19 terminal first, with its MCP front end moved to U18; U21 in a first slice; U20.
-3. **Builder tools and live onboarding reads.** U27, a headless browser for every project, and the operator's real browser and desktop as a per project opt in (new). Then U28, the onboarding reads U19 left as attestations, and U29, serving the app and the worker on the VPS (both new, added the same day).
-4. **Later.** U16 soon after step 2, since it needs no outside service. Then U1 and U12 (Managed Agents mounts GitHub repositories only, and the first project builds on the laptop), U3 and U18 (the MCP surface and voice), U15 and U17 (they wait on the Integrel export question), U22 and U23 (the Zig runner), and U24 last, with Integra Workbench as its first cold onboarding.
+3. **Builder tools and live onboarding reads.** U27, a headless browser for every project, and the operator's real browser and desktop as a per project opt in (new). Then U28, the onboarding reads U19 left as attestations, U29, serving the app and the worker on the VPS, and U30, the laptop worker's entry point (all new, added the same day).
+4. **Later.** U16 soon after step 2, since it needs no outside service. Then U1 and U12 (Managed Agents mounts GitHub repositories only, and the first project builds in Slipway's own CLI builder), U3 and U18 (the MCP surface and voice), U15 and U17 (they wait on the Integrel export question), U22 and U23 (the Zig runner), and U24 last, with Integra Workbench as its first cold onboarding.
 
 The Unit Index carries the new dependencies. The ready rule reads each card's own Dependencies line, so the board issues were edited to match on the same day (U18, U19, U21, U24) and U26 and U27 were filed as #83 and #84.
 
 Two notes from the build of step 2, the same day. U26 checks an outside lander with the plain merge rule rather than the auto merge rule its card named, because the first project's watcher keeps landing other cards on the base branch. The plain merge rule finds the landing commit (the first commit on the base branch's first parent line that holds the confirmed commit) and compares its tree with the tree of merging the confirmed commit into that commit's first parent, so later landings on top of it do not matter. And U19 was built with five live reads still taken as operator attestations, since the adapters could not yet list or read them: board movement, the required check, the machine identity restriction, the repository, and the board. U28 (new, filed as #94) adds those reads, ahead of U24, so Integra's onboarding checks them instead of asking.
 
 A third note, after U20 landed. No unit owned serving Slipway on the VPS: the process that answers on port 443, its certificate, the page's cookie signing key and base URL, and the `app` and `worker` compose services `deploy/README.md` describes. U29 (new, filed as #97) owns them, and writes the first `src/slipway/app.py` with the status page and the webhook endpoint; U18 later adds the MCP routes to that file, so U18 now depends on U29.
+
+A fourth note, after U27 landed. Nothing in `src` yet builds the laptop worker: U13 wrote `LaptopBuilder` and U14 `laptop_worker`, but no entry point constructs them, so no laptop build can start. U30 (new, filed as #106) adds that entry point and its launch file.
+
+A fifth note, the same day. Phillip decided that Integra cards may also build on the VPS, in U13's container builder, with Slipway's own Bitbucket repository access token, not only on his laptop. So the first project no longer waits on U30: its project file may leave `builder_worker` unset and build in a container clone, or name the laptop worker and build in a worktree there. The tools that drive the operator's own browser or desktop (U27) stay laptop only.
 
 ---
 
@@ -614,7 +618,7 @@ flowchart LR
   P2 --> P5[Phase 5 runner: U22 U23]
   P4 --> P5
   P2 --> P7[Phase 2b first project: U26 U19 U21 U20]
-  P7 --> P8[Phase 2c builder tools, live onboarding reads, serving: U27 U28 U29]
+  P7 --> P8[Phase 2c builder tools, live onboarding reads, serving, laptop worker: U27 U28 U29 U30]
   P7 --> P6
   P3 --> P6[Phase 6 acceptance: U24]
   P4 --> P6
@@ -656,6 +660,7 @@ flowchart LR
 | U27 | Builder tools: headless browser, the operator's browser, the desktop | `src/slipway/builders/tools.py`, `deploy/builder.Dockerfile` | U13, U19 |
 | U28 | Live onboarding reads on the host and tracker adapters | `src/slipway/hosts/`, `src/slipway/trackers/`, `src/slipway/onboard/checks.py` | U8, U9, U19, U26 |
 | U29 | Serve the app and the worker on the VPS | `src/slipway/app.py`, `src/slipway/workflow/worker.py`, `deploy/` | U9, U14, U20 |
+| U30 | The laptop worker's entry point | `src/slipway/workflow/laptop.py`, `deploy/laptop/` | U13, U14, U26, U27, U29 |
 
 ### U1. Spike: Managed Agents session, event log, push
 
@@ -1002,6 +1007,7 @@ flowchart LR
   4. Write account, model, effort, cost, and token usage from the `BuilderResult` onto the attempt row (KTD16), so R15 is answered from Postgres after Langfuse's thirty day window; the trace link is a viewer.
   5. Write the scrubbed shape records as JSON lines to the card's side reference on the project's repository under Slipway's host credential (R22), for every builder, before the session is released; a trace read later reads that file when the Langfuse link has expired.
   6. Register `export_trace`, `commit_log`, and `release_session`, in that order, on the `post_build` seam in `trace/steps.py`.
+  7. Put the attempt row's `tools_granted` (U27) on the trace's root span as `slipway.tools_granted`, so the viewer shows which tools a build had.
 - **Patterns to follow:** The Langfuse OTLP endpoint in `docs/research/2026-10-14-brainstorm/research-traces-evals.md`.
 - **Test scenarios:**
   - Covers AE5. A CLI transcript with no provider events yields a trace with every tool call and the diff attribute.
@@ -1264,6 +1270,26 @@ flowchart LR
   - `app.py` imports no module from `workflow/`.
 - **Verification:** Unit scenarios green under the network guard; the operator brings the stack up on the VPS, signs in to the page through the real identity provider, and sends one signed test delivery to the webhook endpoint, recorded in the pull request.
 
+### U30. The laptop worker's entry point
+
+- **Goal:** The laptop worker starts from one command and one launch file, so a project with a `builder_worker` (the first project among them) builds on the operator's laptop: the worker registers under its label, takes `laptop_build` tasks, and runs each session through `LaptopBuilder` as the second user, in a clone or a worktree as the project file says, with the tools the project grants.
+- **Requirements:** R12, R14, KTD12, KTD23, KTD24.
+- **Dependencies:** U13, U14, U26, U27, U29.
+- **Files:** `src/slipway/workflow/laptop.py`, `deploy/laptop/com.slipway.worker.plist`, `deploy/laptop/README.md`, `tests/unit/test_laptop_worker.py`.
+- **Approach:**
+  1. `python -m slipway.workflow.laptop`, beside U29's VPS entry in `workflow/worker.py` and built the same way: it refuses to start while a variable it needs is unset, then builds a `LaptopBuilder` and hands its run to `laptop_worker` under the operator file's `builder_workers` label for this machine.
+  2. Its variables, which Slipway fixes and the laptop's own environment file holds: the worker label, the second user's name, the sessions root, the session `PATH`, the Playwright browsers folder (`headless_browser`), the computer use MCP server entry (`desktop`), and a map from project slug to the path of that project's shared checkout, which `checkout = "worktree"` needs. A checkout path is machine specific, so it lives on the machine, never in the project file (R1).
+  3. A project whose `builder_tools` names a tool the machine has not set up is refused at the start of its build with the missing variable named, not mid session.
+  4. `deploy/laptop/com.slipway.worker.plist` runs the new command in place of the free form `SLIPWAY_WORKER_COMMAND`; `deploy/laptop/README.md` lists the environment file's lines and the steps to load the launch file.
+- **Patterns to follow:** U29's `main` in `workflow/worker.py` for the refusal and the credential helper; U13's explainer for the second user.
+- **Test scenarios:**
+  - With every variable set, the entry builds a `LaptopBuilder` whose session user, root, browsers folder, and desktop server come from the environment, and registers `laptop_build` alone under the label.
+  - With the label or the session user unset, it refuses to start and names the variable.
+  - A worktree project whose slug is missing from the checkout map is refused at the start of its build; a clone project needs no entry.
+  - A project granting `desktop` on a machine with no desktop server set is refused with that variable named.
+  - The launch file runs `python -m slipway.workflow.laptop` and reads the environment file the README names.
+- **Verification:** Unit scenarios green under the network guard; the operator loads the launch file on the laptop and one card builds in a worktree there, recorded in the pull request.
+
 ### U24. Three cold onboardings and the laptop closed day
 
 - **Goal:** The acceptance pass: onboard the three kinds of project with no code change, land one scored card on each, and run a day with the laptop closed.
@@ -1272,7 +1298,7 @@ flowchart LR
 - **Files:** `docs/spikes/acceptance.md`.
 - **Approach:**
   1. GitHub with Projects: `Lementknight/zig-actions-runner` (auto merge off) and Slipway itself (auto merge on with the KTD25 review paths).
-  2. Bitbucket Cloud with Jira: Integra Workbench with Phillip's credentials, onboarded first, its cards built by the laptop builder in a worktree and landed by its own watcher (U26), with `trace_detail` set by the answer under Outstanding Questions.
+  2. Bitbucket Cloud with Jira: Integra Workbench with Phillip's credentials, onboarded first, its cards built in the VPS container builder or by the laptop builder in a worktree, as its project file says, and landed by its own watcher (U26), with `trace_detail` set by the answer under Outstanding Questions.
   3. Never seen: a fresh repository created that day.
   4. Then close the laptop for a day with cards filed on the GitHub projects, and read the page the next morning.
   5. Record every code change that was needed as a finding against R35, and fix before calling it done.
@@ -1331,3 +1357,4 @@ No release validation applies beyond the rows above.
 | U27 | Unit scenarios green; one live headless screenshot recorded, and one operator run of each opt in level |
 | U28 | Unit scenarios green on captured fixtures; one live onboarding of a test repository on each host with no attestation for the five reads |
 | U29 | Unit scenarios green; the operator signs in to the page on the VPS through the real identity provider, and a signed test delivery reaches the webhook endpoint, both recorded |
+| U30 | Unit scenarios green; the operator starts the laptop worker from its launch file and one card builds in a worktree on the laptop, recorded |
