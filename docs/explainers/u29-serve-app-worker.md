@@ -70,7 +70,7 @@ Each request's database connections are opened through `Connections`, which clos
 - **credential.** `host_credentials()` wraps the project's host credential, read through `resolve_host_credential`, in a builder `Credential` with no expiry, since the operator file's host credentials are static tokens.
 - **git.** `main()` points every git call at the credential helper with `GIT_CONFIG_*` variables. When git reads a repository, it runs `python -m slipway.workflow.worker credential get`, and `credential_answer()` replies with the host credential of the one project whose repository that is, or nothing. The cache under `SLIPWAY_HOME/cache` never holds a token.
 
-The laptop worker's entry point is not part of this unit; the laptop's own setup (U13, U26) still names its command in `SLIPWAY_WORKER_COMMAND`.
+The laptop worker's entry point is not part of this unit: U30 adds it as `python -m slipway.workflow.laptop`, which the laptop's launch file runs (`docs/explainers/u30-laptop-worker.md`).
 
 ## Who receives what
 

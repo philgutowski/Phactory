@@ -82,11 +82,11 @@ sudo plutil -replace UserName -string <worker user> /Library/LaunchDaemons/com.s
 sudo launchctl bootstrap system /Library/LaunchDaemons/com.slipway.worker.plist
 ```
 
-It runs `/bin/sh`, which loads `$HOME/.slipway-worker.env` (mode 600, owned by the worker user) and starts `$SLIPWAY_WORKER_COMMAND`, appending its output to `$HOME/Library/Logs/slipway-worker.log`. The environment file sets:
+It runs `/bin/sh`, which loads `$HOME/.slipway-worker.env` (mode 600, owned by the worker user) and starts `python -m slipway.workflow.laptop` (U30), appending its output to `$HOME/Library/Logs/slipway-worker.log`. The environment file's full list of lines is in `deploy/laptop/README.md`; among them:
 
 | Variable | What it is |
 |:-|:-|
-| `SLIPWAY_WORKER_COMMAND` | the command that starts the Hatchet worker; U14 provides it |
+| `PATH` | puts the Python that has Slipway installed first, so the launch file's `python` is that one |
 | `SLIPWAY_WORKER_LABEL` | the label the operator file gives this worker |
 | `HATCHET_CLIENT_TOKEN` | this worker's own Hatchet token |
 | the account variable, the git credential variable | the two builder secrets |

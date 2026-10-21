@@ -491,6 +491,7 @@ def _start(ports: Ports, project, build: Build) -> tuple[Build, dict | None]:
         builder = ports.builder(project, binding)
         label = (ports.worker_label(project)
                  if Schedule(builder.schedule) is Schedule.WORKER_PROCESS else None)
+        on_laptop = laptop_project(project, ports.operator()) if label is not None else None
     except BindingInvalid as error:
         return _end_empty(ports, build, BINDING_INVALID, role="builder", reason=error.message,
                           field=error.field), None
@@ -507,7 +508,8 @@ def _start(ports: Ports, project, build: Build) -> tuple[Build, dict | None]:
         if not ports.records.attempts(build.id):
             ports.records.start_attempt(build.id, binding, handoff.builder_tools)
         returned = ports.laptop({"build_id": build.id, "handoff": asdict(handoff),
-                                 "binding": _binding_json(binding), "budget_seconds": budget},
+                                 "binding": _binding_json(binding), "budget_seconds": budget,
+                                 "project": on_laptop},
                                 label)
         build = _move(ports, build, "building",
                       {"worker": label, "started_at": returned["started_at"],
@@ -585,8 +587,27 @@ def _finish(ports: Ports, project, build: Build, result: BuilderResult, base: st
 class LaptopPorts:
     """What the laptop worker reaches: its own builder, its own credential, a clock."""
 
-    run: Callable[[Any, ResolvedBinding], Any]  # (handoff, binding) -> LaptopReturn
+    run: Callable[[Any, ResolvedBinding, Mapping], Any]  # (handoff, binding, project)
     clock: Clock
+
+
+def laptop_project(project, operator) -> dict:
+    """What the laptop needs of the project file, which it never reads itself (KTD12).
+
+    The slug picks the laptop's shared checkout, host and repository make
+    the clone address, checkout says clone or worktree, and the credential
+    names the environment variable on the laptop that holds the git token,
+    as the binding names the account's. Names only, never a value.
+    A credential the operator file does not define is refused here, on the
+    VPS, where it can be fixed, rather than on the laptop.
+    """
+    entry = operator.host_credentials.get(project.host_credential)
+    if entry is None:
+        raise BindingInvalid("host_credential", f"{project.host_credential!r} is not in the "
+                             "operator file's host_credentials")
+    return {"slug": project.slug, "host": str(project.host), "repository": project.repository,
+            "checkout": str(project.checkout),
+            "credential": {"name": project.host_credential, "env": entry.env}}
 
 
 def laptop_build(ports: LaptopPorts, input: Mapping) -> dict:
@@ -599,7 +620,7 @@ def laptop_build(ports: LaptopPorts, input: Mapping) -> dict:
     started = ports.clock.now()
     handoff = Handoff(**{k: tuple(v) if isinstance(v, list) else v
                          for k, v in input["handoff"].items()})
-    returned = ports.run(handoff, binding_from_json(input["binding"]))
+    returned = ports.run(handoff, binding_from_json(input["binding"]), input.get("project") or {})
     out = returned.to_json()
     out["started_at"] = started.isoformat()
     return out

@@ -374,7 +374,7 @@ class World:
         # The task sits queued until a worker with the label appears.
         self.clock.forward(self.laptop_queue_seconds)
 
-        def run(handoff, binding):
+        def run(handoff, binding, project):
             result = self.result(handoff.branch, "laptop-session")
             return LaptopReturn(result, '{"type": "user"}\n', 0)
 
