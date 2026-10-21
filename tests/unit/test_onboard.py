@@ -566,6 +566,19 @@ def test_a_rules_file_removed_after_the_write_is_refused_not_raised(world):
     result = machine.start(world.ports, SLUG, OPERATOR)
     assert result["outcome"] == machine.REFUSED
     assert "rules.file" in result["reason"]
+    assert machine.status(world.ports, SLUG)["outcome"] == machine.REFUSED
+    assert machine.answer(world.ports, SLUG, "recheck", "yes", OPERATOR)["outcome"] == (
+        machine.REFUSED)
+
+
+def test_without_a_database_the_trivial_card_says_so(world, tmp_path):
+    card = onboard(world, BITBUCKET)
+    assert card["outcome"] == machine.FILE_CARD
+    ports = machine.Ports(world.root, world.ports.operator, world.probe,
+                          terminal.FileRecords(tmp_path / "audit.jsonl"), world.ports.clock)
+    result = machine.answer(ports, SLUG, "trivial_card", "EX-1", OPERATOR)
+    assert result["outcome"] == machine.WAITING
+    assert "SLIPWAY_DSN" in result["reason"]
 
 
 def test_a_bad_session_id_is_refused_by_every_call(world):

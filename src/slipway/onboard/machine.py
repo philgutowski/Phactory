@@ -498,7 +498,8 @@ def _reenter(ports: Ports, state: dict, data: dict) -> None:
         if question.id not in state["answers"] or state["answers"][question.id] != value:
             state["answers"][question.id] = value
             state["by"][question.id] = {"actor": FROM_FILE, "at": None}
-            state.pop("gate_note", None)  # a gate command changed outside onboard
+            if question.id == "gate_command":
+                state.pop("gate_note", None)  # the gate command changed outside onboard
     state["stale"] = {}
     # A gate the host failed on the trivial card is no longer true either,
     # and only the host's output says so; the file cannot.
@@ -642,7 +643,11 @@ def _next(ports: Ports, state: dict, actor: str) -> dict:
                     "reason": "only the operator's questions are left"}
         return {**out, "outcome": QUESTION, "pending": [q.id for q in left],
                 "question": asked(ports, mine[0], state, actor)}
-    project = _project(ports, state)
+    try:
+        project = _project(ports, state)
+    except ConfigError as error:  # a key no question fills, such as a rules file gone since
+        return {**out, "outcome": REFUSED,
+                "reason": f"the project file has a fault no question fixes: {error}"}
     if state["checks"] is None or state["checks"]["for"] != _fingerprint(state):
         results = checks.run(ports.probe, project, state["answers"], state["attested"])
         state["checks"] = {"for": _fingerprint(state),
@@ -667,6 +672,10 @@ def _follow(ports: Ports, state: dict, project: Project, out: dict, actor: str) 
     key = state["trivial"]
     records = ports.records
     build = records.latest(records.project_id(project.slug), key)
+    if build is None and not getattr(records, "follows_builds", True):
+        return {**out, "outcome": WAITING, "card_key": key,
+                "reason": f"no records database is named, so card {key}'s build cannot be "
+                          "followed; set SLIPWAY_DSN and run onboard again"}
     if build is None:
         return {**out, "outcome": WAITING, "card_key": key,
                 "reason": f"card {key} has no build yet; watch dispatches it once it is in "

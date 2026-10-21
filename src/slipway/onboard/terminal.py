@@ -137,6 +137,8 @@ class FileRecords:
     It knows no builds, so the trivial card waits until SLIPWAY_DSN is set.
     """
 
+    follows_builds = False
+
     def __init__(self, path: Path):
         self.path = path
 
