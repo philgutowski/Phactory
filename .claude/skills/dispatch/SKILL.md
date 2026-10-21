@@ -33,9 +33,14 @@ Work from a clean checkout of `main` with the environment from `CLAUDE.md` set u
 ```sh
 REPO=philgutowski/slipway
 S=$(mktemp -d)
-gh api --paginate --slurp "repos/$REPO/issues?state=all&per_page=100" > "$S/issues.json"
-gh api --paginate --slurp "repos/$REPO/pulls?state=open&per_page=100" > "$S/pulls.json"
-gh api --paginate --slurp "repos/$REPO/branches?per_page=100" > "$S/branches.json"
+# Page by number: the proxy refuses the repositories/<id> links --paginate follows.
+for kind in "issues?state=all" "pulls?state=open" "branches?"; do
+  name=${kind%%\?*}; n=1; echo "[" > "$S/$name.json"
+  while page=$(gh api "repos/$REPO/$kind&per_page=100&page=$n") && [ "$page" != "[]" ]; do
+    [ $n -gt 1 ] && echo "," >> "$S/$name.json"; echo "$page" >> "$S/$name.json"; n=$((n + 1))
+  done
+  echo "]" >> "$S/$name.json"
+done
 git fetch origin main
 BASE=$(git rev-parse origin/main)
 ```
