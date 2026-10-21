@@ -172,6 +172,9 @@ with open(os.environ["FAKE_GH_LOG"], "a") as log:
 if args[:2] == ["issue", "list"]:
     print(json.dumps([{"number": 80, "title": "U50: other"},
                       {"number": 8, "title": "U5: scaffold"}]))
+elif args[:2] == ["issue", "view"]:
+    number = int(args[2])
+    print(json.dumps({"number": number, "state": "CLOSED" if number == 7 else "OPEN"}))
 elif args[:2] == ["project", "view"]:
     print(json.dumps({"id": "PVT_1"}))
 elif args[:2] == ["project", "item-add"]:
@@ -253,6 +256,24 @@ def test_pull_request_without_keyword_falls_back_to_branch(tmp_path):
     result, calls = _board(tmp_path, EVENT_NAME="pull_request", PR_BODY="no link")
     assert result.returncode == 0, result.stderr
     assert "OPT_R" in _edit(calls)
+
+
+@needs_jq
+def test_default_template_branch_names_the_issue_by_number(tmp_path):
+    result, calls = _board(tmp_path, BRANCH="slipway/94-12")
+    assert result.returncode == 0, result.stderr
+    assert not any(c[:2] == ["issue", "list"] for c in calls)
+    added = next(c for c in calls if c[:2] == ["project", "item-add"])
+    assert "https://github.com/owner/repo/issues/94" in added
+    assert "OPT_P" in _edit(calls)
+
+
+@needs_jq
+def test_branch_naming_a_closed_issue_is_a_notice(tmp_path):
+    result, calls = _board(tmp_path, BRANCH="slipway/7-old")
+    assert result.returncode == 0, result.stderr
+    assert "no issue found" in result.stdout
+    assert not any(c[:2] == ["project", "item-edit"] for c in calls)
 
 
 def test_missing_secret_is_a_notice_not_a_failure(tmp_path):

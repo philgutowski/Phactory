@@ -112,10 +112,11 @@ Everything is one step because an `export` only lasts for the step that ran it. 
 
 The workflow runs on two events: a branch whose name starts with `slipway/` is created (target column In progress), and a pull request from such a branch is opened (target column In review). Moving to Done is GitHub Projects' own built in "item closed" workflow, which fires when the merge closes the issue.
 
-It finds the issue in two ways, in this order:
+It finds the issue in three ways, in this order:
 
 1. On a pull request, a closing keyword in the body, such as `Closes #8`. This comes first because it is the same link GitHub uses to close the issue on merge, so the In review move and the Done move always agree on the issue.
 2. Otherwise, and always on branch creation (a new branch has no body to read), the branch name `slipway/u<n>-<slug>` maps to the open issue whose title starts with `U<n>:`. The match is on the exact prefix, so `U5:` never matches `U50:`. The branch carries the unit number rather than the issue number because unit numbers and issue numbers differ (U5 is issue #8).
+3. A branch named `slipway/<n>-<rest>`, the shape the default branch template (U26) renders when the card's key is its issue number, names open issue `#<n>` directly. Without this, a GitHub Projects board onboarded with the default template never moved on branch creation, and U28's board movement check failed for it.
 
 Then it adds the issue to the project (`gh project item-add` returns the existing item when it is already there), reads the Status field's options with `gh project field-list`, and sets the option by name with `gh project item-edit`.
 
