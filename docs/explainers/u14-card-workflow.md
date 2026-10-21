@@ -60,7 +60,7 @@ When the session ends, the result is checked against the base (`check_base`) and
 
 **post_build** runs the `post_build` seam whenever a session was started, whatever `building` ended in.
 
-**open** holds the repository's key, so two cards on one repository never open at once. It confirms the commit is still the branch head, pins it in the git cache for verify (`gitread.hold`), opens the pull request with the tracker's closing reference, posts the deterministic check on the confirmed commit, arms auto merge when the project has it on, and records `pr_open` with `pr_number`, `check_run_id`, and `confirmed_commit` in one transaction.
+**open** holds the repository's key, so two cards on one repository never open at once. It confirms the commit is still the branch head (when it is not, the build records `abandoned` with the reason, since no retry brings the head back, and the card can be claimed again), pins it in the git cache for verify (`gitread.hold`), opens the pull request with the tracker's closing reference, posts the deterministic check on the confirmed commit, arms auto merge when the project has it on, and records `pr_open` with `pr_number`, `check_run_id`, and `confirmed_commit` in one transaction.
 
 **on_wake** handles one wake of the landing wait. Every move it makes follows a fresh read of the pull request from the host (KTD10), so an event is a wake up, never evidence:
 
@@ -74,7 +74,7 @@ When the session ends, the result is checked against the base (`check_base`) and
 | `pr.dequeued` | still open | to `gate_red`, with a failing landing check |
 | `check.completed` | | no move |
 | `card.resume` while halted | | re verify, or land on the operator's override |
-| sleep | | the poll path: the re read becomes the event the host would have sent, written to `host_events` with source `poll`, then handled as above; with nothing new, the seven day deadline check |
+| sleep | | the poll path: the re read becomes the event the host would have sent, written to `host_events` with source `poll`, then handled as above; a moved head already flagged on an earlier look is not flagged again; every sleep then runs the seven day deadline check |
 
 `check.completed`, `queue.requested`, and `pr.dequeued` also reach the `gate_observed` seam.
 

@@ -609,7 +609,11 @@ def open_pull_request(ports: Ports, input: Mapping) -> dict:
     commit = returned["commit"]
     host, tracker = ports.host(project), ports.tracker(project)
     if not host.commit_on_remote(build.branch, commit):
-        raise HostError(f"commit {commit} is no longer the head of {build.branch}")
+        # A head that moved after the return is not the commit Slipway
+        # confirmed, and no retry brings it back, so the build ends here and
+        # the card can be claimed again.
+        why = f"commit {commit} is no longer the head of {build.branch}"
+        return _summary(_move(ports, build, "abandoned", {"reason": why, "commit": commit}))
     ports.git.hold(project, build.branch, commit)
     card = tracker.read(build.card_key)
     pr = host.open_pull_request(build.branch, card.title or f"card {build.card_key}",
@@ -653,12 +657,18 @@ def on_wake(ports: Ports, input: Mapping) -> dict:
                                    str(project.host))
         if polled is None:
             return _summary(_deadline(ports, project, build))
-        ports.records.ingest_poll(build.project_id, polled)
+        fresh = ports.records.ingest_poll(build.project_id, polled)
         kind = polled["kind"]
+        if kind == events.PR_SYNCHRONIZE and not fresh:
+            # This moved head was flagged on an earlier look; the hourly look
+            # still owes the deadline.
+            return _summary(_deadline(ports, project, build))
     handler = HANDLERS.get(kind)
     if handler is None:
         return _summary(build)
     build = handler(ports, project, build, pr, wake.payload)
+    if wake.slept:
+        build = _deadline(ports, project, build)
     if kind in events.GATE_KINDS:
         _seam(ports, GATE_OBSERVED, project, build, {"kind": kind, **wake.payload})
     return _summary(build)

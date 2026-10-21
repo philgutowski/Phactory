@@ -82,7 +82,7 @@ class FakeRecords:
         self.builds: dict[int, dict] = {}
         self.transitions: list[dict] = []
         self.attempt_rows: list[dict] = []
-        self.polled: list[dict] = []
+        self.polled: list[tuple] = []
         self.projects: dict[str, int] = {}
         self.crash_before: set[str] = set()
 
@@ -158,7 +158,12 @@ class FakeRecords:
         pass
 
     def ingest_poll(self, project_id, normalised):
-        self.polled.append(normalised)
+        # The store's own key for the poll path: the same change is one row.
+        key = (project_id, normalised["kind"], normalised["pr_number"],
+               normalised["head_commit"], normalised["merge_commit"])
+        if any(seen == key for seen, _ in self.polled):
+            return False
+        self.polled.append((key, normalised))
         return True
 
     # Reads for the assertions.
