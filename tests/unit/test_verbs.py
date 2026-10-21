@@ -325,3 +325,14 @@ def test_a_tracker_that_cannot_be_built_is_refused_and_audited(tmp_path):
     assert result["outcome"] == verbs.REFUSED and "tracker_credential" in result["reason"]
     assert [r["tool"] for r in w.records.audit_rows] == ["dispatch"]
     assert w.records.claims == []
+
+
+def test_an_owned_card_the_board_moved_on_still_returns_its_build(tmp_path):
+    """The board moves a card out of Ready once its branch exists; AE9 still holds."""
+    w = world(tmp_path, [ready_card("EX-1", status="In progress")])
+    build_id = w.records.seed("EX-1", "building")
+
+    result = verbs.dispatch(w.ports, SLUG, "EX-1", OPERATOR)
+
+    assert result["outcome"] == verbs.OWNED
+    assert (result["build_id"], result["state"]) == (build_id, "building")

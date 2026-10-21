@@ -190,6 +190,14 @@ def dispatch_card(ports: Ports, project: Project, card, actor: str, reason: str 
     key = str(card.key)
     out = {"project": project.slug, "key": key}
     reason = (reason or "").strip() or None
+    # Ownership first: once a build owns the card the board has moved it out
+    # of the ready status, and the caller still needs to learn which build,
+    # even when the tracker cannot be read.
+    project_id = ports.records.project_id(project.slug)
+    latest = ports.records.latest(project_id, key)
+    if latest and latest["state"] not in TERMINAL:
+        return {**out, "outcome": OWNED, **_build(latest),
+                "reason": f"build {latest['build_id']} owns card {key} in {latest['state']}"}
     if card.skipped:
         return {**out, "outcome": REFUSED,
                 "reason": f"the tracker could not be read: {card.skipped}"}
@@ -199,11 +207,6 @@ def dispatch_card(ports: Ports, project: Project, card, actor: str, reason: str 
                                    f"(it is in {card.status or 'no status'})")
         return {**out, "outcome": REFUSED, "reason": why,
                 "allowed_labels": [project.lane_label]}
-    project_id = ports.records.project_id(project.slug)
-    latest = ports.records.latest(project_id, key)
-    if latest and latest["state"] not in TERMINAL:
-        return {**out, "outcome": OWNED, **_build(latest),
-                "reason": f"build {latest['build_id']} owns card {key} in {latest['state']}"}
     if latest and latest["state"] in REOPEN_NEEDS_REASON and not reason:
         return {**out, "outcome": REFUSED, **_build(latest),
                 "reason": f"card {key}'s last build ended {latest['state']}; "

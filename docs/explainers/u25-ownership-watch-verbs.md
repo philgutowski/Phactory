@@ -40,8 +40,8 @@ AE9 is the rule seen from outside: three dispatch calls in a minute for one card
 
 `dispatch(ports, project, key, actor, reason)` reads the card from the tracker and then, in this order:
 
-1. Refuses a card that is not ready by the ready rule (`cards/contract.py`), naming the allowed labels. The rule is passed the lane labels of every other configured project, so a card labelled for two lanes is caught (the note carried from #45 on this card).
-2. Returns the owning build when the card's latest build is outside the ownership terminal set.
+1. Returns the owning build when the card's latest build is outside the ownership terminal set. This comes first because the board moves a card out of the ready status once its branch exists, and a caller asking again still learns which build owns it.
+2. Refuses a card that is not ready by the ready rule (`cards/contract.py`), naming the allowed labels. The rule is passed the lane labels of every other configured project, so a card labelled for two lanes is caught (the note carried from #45 on this card).
 3. Refuses a card whose last build ended `returned_empty` or `abandoned` when no reason is given.
 4. Refuses when the project has claimed `daily_dispatch_cap` builds since midnight UTC, naming the cap.
 5. Claims the card, carrying its declared paths and title onto the `cards` row, and starts the run.

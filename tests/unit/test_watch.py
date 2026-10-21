@@ -120,3 +120,14 @@ def test_register_declares_a_five_minute_cron():
 
     assert seen["name"] == watch.TASK and seen["on_crons"] == ["*/5 * * * *"]
     assert seen["execution_timeout"] < watch.INTERVAL
+
+
+def test_the_installed_sdk_takes_the_options_register_passes():
+    """The fake above accepts any keyword, so check the names against the real SDK."""
+    import inspect
+
+    from hatchet_sdk import Hatchet
+
+    accepted = inspect.signature(Hatchet.task).parameters
+    for name in ("name", "on_crons", "input_validator", "execution_timeout", "retries"):
+        assert name in accepted, name
