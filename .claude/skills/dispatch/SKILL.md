@@ -40,7 +40,7 @@ fetch() {
   while :; do
     page=$(gh api "repos/$REPO/$2&per_page=100&page=$n") || { echo "fetch of $1 page $n failed" >&2; return 1; }
     [ "$(printf %s "$page" | tr -d '[:space:]')" = "[]" ] && break
-    [ $n -gt 1 ] && echo "," >> "$S/$1.json"; echo "$page" >> "$S/$1.json"; n=$((n + 1))
+    [ $n -gt 1 ] && echo "," >> "$S/$1.json"; printf '%s\n' "$page" >> "$S/$1.json"; n=$((n + 1))
   done
   echo "]" >> "$S/$1.json"
 }
