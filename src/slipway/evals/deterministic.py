@@ -240,7 +240,7 @@ def reports(log: str) -> list[Report]:
 def _names(test: str, report_id: str) -> bool:
     """Whether a report line is about the named test.
 
-    A named file matches every report under it, and a named test id matches
+    A named directory or file matches every report under it, and a named test id matches
     itself, its parametrised cases, and the tests under a named class. A log
     that prints paths from a parent directory still matches by suffix.
     """
@@ -248,8 +248,17 @@ def _names(test: str, report_id: str) -> bool:
     if "::" not in test:
         report_id = report_id.split("::", 1)[0]
     starts = [report_id] + [report_id[i + 1:] for i, c in enumerate(report_id) if c == "/"]
-    return any(start == test or start.startswith((test + "[", test + "::"))
+    folder = test.rstrip("/") + "/"
+    return any(start == test or start.startswith((test + "[", test + "::", folder))
                for start in starts)
+
+
+def _in_tree(file: str, tree: Container[str]) -> bool:
+    """Whether a named test, a file or a directory of tests, is in a tree's files."""
+    if file in tree:
+        return True
+    folder = file.rstrip("/") + "/"
+    return isinstance(tree, Iterable) and any(covers(folder, path) for path in tree)
 
 
 def _runs_item(block: Block | None, gate: Gate | None, tree: Container[str] | None
@@ -261,7 +270,7 @@ def _runs_item(block: Block | None, gate: Gate | None, tree: Container[str] | No
         return Item("runs", NONE_NAMED, detail)
     test = block.test
     file = _clean(test.split("::", 1)[0])
-    if tree is not None and file not in tree:
+    if tree is not None and not _in_tree(file, tree):
         return Item("runs", FAIL, {"test": test,
                                    "reason": "the named test file is not in the landed tree"})
     if gate is None or gate.log is None:
@@ -374,7 +383,7 @@ def check_card(draft, project, base_tree: Container[str],
             notes.append("good is absent: the judged score will record no rubric")
         if block.test:
             file = _clean(block.test.split("::", 1)[0])
-            if file not in base_tree and not any(covers(e, file) for e in block.paths):
+            if not _in_tree(file, base_tree) and not any(covers(e, file) for e in block.paths):
                 missing.append(f"the named test {file} is not in the base tree and not in "
                                "the card's paths")
         else:

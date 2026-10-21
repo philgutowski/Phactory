@@ -37,7 +37,7 @@ runs    the named test ran and passed   pass | fail (why) | none named | not rea
 
 **paths** compares every file the landed change touches with the card's `paths`. An entry covers a file when it is the file, a directory above it (with or without a trailing slash), or a glob that matches it (a glob is a path pattern in which `*` and `?` stand for any characters and `[...]` for any one of a set). Any file no entry covers fails the item, and the record lists those files beside the declared paths.
 
-**runs** reads the gate log for the test the card names (AE7). The test can be a file (`tests/test_page.py`) or a test id (`tests/test_page.py::test_renders`). It fails when:
+**runs** reads the gate log for the test the card names (AE7). The test can be a directory of tests (`tests/unit`), a file (`tests/test_page.py`), or a test id (`tests/test_page.py::test_renders`). It fails when:
 
 - the landed tree does not hold the named file, when the tree was read;
 - the log holds no report line for it ("not in the gate's log");
@@ -55,7 +55,7 @@ A passing runs item records `passed_reports`, the number of report lines that sa
 `score_deterministic` only reads:
 
 - **The card**, from the tracker, parsed by `cards.contract.parse`, the parser the ready rule uses. A card the tracker cannot read scores `paths` and `runs` as `not read`.
-- **The diff**, from Slipway's own bare cache through `gitread`: the files the confirmed commit changes since the point where it meets the landing branch just before the merge (the merged commit's first parent). A branch that merged `main` in partway is scored on its own changes, not on the other cards it brought along.
+- **The diff**, from Slipway's own bare cache through `gitread`: the files the confirmed commit changes since the point where it meets the landing branch just before the merge (the merged commit's first parent). A branch that merged `main` in partway is scored on its own changes, not on the other cards it brought along, whether the host squashed it, merged it, or rebased it (a rebased copy is never an ancestor of the confirmed commit, so the merge base is still the last `main` commit the branch took in).
 - **The landed tree**, the files of the merged commit, from the same cache.
 - **The gate**, from the host adapter's `gate_run(commit)` when the adapter has one, for the tested commit on a queue path and the confirmed commit otherwise. It returns the conclusion and the log.
 

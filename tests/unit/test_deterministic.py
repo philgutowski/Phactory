@@ -287,8 +287,13 @@ class StepPorts:
         return self.host_adapter
 
 
-def landed_repo(tmp_path):
-    """main with a seed, a branch that changes two files and merges main in, squashed."""
+def landed_repo(tmp_path, how="squash"):
+    """main with a seed, a branch that changes two files and merges main in, then landed.
+
+    how is "squash" (one new commit on main) or "rebase" (the branch's own
+    commits replayed onto main, which has moved again since the branch
+    merged it).
+    """
     repo = make_repo(tmp_path)
     base = repo.git("rev-parse", "HEAD")
     repo.git("checkout", "-q", "-b", "card")
@@ -299,8 +304,15 @@ def landed_repo(tmp_path):
     repo.git("merge", "-q", "--no-edit", "main")
     confirmed = repo.commit("tests/test_page.py", "test\n", "test")
     repo.git("checkout", "-q", "main")
-    repo.git("merge", "-q", "--squash", "card")
-    repo.git("commit", "-q", "-m", "EX-12 squashed")
+    if how == "squash":
+        repo.git("merge", "-q", "--squash", "card")
+        repo.git("commit", "-q", "-m", "EX-12 squashed")
+    else:
+        repo.commit("docs/third.md", "a third card\n", "a third card lands")
+        repo.git("checkout", "-q", "-b", "replayed", "card")
+        repo.git("rebase", "-q", "main")
+        repo.git("checkout", "-q", "main")
+        repo.git("merge", "-q", "--ff-only", "replayed")
     return repo, base, confirmed, repo.git("rev-parse", "HEAD")
 
 
@@ -319,6 +331,26 @@ def test_the_step_scores_the_landed_build_from_git_and_the_gate_and_writes_the_r
     assert (build_id, kind) == (7, "deterministic")
     # The other card's file came in through the merge of main and is not counted.
     assert result["paths"] == {"status": PASS, "files": 2}
+
+
+def test_a_rebase_landing_scores_the_branch_on_its_own_changes(tmp_path):
+    repo, base, confirmed, merged = landed_repo(tmp_path, "rebase")
+    build = {**BUILD, "confirmed_commit": confirmed}
+    records = StepRecords({"dispatched": {"base": base}, "landed": {"merged": merged}})
+    ports = StepPorts(records, StepGit(repo.work), FakeCard(body=CARD), object())
+    steps.score_deterministic(SeamContext(POST_LANDED, PROJECT, build, ports))
+    [(_, _, result)] = records.written
+    assert result["paths"] == {"status": PASS, "files": 2}
+
+
+def test_a_named_test_directory_counts_as_present_when_the_tree_has_files_under_it():
+    card = body('{"test": "tests/unit", "paths": ["tests/unit/"]}')
+    tree = {"tests/unit/test_page.py", "src/page.py"}
+    log = "PASSED tests/unit/test_page.py::test_renders\n"
+    assert score(BUILD, None, green(log), parse(card), tree=tree).runs.status == PASS
+    assert score(BUILD, None, green(log), parse(card), tree={"src/page.py"}).runs.status == FAIL
+    draft = FakeCard(body=body('{"test": "tests/unit", "lane": "cloud"}'))
+    assert check_card(draft, PROJECT, base_tree=tree).would_dispatch
 
 
 def test_the_step_records_not_read_for_a_host_with_no_gate_reader(tmp_path):
