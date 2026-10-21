@@ -269,6 +269,17 @@ def test_external_lander_with_no_merge_commit_from_the_host_reads_the_tip(tmp_pa
     assert v.evidence["merged"] == tip
 
 
+def test_external_lander_with_no_merge_commit_and_a_later_card_names_the_landers_push(
+        tmp_path):
+    card = Landing(tmp_path)
+    pushed = lander_merges(card)
+    card.repo.commit("other.txt", "the feeder's next card\n", "sibling card after")
+    card.repo.git("push", "-q", "origin", "main")
+    v = card.verify(None, path=LandingPath.EXTERNAL_LANDER)
+    assert v.outcome == verify.LANDED
+    assert v.evidence["merged"] == pushed != v.evidence["branch_tip"]
+
+
 def test_external_lander_that_changed_the_cards_files_is_commit_mismatch(tmp_path):
     card = Landing(tmp_path)
     merged = lander_merges(card, change="b = 999\n")

@@ -45,7 +45,9 @@ cards may reach the branch between the build's base and that push, such as
 a feeder's, so the relation is plain_merge's: the commit the lander pushed
 carries exactly the confirmed changes on top of its first parent. A host
 that marks a pull request merged by an outside push may give no merge
-commit, so merged falls back to the branch tip when the host gave none.
+commit, so when the host gave none merged is the first commit on the
+branch's first parent line that holds the confirmed commit (landed_at),
+not the tip, which may already carry a later card.
 
 The outcome is one of:
 
@@ -173,6 +175,18 @@ def hand_landing(repo: Path, baseline: str, merged: str, card_key: str) -> str |
     return None
 
 
+def landed_at(repo: Path, baseline: str, confirmed: str, tip: str) -> str:
+    """The first commit on the branch's first parent line that holds confirmed.
+
+    That is the lander's push when the host named no merge commit; a commit
+    another lander pushed after it is never taken for it. The tip when no
+    commit since baseline holds confirmed, so the relation then fails.
+    """
+    line = gitread.run(repo, "rev-list", "--first-parent", "--reverse",
+                       f"{baseline}..{tip}").split()
+    return next((c for c in line if gitread.is_ancestor(repo, confirmed, c)), tip)
+
+
 def verify(repo, baseline, confirmed, tested, merged, card_key,
            tracker_status: TrackerStatus, landing_path, *, tested_head=None,
            branch=None) -> Verdict:
@@ -199,7 +213,7 @@ def verify(repo, baseline, confirmed, tested, merged, card_key,
         tip = gitread.rev_parse(repo, f"refs/heads/{branch}")
         run.evidence.update(branch=branch, branch_tip=tip)
         if landing_path == LandingPath.EXTERNAL_LANDER and not merged:
-            merged = run.evidence["merged"] = tip
+            merged = run.evidence["merged"] = landed_at(repo, baseline, confirmed, tip)
         _commits(repo, run, baseline, confirmed, tested, tested_head, merged, tip,
                  relation, branch)
         run.evidence["hand_landing"] = hand_landing(repo, baseline, merged, card_key)

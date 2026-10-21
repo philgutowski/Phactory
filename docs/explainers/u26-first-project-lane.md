@@ -12,6 +12,9 @@ The first project Slipway runs is not shaped like Slipway's own repository. Its 
 - **Worktree.** A second working folder of one git repository. It has its own checked out branch and its own files, and it shares the repository's commits with the main folder.
 - **Shared checkout.** The clone on the laptop that the operator and other sessions already work in. It must stay on its own branch with its own uncommitted files.
 - **Namespace.** The fixed text a branch name starts with, such as `slipway/`, that a machine identity's push rule holds the builder to (KTD6).
+- **Umask.** A process's setting that decides which permissions the files it creates get; the common default leaves a new file writable by its owner alone.
+- **Detached.** A checkout that sits on a commit rather than on a branch, so a new commit there moves no branch until one is created.
+- **Upstream.** The remote branch a local branch pushes to and pulls from, so a plain `git push` knows where to go.
 
 ## What each file does
 
@@ -29,7 +32,7 @@ The first project Slipway runs is not shaped like Slipway's own repository. Its 
 
 No host setting reveals an outside lander, so the landing probe never finds this value live. It comes only from the project file, which `landing_from` and `pinned_landing` (in `hosts/base.py`) already put in place of whatever the probe reads. On Bitbucket the probe needs both `landing_path` and `merge_method` pinned, so a Bitbucket project on this path still names the lander's merge method.
 
-Verify checks this path by the relation of the plain merge path, not the auto merge one. The card first named the auto merge relation, the base tip's tree equal to the confirmed tree, but the first project's own feeder lands other cards on main all day, so that relation would halt nearly every faithful landing as `commit_mismatch`. The plain merge relation folds in whatever reached the branch meanwhile: the tree of the commit the lander pushed must equal the tree git gets by merging the confirmed commit into that commit's first parent. A host that marks a pull request merged by an outside push may give no merge commit, so verify falls back to the base tip for `merged` when the host gave none. A lander that changed the card's files on the way is `commit_mismatch`, the same halt every other path uses.
+Verify checks this path by the relation of the plain merge path, not the auto merge one. The card first named the auto merge relation, the base tip's tree equal to the confirmed tree, but the first project's own feeder lands other cards on main all day, so that relation would halt nearly every faithful landing as `commit_mismatch`. The plain merge relation folds in whatever reached the branch meanwhile: the tree of the commit the lander pushed must equal the tree git gets by merging the confirmed commit into that commit's first parent. A host that marks a pull request merged by an outside push may give no merge commit, so when the host gave none verify names the lander's push itself: the first commit on the base branch's first parent line that holds the confirmed commit (`landed_at`). The tip is not used, because the feeder may already have landed a later card on top of it. A lander that changed the card's files on the way is `commit_mismatch`, the same halt every other path uses.
 
 ## Branch names and titles
 
@@ -55,9 +58,9 @@ A template without `{build}` gives every build of one card the same branch. When
 
 `checkout = "worktree"` in the project file, and a `LaptopBuilder` made with `checkout="worktree"` and `shared=<path of the shared checkout>`, run each session in its own worktree instead of a fresh clone:
 
-Every git call on the shared checkout runs as the session user through sudo, as the session itself does, so the worktree's files and git's record of it under the shared `.git` belong to the user that writes them and later removes them. The worker's umask never decides who may write a file the session needs.
+Every git call on the shared checkout runs as the session user through sudo, as the session itself does, so the worktree's files and git's record of it under the shared `.git` belong to the user that writes them and later removes them. The worker's umask never decides who may write a file the session needs. Every one of those calls, and the session's own git, also sets `core.sharedRepository=group`, so an object folder the session user adds under the shared `.git` stays writable by the group and the operator's own git can still write beside it.
 
-1. Before the session, the worker notes whether the shared checkout already has a local branch of the card's name, fetches the card's branch into the shared checkout (the fetch writes only objects and `FETCH_HEAD`), and adds `workspace/repo` as a worktree at the base commit, detached.
+1. Before the session, the worker notes whether the shared checkout already has a local branch of the card's name, fetches the card's branch into the shared checkout (with `--no-write-fetch-head`, so the fetch writes only objects and never the operator's own `FETCH_HEAD`), and adds `workspace/repo` as a worktree at the base commit, detached.
 2. The session script (`WORKTREE_SCRIPT`) marks the two folders safe for its own git, sets the remote and the branch's upstream through git's environment config (`GIT_CONFIG_COUNT` and its keys), which only this session reads, and creates the card's branch with `git switch --create`. A plain `git push` then reaches the card's branch. Nothing is written to the shared checkout's configuration.
 3. On release, `git worktree remove --force` removes the worktree and its record together, the workspace is removed, `git worktree prune` drops any record a failed remove left, and the local branch the session made is deleted.
 

@@ -158,15 +158,18 @@ exec claude -p --session-id "$SLIPWAY_SESSION_ID" --model "$SLIPWAY_MODEL" \\
 # the session marks both folders safe for its own git (they belong to other
 # users), switches to the card's branch, and sets the branch's remote and
 # upstream through git's environment config, which only this session reads.
+# core.sharedRepository=group makes every object folder it adds writable by
+# the group, so the operator's own git can still write beside it.
 WORKTREE_SCRIPT = SESSION_SCRIPT.replace(
     'git clone --quiet --branch "$SLIPWAY_BRANCH" "$SLIPWAY_REMOTE" "$SLIPWAY_REPO"\n'
     'cd "$SLIPWAY_REPO"\n',
     'git config --global --add safe.directory "$SLIPWAY_SHARED"\n'
     'git config --global --add safe.directory "$SLIPWAY_REPO"\n'
-    'export GIT_CONFIG_COUNT=3 GIT_CONFIG_KEY_0=remote.slipway.url \\\n'
+    'export GIT_CONFIG_COUNT=4 GIT_CONFIG_KEY_0=remote.slipway.url \\\n'
     '  GIT_CONFIG_VALUE_0="$SLIPWAY_REMOTE" GIT_CONFIG_KEY_1="branch.$SLIPWAY_BRANCH.remote" \\\n'
     '  GIT_CONFIG_VALUE_1=slipway GIT_CONFIG_KEY_2="branch.$SLIPWAY_BRANCH.merge" \\\n'
-    '  GIT_CONFIG_VALUE_2="refs/heads/$SLIPWAY_BRANCH"\n'
+    '  GIT_CONFIG_VALUE_2="refs/heads/$SLIPWAY_BRANCH" \\\n'
+    '  GIT_CONFIG_KEY_3=core.sharedRepository GIT_CONFIG_VALUE_3=group\n'
     'cd "$SLIPWAY_REPO"\n'
     'git switch --quiet --create "$SLIPWAY_BRANCH"\n',
 )
@@ -848,7 +851,7 @@ class LaptopBuilder(_Sessions):
         keep = ",".join(sorted(env))
         argv = ["git", "-c", "core.hooksPath=/dev/null", "-c",
                 f"credential.helper={CREDENTIAL_HELPER}", "-c", f"safe.directory={self.shared}",
-                "-C", str(self.shared), *args]
+                "-c", "core.sharedRepository=group", "-C", str(self.shared), *args]
         return self.run(["sudo", "--non-interactive", "--user", self.session_user,
                          f"--preserve-env={keep}", "--", *argv], check=check, env=env)
 
@@ -863,7 +866,10 @@ class LaptopBuilder(_Sessions):
         state = self._state(session_ref)
         state["shared_branch_existed"] = found.returncode == 0
         self._save(session_ref, state)
-        self._shared_git(session_ref, "fetch", "--quiet", self.git.remote,
+        # --no-write-fetch-head: FETCH_HEAD may be the operator's own file,
+        # which the session user cannot write.
+        self._shared_git(session_ref, "fetch", "--quiet", "--no-write-fetch-head",
+                         self.git.remote,
                          f"refs/heads/{handoff.branch}")
         self._shared_git(session_ref, "worktree", "add", "--quiet", "--detach", str(repo),
                          handoff.base)
