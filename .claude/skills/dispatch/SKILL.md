@@ -34,13 +34,18 @@ Work from a clean checkout of `main` with the environment from `CLAUDE.md` set u
 REPO=philgutowski/slipway
 S=$(mktemp -d)
 # Page by number: the proxy refuses the repositories/<id> links --paginate follows.
-for kind in "issues?state=all" "pulls?state=open" "branches?"; do
-  name=${kind%%\?*}; n=1; echo "[" > "$S/$name.json"
-  while page=$(gh api "repos/$REPO/$kind&per_page=100&page=$n") && [ "$page" != "[]" ]; do
-    [ $n -gt 1 ] && echo "," >> "$S/$name.json"; echo "$page" >> "$S/$name.json"; n=$((n + 1))
+# A failed page stops the run, so the ready rule never reads a short board.
+fetch() {
+  n=1; echo "[" > "$S/$1.json"
+  while :; do
+    page=$(gh api "repos/$REPO/$2&per_page=100&page=$n") || { echo "fetch of $1 page $n failed" >&2; return 1; }
+    [ "$page" = "[]" ] && break
+    [ $n -gt 1 ] && echo "," >> "$S/$1.json"; echo "$page" >> "$S/$1.json"; n=$((n + 1))
   done
-  echo "]" >> "$S/$name.json"
-done
+  echo "]" >> "$S/$1.json"
+}
+fetch issues "issues?state=all" && fetch pulls "pulls?state=open" && fetch branches "branches?" \
+  || echo "board fetch failed: stop and retry, do not dispatch" >&2
 git fetch origin main
 BASE=$(git rev-parse origin/main)
 ```
