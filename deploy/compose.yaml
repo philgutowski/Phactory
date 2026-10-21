@@ -31,7 +31,8 @@ services:
       hatchet-postgres:
         condition: service_healthy
     ports:
-      # Dashboard and REST API: loopback only, reached over an SSH tunnel.
+      # Dashboard and REST API: bound to loopback (the VPS's own 127.0.0.1,
+      # unreachable from outside), reached over an SSH tunnel.
       - "127.0.0.1:8888:8888"
       # gRPC, the one public Hatchet listener, for the laptop worker (KTD28).
       - "7077:7077"
@@ -48,8 +49,10 @@ services:
       SERVER_GRPC_BROADCAST_ADDRESS: ${HATCHET_GRPC_BROADCAST_ADDRESS:?the public host:7077 workers dial}
       SERVER_INTERNAL_CLIENT_INTERNAL_GRPC_BROADCAST_ADDRESS: localhost:7077
       # The spike ran with "t". TLS on the public gRPC port is the deploy
-      # card's to finish (KTD28); until then leave this "t" only behind a
-      # firewall that admits the laptop's address alone.
+      # card's to finish (KTD28): with this unset the engine expects TLS, and
+      # this seed names no certificate settings yet, so it boots only with
+      # HATCHET_GRPC_INSECURE=t until that card adds them. Leave it "t" only
+      # behind a firewall that admits the laptop's address alone.
       SERVER_GRPC_INSECURE: ${HATCHET_GRPC_INSECURE:-f}
       # Replaces the built in admin@example.com account on first boot. The
       # spike proved these two names, not the SEED_ prefixed ones.
