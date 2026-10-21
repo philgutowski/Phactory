@@ -252,6 +252,8 @@ def coerce(ports: Ports, question: Question, value, draft: Mapping):
             raise Refused("must be a whole number of at least 1")
         return number
     if question.kind == YES_NO:
+        if not isinstance(value, (str, bool)):
+            raise Refused("answer yes or no")
         word = {True: YES, False: NO}.get(value, str(value).strip().lower())
         word = {"y": YES, "n": NO, "true": YES, "false": NO}.get(word, word)
         if word not in (YES, NO):

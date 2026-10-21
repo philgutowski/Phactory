@@ -202,6 +202,18 @@ def test_terminal_takes_a_choice_by_number(world):
     assert answers["host_credential"] == "example-bitbucket"
 
 
+def test_a_bare_board_number_is_the_board_not_a_choice(world):
+    lines = [GITHUB[q.id] for q in QUESTIONS[:6]] + ["2"]
+    terminal.run(world.ports, SLUG, OPERATOR, scripted(lines), [].append)
+    assert machine.status(world.ports, SLUG)["answers"]["board"] == "2"
+
+
+def test_a_yes_no_answer_of_the_wrong_type_is_refused(world):
+    machine.start(world.ports, SLUG, OPERATOR)
+    result = machine.answer(world.ports, SLUG, "other_dispatcher", ["yes"], OPERATOR)
+    assert result["outcome"] == machine.REFUSED
+
+
 def test_the_project_file_appears_only_once_whole(world):
     machine.start(world.ports, SLUG, OPERATOR)
     for qid in ("host", "repository", "host_credential"):

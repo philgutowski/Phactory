@@ -4,6 +4,7 @@ Onboarding is how a project gets its project file without anyone writing it by h
 
 ## Words used below
 
+- **MCP.** The Model Context Protocol, the tool protocol an agent calls Slipway through (U18).
 - **State machine.** Code whose next step depends only on what has been saved so far. Here the saved state is the answers, the attestations, and the last check results; every call reads them, decides what comes next, and saves them again.
 - **Session.** One project's onboarding. Its id is the project's slug, so there is one session per project and a dropped one resumes where it stopped.
 - **Operator only question.** A question only the operator's subject (the stable user id in the operator's token) may answer, because its answer moves spend, widens access, or names the operator's accounts (KTD15).

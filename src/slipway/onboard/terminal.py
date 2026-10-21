@@ -9,8 +9,9 @@ and the MCP server ask the same questions in the same order (AE8).
 
 What the operator types:
 
-- a choice's number or the choice itself; a free text answer where the
-  question takes one
+- a choice's number or the choice itself where only the choices are
+  taken; where free text is taken too, the choice or the answer as text,
+  since a number may be an answer of its own (a GitHub Projects board)
 - for a list, the entries separated by commas (numbers work here too)
 - an empty line for the default, or to leave an optional key out
 
@@ -40,13 +41,22 @@ DSN_VARIABLE = "SLIPWAY_DSN"
 BUILDERS = ("cli", "managed_agents")
 
 
+def _numbered(question: dict) -> bool:
+    """Whether a typed number names a choice: only where free text is not taken.
+
+    Where it is, a number is a legitimate answer of its own (a GitHub
+    Projects board can be a bare number), so the choice is typed as text.
+    """
+    return bool(question["choices"]) and not question["free_text"]
+
+
 def _pick(question: dict, line: str):
     """The answer a typed line means: numbers name choices, a list splits on commas."""
     offered = question["choices"]
 
     def one(text: str) -> str:
         text = text.strip()
-        if text.isdigit() and offered and 1 <= int(text) <= len(offered):
+        if _numbered(question) and text.isdigit() and 1 <= int(text) <= len(offered):
             return offered[int(text) - 1]
         return text
 
@@ -61,8 +71,11 @@ def show_question(question: dict, write: Callable[[str], None]) -> None:
         write(f"  Note: {question['note']}")
     write(question["text"])
     write(f"  Why: {question['why']}")
-    for number, choice in enumerate(question["choices"], 1):
-        write(f"  {number}. {choice}")
+    if _numbered(question):
+        for number, choice in enumerate(question["choices"], 1):
+            write(f"  {number}. {choice}")
+    elif question["choices"]:
+        write(f"  Choices: {', '.join(question['choices'])}, or type your own.")
     if question["default"] is not None:
         write(f"  Default: {question['default']}")
     elif not question["required"]:
