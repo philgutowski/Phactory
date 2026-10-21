@@ -48,13 +48,13 @@ python -m factory.handoff ready --issues "$S/issues.json" --pulls "$S/pulls.json
   --branches "$S/branches.json" --assume-done U2 --assume-done U4
 ```
 
-It prints every open cloud card with `ready` true or the reasons it is not: a dependency still open, a branch already there, a declared file in flight on another card. `--assume-done U2 --assume-done U4` name the operator spikes whose findings are recorded while their issues stay open: U2's in `docs/spikes/merge-paths.md` (steps 4 to 6 open), which U9 needs, and U4's in `docs/spikes/hatchet.md` (step 1, VPS sizing, open), which U14 needs; add another unit only when its findings are recorded the same way, and say so in the issue comment.
+It prints every open cloud card with `ready` true or the reasons it is not: a dependency still open, a branch already there, a declared file in flight on another card. `--assume-done U2 --assume-done U4` name the operator spikes whose findings are recorded while their issues stay open: U2's in `docs/spikes/merge-paths.md` (steps 4 to 6 open), which U9 needs, and U4's in `docs/spikes/hatchet.md` (step 1, sizing on the rented server, open), which U14 needs; add another unit only when its findings are recorded the same way, and say so in the issue comment.
 
 ## 3. Choose, within the caps
 
 - At most **three** cards in flight at once (open pull requests from `slipway/` branches plus sessions started this run). Each in flight card holds its declared files, and each pull request that lands moves `main` under the others, so more in flight means more rebases and more held files, not faster landing.
 - At most **two** new dispatches per run.
-- Prefer, in order: a plan unit on the critical path in the order of "Reorder of 2026-10-21" in the plan (U14, then U25, then U26, U19, U21, U20, U16, U27, then U12, U18, U15, U17, U22, U23), then follow ups oldest first.
+- Prefer, in order: a plan unit on the critical path in the order of "Reorder of 2026-10-21" in the plan (U14, then U25, then U26, U19, U21, U20, U16, U27, U28, U29, then U12, U18, U15, U17, U22, U23), then follow ups oldest first.
 - Skip a card whose issue has a comment from the operator saying to hold it.
 - Two cards chosen in the same run must not share a declared path. The ready rule checks each card only against the cards already in flight, so check the chosen pair against each other and take the next card down when they overlap.
 
