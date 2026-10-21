@@ -778,7 +778,8 @@ def test_launchd_plist_supervises_the_worker():
     assert plist["KeepAlive"] is True and plist["RunAtLoad"] is True
     assert plist["UserName"] == "SLIPWAY_WORKER_USER"  # replaced at install
     command = plist["ProgramArguments"][-1]
-    assert "$SLIPWAY_WORKER_COMMAND" in command and ".slipway-worker.env" in command
+    assert "python -m slipway.workflow.laptop" in command
+    assert ".slipway-worker.env" in command
     assert "EnvironmentVariables" not in plist
 
 

@@ -246,7 +246,7 @@ def test_a_laptop_build_with_desktop_records_tools_granted_and_names_it_in_the_h
     given = []
 
     def laptop_run(input, label):
-        def session(handoff, _binding):
+        def session(handoff, _binding, _project):
             given.append(handoff)
             return LaptopReturn(cards.result(handoff.branch, "laptop-session"), "", 0)
         return card.laptop_build(card.LaptopPorts(session, cards.clock), input)
