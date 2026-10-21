@@ -25,23 +25,28 @@ one next step (AE6, AE13), so the operator always has a single thing to do.
 A Probe is onboard's view of the adapters. Its listing methods offer live
 choices (boards, labels, statuses, builders) for a draft, the answers so far
 as a dict; its reading methods take the project as saved. The tests pass a
-fake. LiveProbe wires what the U8 and U9 adapters can read today and
-answers None for the rest, so a live onboarding finishes on attestations
-until the adapters learn to read rulesets, branch permissions, and the
-board's own movement (see the U19 explainer).
+fake. LiveProbe reads all of it from the host and tracker adapters (U28):
+the repository, the board, the required check, the machine identity's
+restriction, and the board moving on a scratch branch and pull request. A
+read the host cannot answer at all still answers None, and onboard asks the
+operator to attest that part, as U19 built it (see the U28 explainer).
 
 Nothing here runs a project's command (KTD18): the gate command is text in
 the project file, and the gate runs on the project's own host.
 """
 
+import os
+import subprocess
+import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Protocol
 
-from slipway.config.bindings import BindingInvalid
+from slipway.config.bindings import BindingInvalid, ResolvedTrackerCredential
 from slipway.config.operator import Host
-from slipway.config.project import Project, Tracker, branch_namespace
+from slipway.config.project import Project, Tracker, branch_namespace, render_branch
 from slipway.hosts.base import HostError, Landing, ProbeUndetermined
+from slipway.trackers.base import SCRATCH_TITLE
 
 DURABLE_STATE = "durable_state"
 EXTERNAL_GATE = "external_gate"
@@ -305,60 +310,323 @@ def stale(probe: Probe, project: Project, accounts) -> dict[str, str]:
     return found
 
 
-class LiveProbe:
-    """The probe over the adapters U8 and U9 built.
+# The board movement check (KTD27). The scratch base sits in the namespace,
+# under a name that carries no card key, so creating it moves nothing; the
+# scratch branch is the project's own branch template rendered for the
+# scratch card, so the board's automation finds the card exactly as it will
+# for a real one.
+SCRATCH_BASE = "onboard-scratch-base"
+SCRATCH_BUILD = "scratch"
+# How long to wait for each move, and how often to read the board meanwhile.
+MOVE_WAIT_SECONDS = 180
+MOVE_POLL_SECONDS = 5
 
-    It reads the tracker (the adapter's ready list) and the landing path (the
-    host adapter's probe). The adapters cannot yet list boards or labels,
-    read a ruleset's restrictions or required checks, or watch the board
-    move, so those answer None and onboard asks the operator to attest them.
+# What a read of an adapter can raise when a credential, a repository, or the
+# host itself is not right. Each becomes a failed read with its reason.
+READ_ERRORS = (BindingInvalid, HostError, ValueError, OSError, subprocess.SubprocessError)
+
+
+@dataclass(frozen=True)
+class Draft:
+    """The fields a tracker adapter reads, taken from onboarding's answers so far.
+
+    Listings run before the project file exists, so LiveProbe builds the
+    adapter from this instead of a Project. Fields not answered yet are
+    empty, and an adapter lists what it can without them.
+    """
+
+    slug: str = ""
+    repository: str = ""
+    board: str = ""
+    lane_label: str = ""
+    ready_status: str = ""
+    landed_status: str = ""
+
+    @classmethod
+    def of(cls, draft: Mapping) -> "Draft":
+        return cls(**{name: str(draft.get(name) or "") for name in cls.__dataclass_fields__})
+
+
+class LiveProbe:
+    """The probe over the host and tracker adapters (U8, U9, U28).
+
+    tracker_for and host_for build the adapters for a saved project.
+    draft_tracker_for builds a tracker for listings from the answers so far;
+    by default it builds the real adapter from the draft and the operator
+    file's tracker credential. scratch_for builds the scratch card class for
+    a project (GitHubScratch or JiraScratch by default). sleep and clock pace
+    the board movement check, so tests pass fakes and never wait.
+
+    An adapter that has no read for a property (one built before U28, or a
+    fake) answers None for it, the same as a host that cannot answer.
     """
 
     def __init__(self, operator, tracker_for: Callable, host_for: Callable,
-                 builders: tuple[str, ...] = ()):
+                 builders: tuple[str, ...] = (), draft_tracker_for: Callable | None = None,
+                 scratch_for: Callable | None = None, sleep: Callable = time.sleep,
+                 clock: Callable = time.monotonic, wait_seconds: float = MOVE_WAIT_SECONDS,
+                 poll_seconds: float = MOVE_POLL_SECONDS, environ: Mapping | None = None):
         self._operator = operator
         self._tracker_for = tracker_for
         self._host_for = host_for
         self._builders = tuple(builders)
+        self._draft_tracker_for = draft_tracker_for or self._real_draft_tracker
+        self._scratch_for = scratch_for or _real_scratch
+        self._sleep = sleep
+        self._clock = clock
+        self._wait = wait_seconds
+        self._poll = poll_seconds
+        self._environ = os.environ if environ is None else environ
+        # Projects whose board was seen moving in this process, so a recheck
+        # of another property does not open a second scratch pull request.
+        self._moved: dict[tuple, Moves] = {}
 
     def builders(self) -> tuple[str, ...]:
         return self._builders
 
+    # Listings for the draft.
+    def _real_draft_tracker(self, draft: Mapping):
+        if draft.get("tracker") == Tracker.GITHUB_PROJECTS.value:
+            from slipway.trackers.github import GitHubTracker
+
+            return GitHubTracker(Draft.of(draft))
+        from slipway.trackers.jira import JiraTracker
+
+        return JiraTracker(Draft.of(draft), credential=self._draft_credential(draft))
+
+    def _draft_credential(self, draft: Mapping) -> ResolvedTrackerCredential:
+        name = str(draft.get("tracker_credential") or "")
+        entry = self._operator.tracker_credentials.get(name)
+        if entry is None:
+            raise BindingInvalid("tracker_credential", f"{name!r} is not in the operator file")
+
+        def value(env: str | None, key: str) -> str | None:
+            if env is None:
+                return None
+            found = self._environ.get(env, "")
+            if not found:
+                raise BindingInvalid(f"tracker_credentials.{name}.{key}",
+                                     f"environment variable {env} is unset")
+            return found
+
+        return ResolvedTrackerCredential(site=entry.site, email=value(entry.email_env, "email_env"),
+                                         token=value(entry.token_env, "token_env"))
+
+    def _listing(self, draft: Mapping, name: str) -> tuple[str, ...]:
+        """One listing from the draft's tracker; empty when it cannot be read, so the
+        question still takes a typed answer."""
+        try:
+            read = getattr(self._draft_tracker_for(draft), name, None)
+            if read is None:
+                return ()
+            found, _reason = read()
+        except READ_ERRORS:
+            return ()
+        return tuple(found or ())
+
     def boards(self, draft) -> tuple[str, ...]:
-        return ()
+        return self._listing(draft, "boards")
 
     def labels(self, draft) -> tuple[str, ...]:
-        return ()
+        return self._listing(draft, "labels")
 
     def statuses(self, draft) -> tuple[str, ...]:
-        return ()
+        return self._listing(draft, "statuses")
+
+    # Reads of the saved project.
+    def _host(self, project, name: str):
+        """The host adapter's read named name, or None when the adapter has none."""
+        return getattr(self._host_for(project), name, None)
 
     def repository(self, project) -> Finding:
-        return Finding(None, "the host adapter has no repository read")
+        try:
+            read = self._host(project, "read_repository")
+            if read is None:
+                return Finding(None, "the host adapter has no repository read")
+            found = read()
+        except READ_ERRORS as error:
+            return Finding(False, str(error))
+        return Finding(found.ok, found.detail)
 
     def board(self, project) -> Finding:
-        return Finding(None, "the tracker adapter has no board read")
+        try:
+            read = getattr(self._tracker_for(project), "read_board", None)
+            if read is None:
+                return Finding(None, "the tracker adapter has no board read")
+            ok, detail = read()
+        except READ_ERRORS as error:
+            return Finding(False, str(error))
+        return Finding(ok, detail)
 
     def tracker(self, project) -> Finding:
         try:
             _, reason = self._tracker_for(project).ready()
-        except (BindingInvalid, HostError, ValueError, OSError) as error:
+        except READ_ERRORS as error:
             # An unset credential variable is BindingInvalid, raised while the
             # adapter is built; it is a failed read with a next step, not a crash.
             return Finding(False, str(error))
         return Finding(False, reason) if reason else Finding(True, "the ready list was read")
 
-    def board_moves(self, project) -> Moves:
-        return Moves(None, None, "the adapters cannot watch the board move yet")
-
     def required_check(self, project) -> Finding:
-        return Finding(None, "the host adapter cannot read required checks yet")
+        try:
+            read = self._host(project, "read_required_checks")
+            if read is None:
+                return Finding(None, "the host adapter cannot read required checks")
+            names = read()
+        except ProbeUndetermined as error:
+            return Finding(None, str(error))
+        except READ_ERRORS as error:
+            return Finding(False, str(error))
+        if not names:
+            return Finding(False, "no check is required on the base branch")
+        return Finding(True, "the base branch requires " + ", ".join(names))
 
     def restriction(self, project) -> Finding:
-        return Finding(None, "the host adapter cannot read rulesets or branch permissions yet")
+        try:
+            read = self._host(project, "read_restriction")
+            if read is None:
+                return Finding(None, "the host adapter cannot read rulesets or branch "
+                                     "permissions")
+            found = read(namespace(project))
+        except ProbeUndetermined as error:
+            return Finding(None, str(error))
+        except READ_ERRORS as error:
+            return Finding(False, str(error))
+        return Finding(found.ok, found.detail)
 
     def landing(self, project) -> Landing:
         return self._host_for(project).probe_landing(project)
 
     def gate_output(self, project, pr_number) -> str:
         return ""
+
+    # The board movement check (KTD27).
+    def board_moves(self, project) -> Moves:
+        """Watch the board move a scratch card on a scratch branch and pull request.
+
+        A crashed run's leftovers go first. Then the scratch card is filed, a
+        scratch base is created at the base branch's parent commit and the
+        scratch branch at its head, so the pull request between them has one
+        commit and needs no commit written. The board is read until the card
+        shows each status or the wait ends. Whatever happens, the pull
+        request is closed, both branches deleted, and the card closed.
+        Nothing here runs project code (KTD18).
+        """
+        prefix = branch_namespace(project.branch_template)
+        if not prefix:
+            return Moves(None, None, "the branch template has no fixed prefix to hold "
+                                     "scratch branches")
+        seen = self._moved.get(_fingerprint(project))
+        if seen is not None:
+            return seen
+        try:
+            host = self._host_for(project)
+            tracker = self._tracker_for(project)
+            scratch = self._scratch_for(project)
+        except READ_ERRORS as error:
+            return Moves(None, None, f"the adapters could not be built: {error}")
+        needed = ("base_commits", "create_branch", "open_pull_request", "branches",
+                  "delete_branch", "open_pull_requests", "close_pull_request")
+        if scratch is None or not all(hasattr(host, name) for name in needed):
+            return Moves(None, None, "the adapters cannot watch the board move")
+        run = _ScratchRun(project, host, tracker, scratch, prefix)
+        try:
+            run.sweep()
+            moves = run.watch(self._await)
+        except READ_ERRORS as error:
+            moves = Moves(None, None, f"the scratch run failed: {error}")
+        finally:
+            try:
+                run.sweep()
+            except READ_ERRORS as error:
+                moves = Moves(None, None, f"the scratch run could not clean up: {error}")
+        if moves.in_progress and moves.in_review:
+            self._moved[_fingerprint(project)] = moves
+        return moves
+
+    def _await(self, tracker, key: str, wanted: str) -> tuple[bool, str | None]:
+        """Read the card's status until it is wanted or the wait ends: (moved, last status)."""
+        deadline = self._clock() + self._wait
+        last = None
+        while True:
+            last = tracker.status(key).status
+            if last and last.lower() == wanted.lower():
+                return True, last
+            if self._clock() >= deadline:
+                return False, last
+            self._sleep(self._poll)
+
+
+def _fingerprint(project) -> tuple:
+    """What the board movement check's answer depends on."""
+    return (project.host, project.repository, project.host_credential, project.tracker,
+            project.board, project.tracker_credential, project.branch_template,
+            project.in_progress_status, project.in_review_status)
+
+
+def _real_scratch(project):
+    if project.tracker is Tracker.GITHUB_PROJECTS:
+        from slipway.trackers.github import GitHubScratch
+
+        return GitHubScratch(project)
+    from slipway.trackers.jira import JiraScratch
+
+    return JiraScratch(project)
+
+
+class _ScratchRun:
+    """One board movement check's scratch card, branches, and pull request."""
+
+    def __init__(self, project, host, tracker, scratch, prefix: str):
+        self.project, self.host, self.tracker, self.scratch = project, host, tracker, scratch
+        self.prefix = prefix
+        self.base = f"{prefix}{SCRATCH_BASE}"
+        self.keys: list[str] = []
+
+    def branch_for(self, key: str) -> str:
+        return render_branch(self.project.branch_template, key, SCRATCH_TITLE, SCRATCH_BUILD)
+
+    def _delete(self, name: str) -> None:
+        # Never a branch outside the namespace, whatever a pull request named.
+        if name and name.startswith(self.prefix):
+            self.host.delete_branch(name)
+
+    def sweep(self) -> None:
+        """Remove every scratch pull request, branch, and card, this run's or a crashed one's."""
+        found, reason = self.scratch.leftovers(SCRATCH_TITLE)
+        if reason:
+            raise HostError(f"the scratch cards could not be listed: {reason}")
+        keys = list(dict.fromkeys([*self.keys, *found]))
+        for pr in self.host.open_pull_requests(self.base):
+            self.host.close_pull_request(pr)
+            self._delete(pr.head_ref or "")
+        standing = set(self.host.branches(self.prefix))
+        for key in keys:
+            if self.branch_for(key) in standing:
+                self._delete(self.branch_for(key))
+        if self.base in standing:
+            self._delete(self.base)
+        for key in keys:
+            if reason := self.scratch.close(key):
+                raise HostError(f"scratch card {key} could not be closed: {reason}")
+        self.keys = []
+
+    def watch(self, wait: Callable) -> Moves:
+        key, reason = self.scratch.open(SCRATCH_TITLE)
+        if not key:
+            return Moves(None, None, f"the scratch card could not be filed: {reason}")
+        self.keys.append(key)
+        main, head, parent = self.host.base_commits()
+        if not head or not parent:
+            return Moves(None, None, f"{main} has no parent commit to open a scratch pull "
+                                     "request against")
+        branch = self.branch_for(key)
+        self.host.create_branch(self.base, parent)
+        self.host.create_branch(branch, head)
+        progress, seen = wait(self.tracker, key, self.project.in_progress_status)
+        reference = self.tracker.closing_reference(key)
+        pr = self.host.open_pull_request(branch, SCRATCH_TITLE, reference, base=self.base)
+        review, last = wait(self.tracker, key, self.project.in_review_status)
+        detail = (f"scratch card {key} on {branch}: {seen or 'no status'} after the branch, "
+                  f"{last or 'no status'} after pull request #{pr.number}")
+        return Moves(progress, review, detail)

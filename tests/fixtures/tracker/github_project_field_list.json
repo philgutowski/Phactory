@@ -1,0 +1,33 @@
+{
+  "fields": [
+    {
+      "id": "PVTF_title",
+      "name": "Title",
+      "type": "ProjectV2Field"
+    },
+    {
+      "id": "PVTSSF_status",
+      "name": "Status",
+      "type": "ProjectV2SingleSelectField",
+      "options": [
+        {
+          "id": "f75ad846",
+          "name": "Ready"
+        },
+        {
+          "id": "47fc9ee4",
+          "name": "In progress"
+        },
+        {
+          "id": "98236657",
+          "name": "In review"
+        },
+        {
+          "id": "a1b2c3d4",
+          "name": "Done"
+        }
+      ]
+    }
+  ],
+  "totalCount": 2
+}

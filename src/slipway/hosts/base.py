@@ -49,6 +49,25 @@ The project file may pin either or both (U6); whatever it does not pin is
 read live from the ruleset, queue, or repository settings. The answer is
 never a table in code (KTD9).
 
+Onboarding (U19, U28) adds reads of its own, and the writes its board
+movement check needs (KTD27):
+
+    read_repository()            -> Reading            reachable with this credential
+    read_required_checks()       -> tuple[str, ...]    checks the base branch requires
+    read_restriction(namespace)  -> Reading            identity held to the namespace
+    base_commits()               -> (branch, head, parent)
+    branches(prefix)             -> tuple[str, ...]    branch names under a prefix
+    delete_branch(name)          -> bool               False when already gone
+    open_pull_requests(base)     -> tuple[PullRequest, ...]
+    close_pull_request(pr)       -> None               closed without merging
+
+A read the host has no way to answer for this repository (a plan tier
+without rulesets, a token without the scope to see branch permissions)
+raises ProbeUndetermined, or answers a Reading whose ok is None, so onboard
+falls back to the operator's attestation. A read that answers is True or
+False with the host's own words in detail. close_pull_request closes; it
+never merges (R18).
+
 A transport failure is a HostError with a reason that never carries the
 credential. Every adapter takes an injectable opener for urllib, so tests
 answer from fixtures and never reach a network.
@@ -121,6 +140,14 @@ class BranchConflict(HostError):
 
 class ProbeUndetermined(HostError):
     """The host exposes no setting the probe can read; the project file must pin it."""
+
+
+@dataclass(frozen=True)
+class Reading:
+    """One onboarding read of the host. ok is None when the host cannot answer it."""
+
+    ok: bool | None
+    detail: str = ""
 
 
 @dataclass(frozen=True)
@@ -330,6 +357,12 @@ class Client:
     def put(self, path, body) -> Response:
         return self.request("PUT", path, body)
 
+    def patch(self, path, body) -> Response:
+        return self.request("PATCH", path, body)
+
+    def delete(self, path) -> Response:
+        return self.request("DELETE", path)
+
 
 def _decode(raw: bytes):
     text = raw.decode("utf-8") if raw else ""
@@ -357,4 +390,7 @@ def message_of(response: Response) -> str:
 # The public surface of every adapter. The tests assert no other public
 # method exists, so a merge method can never creep in (R18).
 INTERFACE = ("create_branch", "commit_on_remote", "open_pull_request", "post_check",
-             "enqueue", "pull_request", "probe_landing")
+             "enqueue", "pull_request", "probe_landing",
+             "read_repository", "read_required_checks", "read_restriction",
+             "base_commits", "branches", "delete_branch", "open_pull_requests",
+             "close_pull_request")

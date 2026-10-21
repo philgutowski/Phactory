@@ -1,0 +1,17 @@
+{
+  "sha": "1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d",
+  "node_id": "C_kwDOAexample",
+  "commit": {
+    "message": "U21: CLI, first slice (#100)",
+    "tree": {
+      "sha": "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c"
+    }
+  },
+  "parents": [
+    {
+      "sha": "da38e6c2ec96b89748d4f34ae3cf5b07e5824f7e",
+      "url": "https://api.github.com/repos/example-org/example-app/commits/da38e6c2ec96b89748d4f34ae3cf5b07e5824f7e"
+    }
+  ],
+  "html_url": "https://github.com/example-org/example-app/commit/1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d"
+}

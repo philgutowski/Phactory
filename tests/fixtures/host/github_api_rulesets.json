@@ -1,0 +1,50 @@
+[
+  {
+    "id": 25166140,
+    "name": "main",
+    "target": "branch",
+    "source_type": "Repository",
+    "source": "example-org/example-app",
+    "enforcement": "active",
+    "node_id": "RRS_lACqUmVwb3NpdG9yec4rHnqWzgF_9fw",
+    "_links": {
+      "self": {
+        "href": "https://api.github.com/repos/example-org/example-app/rulesets/25166140"
+      }
+    },
+    "created_at": "2026-10-14T18:02:11.000Z",
+    "updated_at": "2026-10-15T09:40:00.000Z"
+  },
+  {
+    "id": 25166141,
+    "name": "slipway-namespace",
+    "target": "branch",
+    "source_type": "Repository",
+    "source": "example-org/example-app",
+    "enforcement": "active",
+    "node_id": "RRS_lACqUmVwb3NpdG9yec4rHnqWzgF_9f0",
+    "_links": {
+      "self": {
+        "href": "https://api.github.com/repos/example-org/example-app/rulesets/25166141"
+      }
+    },
+    "created_at": "2026-10-15T10:00:00.000Z",
+    "updated_at": "2026-10-15T10:00:00.000Z"
+  },
+  {
+    "id": 25166142,
+    "name": "release-trial",
+    "target": "branch",
+    "source_type": "Repository",
+    "source": "example-org/example-app",
+    "enforcement": "evaluate",
+    "node_id": "RRS_lACqUmVwb3NpdG9yec4rHnqWzgF_9f1",
+    "_links": {
+      "self": {
+        "href": "https://api.github.com/repos/example-org/example-app/rulesets/25166142"
+      }
+    },
+    "created_at": "2026-10-16T10:00:00.000Z",
+    "updated_at": "2026-10-16T10:00:00.000Z"
+  }
+]

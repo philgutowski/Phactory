@@ -1,0 +1,24 @@
+{
+  "transitions": [
+    {
+      "id": "21",
+      "name": "Start",
+      "to": {
+        "name": "In Progress",
+        "statusCategory": {
+          "key": "indeterminate"
+        }
+      }
+    },
+    {
+      "id": "31",
+      "name": "Finish",
+      "to": {
+        "name": "Done",
+        "statusCategory": {
+          "key": "done"
+        }
+      }
+    }
+  ]
+}
