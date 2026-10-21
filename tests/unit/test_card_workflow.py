@@ -228,6 +228,48 @@ def test_a_pr_synchronize_posts_a_failing_check_on_the_new_head_and_changes_noth
     assert world.state(build_id) == "pr_open"
 
 
+def test_an_hourly_look_at_a_moved_head_flags_it_once_and_still_keeps_the_deadline(tmp_path):
+    world = World(tmp_path)
+
+    async def scenario():
+        build_id, task = await _opened(world, "EX-24")
+        world.host.change(world.pr_of(build_id), head=sha(778))
+        for looks in range(1, 4):
+            world.clock.forward(timedelta(days=3).total_seconds())
+            world.engine.push(SLEEP, build_id)
+            await until(lambda n=looks: world.engine.started.count((card.ON_WAKE, build_id)) == n)
+            await parked(world, build_id)
+        task.cancel()
+        return build_id
+
+    build_id = run(scenario)
+    assert world.host.checks_on(sha(778)) == [(card.CHECK_DETERMINISTIC, "failure")]
+    assert [e["kind"] for _, e in world.records.polled] == [events.PR_SYNCHRONIZE]
+    assert world.state(build_id) == "awaiting_approval"
+    assert world.records.evidence(build_id, "awaiting_approval")["deadline"] is True
+
+
+def test_a_head_moved_between_the_return_and_the_open_abandons_with_the_reason(tmp_path):
+    world = World(tmp_path)
+    looks = []
+    on_remote = world.host.commit_on_remote
+
+    def moved_after_the_return(branch, commit):
+        looks.append(commit)
+        return on_remote(branch, commit) and len(looks) == 1
+
+    world.host.commit_on_remote = moved_after_the_return
+    build_id = world.card("EX-25")
+
+    async def scenario():
+        return await world.start(build_id)
+
+    assert run(scenario)["outcome"] == "abandoned"
+    assert world.records.path(build_id)[-2:] == ["returned", "abandoned"]
+    assert "no longer the head" in world.records.evidence(build_id, "abandoned")["reason"]
+    assert world.host.prs == {}
+
+
 def test_queue_requested_records_the_tested_commit_only_when_built_from_the_confirmed_head(
         tmp_path):
     world = World(tmp_path)
@@ -394,7 +436,7 @@ def test_the_seven_day_deadline_moves_to_needs_you_without_ending_the_run(tmp_pa
     assert world.records.evidence(build_id, "awaiting_approval")["deadline"] is True
     assert world.records.path(build_id)[-6:] == ["pr_open", "awaiting_approval", "merged",
                                                  "verifying", "landed", "scored"]
-    assert [e["kind"] for e in world.records.polled] == [events.PR_MERGED]
+    assert [e["kind"] for _, e in world.records.polled] == [events.PR_MERGED]
 
 
 def test_the_binding_read_at_the_build_child_reflects_an_edit_after_claim(tmp_path):
@@ -455,7 +497,8 @@ def test_load_registers_each_present_steps_module_in_order_and_skips_absent_ones
     registry = post_landed.load(("one.steps", "two.steps", "three.steps"), importer)
     assert registry.names(POST_LANDED) == ["first", "third"]
     assert registry.names(POST_BUILD) == ["second"]
-    assert post_landed.load().names(POST_LANDED) == []  # this unit registers nothing
+    # U16 registers the first step; U17 and U23 add theirs after it.
+    assert post_landed.load().names(POST_LANDED) == ["score_deterministic"]
 
 
 def test_a_steps_module_that_fails_its_own_import_is_not_skipped():

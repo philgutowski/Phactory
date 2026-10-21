@@ -126,6 +126,9 @@ class PostgresRecords:
             "AND ended_at IS NULL",
             (result.cost, result.model, result.account, build_id))
 
+    def record_score(self, build_id: int, kind: str, result: dict) -> int:
+        return store.record_score(self.conn, build_id, kind, result)
+
     def ingest_poll(self, project_id: int, normalised: dict) -> bool:
         return store.ingest_host_event(self.conn, "poll",
                                        {**normalised, "project_id": project_id}).inserted
