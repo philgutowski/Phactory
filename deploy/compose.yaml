@@ -50,8 +50,8 @@ services:
       SERVER_INTERNAL_CLIENT_INTERNAL_GRPC_BROADCAST_ADDRESS: localhost:7077
       # The spike ran with "t". TLS on the public gRPC port is the deploy
       # card's to finish (KTD28): with this unset the engine expects TLS, and
-      # this seed names no certificate settings yet, so it boots only with
-      # HATCHET_GRPC_INSECURE=t until that card adds them. Leave it "t" only
+      # this seed names no certificate settings yet, so a boot without
+      # HATCHET_GRPC_INSECURE=t is untested until that card adds them. Leave it "t" only
       # behind a firewall that admits the laptop's address alone.
       SERVER_GRPC_INSECURE: ${HATCHET_GRPC_INSECURE:-f}
       # Replaces the built in admin@example.com account on first boot. The
