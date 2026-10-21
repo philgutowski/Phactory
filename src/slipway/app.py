@@ -185,19 +185,6 @@ REFUSED_STATUS = {
 }
 
 
-class DeliveryLog(webhooks.DeliveryLog):
-    """U9's delivery log, plus forgetting a delivery whose storing failed.
-
-    The endpoint records a delivery id before it touches the database, so a
-    retry racing the first try is answered without a second write. When the
-    write then fails, the id is forgotten, so the host's redelivery is
-    stored instead of being answered as a duplicate.
-    """
-
-    def forget(self, host: str, delivery_id: str) -> None:
-        self._seen.pop((str(host), str(delivery_id)), None)
-
-
 class Webhooks:
     """The webhook endpoint (KTD10): verify, dedupe, record, then wake the build.
 
@@ -209,12 +196,12 @@ class Webhooks:
     def __init__(self, secrets: webhooks.SecretsFor,
                  project_for: Callable[[Host, str], str | None],
                  records: Callable[[], WebhookRecords], engine: engine_module.Engine,
-                 deliveries: DeliveryLog | None = None):
+                 deliveries: webhooks.DeliveryLog | None = None):
         self.secrets = secrets
         self.project_for = project_for
         self.records = records
         self.engine = engine
-        self.deliveries = deliveries if deliveries is not None else DeliveryLog()
+        self.deliveries = deliveries if deliveries is not None else webhooks.DeliveryLog()
 
     def handle(self, host_name: str, headers: Mapping[str, str], body: bytes) -> Answer:
         try:
