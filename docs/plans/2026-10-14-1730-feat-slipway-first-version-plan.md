@@ -36,7 +36,7 @@ Two notes from the build of step 2, the same day. U26 checks an outside lander w
 
 A third note, after U20 landed. No unit owned serving Slipway on the VPS: the process that answers on port 443, its certificate, the page's cookie signing key and base URL, and the `app` and `worker` compose services `deploy/README.md` describes. U29 (new, filed as #97) owns them, and writes the first `src/slipway/app.py` with the status page and the webhook endpoint; U18 later adds the MCP routes to that file, so U18 now depends on U29.
 
-A fourth note, after U27 landed. Nothing in `src` yet builds the laptop worker: U13 wrote `LaptopBuilder` and U14 `laptop_worker`, but no entry point constructs them, so no laptop build can start. U30 (new) adds that entry point and its launch file.
+A fourth note, after U27 landed. Nothing in `src` yet builds the laptop worker: U13 wrote `LaptopBuilder` and U14 `laptop_worker`, but no entry point constructs them, so no laptop build can start. U30 (new, filed as #106) adds that entry point and its launch file.
 
 A fifth note, the same day. Phillip decided that Integra cards may also build on the VPS, in U13's container builder, with Slipway's own Bitbucket repository access token, not only on his laptop. So the first project no longer waits on U30: its project file may leave `builder_worker` unset and build in a container clone, or name the laptop worker and build in a worktree there. The tools that drive the operator's own browser or desktop (U27) stay laptop only.
 
