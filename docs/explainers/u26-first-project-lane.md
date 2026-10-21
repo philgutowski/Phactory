@@ -18,7 +18,7 @@ The first project Slipway runs is not shaped like Slipway's own repository. Its 
 | File | What it does |
 |:-|:-|
 | `src/slipway/config/project.py` | Adds `external_lander` to the landing paths, and three optional fields: `branch_template`, `pull_request_title`, and `checkout`. Validates the templates at load, renders them (`Project.branch_for`, `Project.title_for`), and gives `branch_namespace`, the literal text in front of a template's first placeholder. |
-| `src/slipway/verify.py` | Adds the relation for `external_lander`: the base tip's tree equals the tree Slipway confirmed. |
+| `src/slipway/verify.py` | Adds `external_lander` to the relations: the commit the lander pushed carries exactly the confirmed changes on top of its first parent. |
 | `src/slipway/workflow/card.py` | Names the branch and the pull request from the project's templates, arms no auto merge on the external lander path, and ends a build whose card branch already exists when the template has no build id. |
 | `src/slipway/builders/cli.py` | Adds the laptop builder's worktree checkout: a worktree of the shared checkout in place of a clone. |
 | `tests/fixtures/config/lander.toml` | A project file shaped like the first project's, every value invented. |
@@ -29,7 +29,7 @@ The first project Slipway runs is not shaped like Slipway's own repository. Its 
 
 No host setting reveals an outside lander, so the landing probe never finds this value live. It comes only from the project file, which `landing_from` and `pinned_landing` (in `hosts/base.py`) already put in place of whatever the probe reads. On Bitbucket the probe needs both `landing_path` and `merge_method` pinned, so a Bitbucket project on this path still names the lander's merge method.
 
-Verify checks this path by the relation of the auto merge path, applied to the base tip: once the host says merged, the tip of the base branch must carry exactly the tree Slipway confirmed. A host that marks a pull request merged by an outside push may give no merge commit, so verify falls back to the tip for `merged` when the host gave none. A lander that changed the card's files on the way, or a tip that already carries another change, is `commit_mismatch`, the same halt every other path uses.
+Verify checks this path by the relation of the plain merge path, not the auto merge one. The card first named the auto merge relation, the base tip's tree equal to the confirmed tree, but the first project's own feeder lands other cards on main all day, so that relation would halt nearly every faithful landing as `commit_mismatch`. The plain merge relation folds in whatever reached the branch meanwhile: the tree of the commit the lander pushed must equal the tree git gets by merging the confirmed commit into that commit's first parent. A host that marks a pull request merged by an outside push may give no merge commit, so verify falls back to the base tip for `merged` when the host gave none. A lander that changed the card's files on the way is `commit_mismatch`, the same halt every other path uses.
 
 ## Branch names and titles
 

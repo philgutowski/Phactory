@@ -32,21 +32,20 @@ The relation per landing path, as measured in docs/spikes/merge-paths.md:
                                   under merge commit, squash, and rebase
     plain_merge                   tree of merged equals the tree of merging
                                   confirmed into merged's first parent
-    external_lander               tree of the branch tip, read after the
-                                  host's merged event, equals tree of
-                                  confirmed
+    external_lander               as plain_merge, on the commit the lander
+                                  pushed
 
 plain_merge is a repository with auto merge on but no required up to date
 check: the branch may be behind when it lands, so the trees differ by
 whatever reached the branch meanwhile, and the relation folds that in.
 
 external_lander is a project whose own lander, not Slipway and not the
-host's queue, puts the branch on the base branch and pushes (U26). The host
-then marks the pull request merged, but on some hosts with no merge commit,
-so the relation reads the branch tip itself, and merged falls back to the
-tip when the host gave none. It is the auto merge relation applied to the
-tip: whatever the lander did, the base branch must now carry exactly the
-tree Slipway confirmed.
+host's queue, puts the branch on the base branch and pushes (U26). Other
+cards may reach the branch between the build's base and that push, such as
+a feeder's, so the relation is plain_merge's: the commit the lander pushed
+carries exactly the confirmed changes on top of its first parent. A host
+that marks a pull request merged by an outside push may give no merge
+commit, so merged falls back to the branch tip when the host gave none.
 
 The outcome is one of:
 
@@ -83,13 +82,12 @@ CONFIRMED_LANDED = "confirmed_landed"
 TESTED_COMMIT = "tested_commit"
 TREE_EQUALS_CONFIRMED = "tree_equals_confirmed"
 TREE_EQUALS_CONFIRMED_MERGED_INTO_PARENT = "tree_equals_confirmed_merged_into_parent"
-TIP_TREE_EQUALS_CONFIRMED = "tip_tree_equals_confirmed"
 RELATIONS = {
     LandingPath.MERGE_QUEUE: TESTED_COMMIT,
     LandingPath.BITBUCKET_QUEUE: TESTED_COMMIT,
     LandingPath.AUTO_MERGE_STRICT: TREE_EQUALS_CONFIRMED,
     LandingPath.PLAIN_MERGE: TREE_EQUALS_CONFIRMED_MERGED_INTO_PARENT,
-    LandingPath.EXTERNAL_LANDER: TIP_TREE_EQUALS_CONFIRMED,
+    LandingPath.EXTERNAL_LANDER: TREE_EQUALS_CONFIRMED_MERGED_INTO_PARENT,
 }
 
 LANDED = "landed"
@@ -200,7 +198,7 @@ def verify(repo, baseline, confirmed, tested, merged, card_key,
         branch = branch or gitread.default_branch(repo)
         tip = gitread.rev_parse(repo, f"refs/heads/{branch}")
         run.evidence.update(branch=branch, branch_tip=tip)
-        if relation == TIP_TREE_EQUALS_CONFIRMED and not merged:
+        if landing_path == LandingPath.EXTERNAL_LANDER and not merged:
             merged = run.evidence["merged"] = tip
         _commits(repo, run, baseline, confirmed, tested, tested_head, merged, tip,
                  relation, branch)
@@ -243,15 +241,13 @@ def _commits(repo, run, baseline, confirmed, tested, tested_head, merged, tip,
                       f"not checked: merged {merged} is not the tested commit")
         return
 
-    # On the external lander path the tree that counts is the tip's.
-    landed = tip if relation == TIP_TREE_EQUALS_CONFIRMED else merged
-    merged_tree = gitread.tree_of(repo, landed)
-    if relation in (TREE_EQUALS_CONFIRMED, TIP_TREE_EQUALS_CONFIRMED):
+    merged_tree = gitread.tree_of(repo, merged)
+    if relation == TREE_EQUALS_CONFIRMED:
         expected = gitread.tree_of(repo, confirmed)
     else:
         parent = gitread.first_parent(repo, merged)
         expected = parent and gitread.merge_tree(repo, parent, confirmed)
     run.evidence.update(merged_tree=merged_tree, expected_tree=expected)
     run._check(CONFIRMED_LANDED, merged_tree == expected,
-               f"tree of {landed} is {merged_tree}, expected {expected}",
+               f"tree of {merged} is {merged_tree}, expected {expected}",
                relation=relation, expected=expected, found=merged_tree)
