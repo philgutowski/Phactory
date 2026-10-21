@@ -943,3 +943,20 @@ def test_the_worktree_script_differs_from_the_clone_script_only_in_the_checkout(
     assert "git clone" not in WORKTREE_SCRIPT
     assert "--force" not in WORKTREE_SCRIPT and "reset" not in WORKTREE_SCRIPT
     assert WORKTREE_SCRIPT.endswith(SESSION_SCRIPT.split('cd "$SLIPWAY_REPO"\n')[1])
+
+
+def test_a_worktree_that_cannot_be_added_ends_the_build_and_cleans_up(tmp_path, project,
+                                                                       binding):
+    branch = "XY-15-fix-export"
+    remote, shared, base = shared_checkout(tmp_path, [])  # the card branch is gone
+    builder = LaptopBuilder(tmp_path / "sessions", GitAccess(str(remote), "x-access-token"),
+                            "slipway-session", "/usr/bin:/bin", run=as_session_user,
+                            environ=ENVIRON, now=Clock(), checkout="worktree", shared=shared)
+    card = Card(key="XY-15", title="Fix export", body=BODY, status="Ready")
+    back = laptop_build(builder, render(project, card, base, branch), binding,
+                        Credential("example-app", minting(GIT_TOKENS)))
+    assert back.result.outcome == RETURNED_EMPTY
+    assert "the worktree could not be added" in back.result.reason
+    assert "no session ran" in back.result.reason
+    assert list((tmp_path / "sessions").iterdir()) == []
+    assert git(shared, "worktree", "list", "--porcelain").count("worktree ") == 1

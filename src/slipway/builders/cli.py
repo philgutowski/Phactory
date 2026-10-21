@@ -656,7 +656,8 @@ class _Sessions:
             tip = remote_tip(self.run, self._git_env(session_ref), self.git.remote,
                              f"refs/heads/{state['branch']}")
             commit = tip if tip and tip != state["base"] else None
-            reason = f"session exited with code {exit_code}"
+            reason = (f"session exited with code {exit_code}" if exit_code is not None
+                      else "no session ran")
             if stop:
                 reason += f", {stop}"
             if detail:
@@ -870,7 +871,14 @@ class LaptopBuilder(_Sessions):
     def start(self, handoff: Handoff, binding: ResolvedBinding, credential: Credential) -> str:
         session_ref, top, session_id, value = self._prepare(handoff, binding, credential)
         if self.checkout is Checkout.WORKTREE:
-            self._add_worktree(session_ref, handoff)
+            try:
+                self._add_worktree(session_ref, handoff)
+            except subprocess.CalledProcessError as error:
+                # No session ran; the build ends returned_empty with the
+                # reason, and laptop_build still releases what was made.
+                detail = (error.stderr or "").strip() or f"git exited {error.returncode}"
+                self._finish(session_ref, None, f"the worktree could not be added: {detail}")
+                return session_ref
         env = self.environment(session_ref, handoff, binding, session_id, value)
         stop = threading.Event()
         failed: list[CredentialError] = []

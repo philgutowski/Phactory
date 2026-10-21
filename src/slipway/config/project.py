@@ -260,9 +260,14 @@ def _template(top: Reader, name: str, default: str, allowed: tuple[str, ...],
 
 def read_branch_template(top: Reader) -> str:
     template = _template(top, "branch_template", DEFAULT_BRANCH_TEMPLATE, BRANCH_FIELDS, "key")
-    sample = template.format(**SAMPLE)
-    if illegal_ref(sample):
-        top.fail("branch_template", f"renders {sample!r}, which is not a legal branch name")
+    # A slug holds only lower case letters, digits, and hyphens, so the one
+    # slug that can make a legal sample illegal is one that ends in "lock"
+    # after a literal dot; rendering that one too covers every card.
+    for values in (SAMPLE, {**SAMPLE, "slug": "lock"}):
+        sample = template.format(**values)
+        if illegal_ref(sample):
+            top.fail("branch_template",
+                     f"renders {sample!r}, which is not a legal branch name")
     return template
 
 

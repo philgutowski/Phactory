@@ -401,6 +401,7 @@ def test_defaults_keep_todays_names(isolated_home):
     ("{key} {slug}", "not a legal branch name"),
     ("lane..{key}", "not a legal branch name"),
     ("{key}.lock", "not a legal branch name"),
+    ("{key}.{slug}", "not a legal branch name"),  # a card titled "Lock"
     ("/{key}", "not a legal branch name"),
     ("-{key}", "not a legal branch name"),
     ("{key}-{title}", "may use only {key}, {slug}, {build}"),
