@@ -7,7 +7,10 @@ SLIPWAY_HOME. Nothing here reaches a network or a database.
 
 from datetime import timedelta
 
+import pytest
+
 from _service_fakes import MANAGER, OPERATOR, SLUG, ready_card, world
+from slipway.config import ConfigError
 from slipway.config.bindings import BindingInvalid
 from slipway.halts import COMMIT_MISMATCH, MERGED_CARD_NOT_MOVED
 from slipway.service import status, verbs
@@ -312,11 +315,15 @@ def test_across_is_refused_to_any_other_subject(tmp_path):
     assert found["outcome"] == "refused" and "projects" not in found
 
 
-def test_a_tracker_that_cannot_be_built_is_refused_and_audited(tmp_path):
+@pytest.mark.parametrize("error", [
+    BindingInvalid("tracker_credential", "EXAMPLE_TOKEN is not set"),
+    ConfigError("operator.toml", "tracker_credentials", "missing"),
+], ids=["binding", "config"])
+def test_a_tracker_that_cannot_be_built_is_refused_and_audited(tmp_path, error):
     w = world(tmp_path, [ready_card("EX-1")])
 
     def unbuildable(project):
-        raise BindingInvalid("tracker_credential", "EXAMPLE_TOKEN is not set")
+        raise error
 
     ports = verbs.Ports(**{**w.ports.__dict__, "tracker": unbuildable})
 

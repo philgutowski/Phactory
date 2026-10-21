@@ -170,9 +170,10 @@ def dispatch(ports: Ports, project: str, key: str, actor: str, reason: str | Non
     found = ports.project(project)
     try:
         card = ports.tracker(found).read(key)
-    except BindingInvalid as error:
-        # A tracker credential that does not resolve is refused like an
-        # unreadable tracker, so this call still writes its one audit row.
+    except (BindingInvalid, ValueError) as error:
+        # A tracker credential that does not resolve, or an operator file that
+        # fails validation (ConfigError), is refused like an unreadable
+        # tracker, so this call still writes its one audit row.
         card = Card(str(key), skipped=str(error))
     result = dispatch_card(ports, found, card, actor, reason, other_lanes(ports, found))
     _audit(ports, found.slug, actor, "dispatch", {"key": str(key), "reason": reason}, result,
