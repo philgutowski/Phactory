@@ -849,6 +849,9 @@ def verify(ports: Ports, input: Mapping) -> dict:
             break
         ports.clock.sleep(NOT_MOVED_RECHECK_SECONDS)
     checks = {c.name: c.result for c in verdict.checks}
+    # The commit verify judged: on the external lander path with no merge
+    # commit from the host, verify reads the branch tip in its place.
+    merged = verdict.evidence.get("merged") or merged
     if verdict.landed:
         return _summary(_move(ports, build, "landed",
                               {"merged": merged, "checks": checks, "reads": reads,

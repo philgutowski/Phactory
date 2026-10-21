@@ -55,9 +55,11 @@ A template without `{build}` gives every build of one card the same branch. When
 
 `checkout = "worktree"` in the project file, and a `LaptopBuilder` made with `checkout="worktree"` and `shared=<path of the shared checkout>`, run each session in its own worktree instead of a fresh clone:
 
+Every git call on the shared checkout runs as the session user through sudo, as the session itself does, so the worktree's files and git's record of it under the shared `.git` belong to the user that writes them and later removes them. The worker's umask never decides who may write a file the session needs.
+
 1. Before the session, the worker notes whether the shared checkout already has a local branch of the card's name, fetches the card's branch into the shared checkout (the fetch writes only objects and `FETCH_HEAD`), and adds `workspace/repo` as a worktree at the base commit, detached.
 2. The session script (`WORKTREE_SCRIPT`) marks the two folders safe for its own git, sets the remote and the branch's upstream through git's environment config (`GIT_CONFIG_COUNT` and its keys), which only this session reads, and creates the card's branch with `git switch --create`. A plain `git push` then reaches the card's branch. Nothing is written to the shared checkout's configuration.
-3. On release, the session user removes the workspace, the worker runs `git worktree prune` so the shared checkout forgets the worktree, and deletes the local branch the session made.
+3. On release, `git worktree remove --force` removes the worktree and its record together, the workspace is removed, `git worktree prune` drops any record a failed remove left, and the local branch the session made is deleted.
 
 If the shared checkout already had a local branch of that name, it is someone else's: `git switch --create` fails, the session exits with nothing pushed, the build ends `returned_empty`, and release leaves the branch alone. The shared checkout's own branch, files, and status are never touched. The session user needs write access to the shared checkout's `.git` folder, which the laptop's install gives through the worker's group.
 
@@ -71,4 +73,4 @@ If the shared checkout already had a local branch of that name, it is someone el
 
 - **The live smoke.** One real card of the first project built in a worktree on the laptop and landed by its watcher is the operator's run. The pull request says so.
 - **Onboard.** U19 reads `branch_namespace` and asks the ready status question above.
-- **The laptop worker's wiring.** The worker that builds `LaptopBuilder` passes `checkout` from the project file and the shared checkout's path from the laptop's own install.
+- **The laptop worker's wiring.** Nothing in `src` builds a `LaptopBuilder` yet, so the worktree mode is not reachable from a project file until that wiring lands: the laptop worker (U13's `deploy/laptop/`, with U24's laptop closed day) passes `checkout` from the project file and the shared checkout's path from the laptop's own install. The live smoke waits on it.

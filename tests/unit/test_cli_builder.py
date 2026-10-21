@@ -862,8 +862,14 @@ def test_two_laptop_builds_run_in_two_worktrees_and_leave_the_shared_checkout_al
     claude = bin_dir / "claude"
     claude.write_text(FAKE_CLAUDE.format(barrier=barrier))
     claude.chmod(0o755)
+    calls: list[list[str]] = []
+
+    def run(argv, check=True, **kwargs):
+        calls.append(list(argv))
+        return as_session_user(argv, check=check, **kwargs)
+
     builder = LaptopBuilder(tmp_path / "sessions", GitAccess(str(remote), "x-access-token"),
-                            "slipway-session", f"{bin_dir}:/usr/bin:/bin", run=as_session_user,
+                            "slipway-session", f"{bin_dir}:/usr/bin:/bin", run=run,
                             environ=ENVIRON, now=Clock(), checkout="worktree", shared=shared)
     backs: dict[str, LaptopReturn] = {}
     worktrees: dict[str, str] = {}
@@ -903,6 +909,13 @@ def test_two_laptop_builds_run_in_two_worktrees_and_leave_the_shared_checkout_al
     assert before[0] == "main"
     assert git(shared, "worktree", "list", "--porcelain").count("worktree ") == 1
     assert list((tmp_path / "sessions").iterdir()) == []
+    # Every git call on the shared checkout runs as the session user, so the
+    # worktree's files and its record are the session's to write and remove.
+    on_shared = [argv for argv in calls if str(shared) in argv]
+    assert {argv[argv.index("-C") + 2] for argv in on_shared} >= {
+        "rev-parse", "fetch", "worktree", "branch"}
+    for argv in on_shared:
+        assert argv[:4] == ["sudo", "--non-interactive", "--user", "slipway-session"], argv
 
 
 def test_a_branch_the_shared_checkout_already_has_is_neither_reset_nor_deleted(

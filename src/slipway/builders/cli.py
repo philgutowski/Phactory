@@ -33,12 +33,14 @@ not clone. Before the session it fetches the card's branch into the shared
 checkout and adds a worktree at the base commit as the session's repo/; the
 session switches to the card's branch there, and its git reads the remote
 and the branch's upstream from its own environment, so nothing is written
-to the shared checkout's configuration. On release the worktree's files go,
-git forgets the worktree, and the local branch it made is deleted; a branch
-of that name the shared checkout already had is never reset or deleted. The
-shared checkout's own branch, files, and status are never touched. The
-session user needs write access to the shared checkout's .git folder, which
-the laptop's install gives through the worker's group. clone stays the
+to the shared checkout's configuration. Every git call on the shared
+checkout runs as the session user, so the files it makes are the session's
+to write and remove. On release git removes the worktree, its files go, and
+the local branch the session made is deleted; a branch of that name the
+shared checkout already had is never reset or deleted. The shared
+checkout's own branch, files, and status are never touched. The session
+user needs write access to the shared checkout's .git folder, which the
+laptop's install gives through the worker's group. clone stays the
 default, and a container always clones.
 
 Credentials. The account token (CLAUDE_CODE_OAUTH_TOKEN for a subscription,
@@ -834,9 +836,20 @@ class LaptopBuilder(_Sessions):
                 f"--preserve-env={keep}", "--", "/bin/sh", "-c", script]
 
     def _shared_git(self, session_ref: str, *args: str, check: bool = True):
-        """A git call on the shared checkout, as the worker, with no hook."""
-        return _git(self.run, self._git_env(session_ref), "-c",
-                    f"safe.directory={self.shared}", "-C", str(self.shared), *args, check=check)
+        """A git call on the shared checkout, as the session user, with no hook.
+
+        The session user runs every git call that writes the worktree, its
+        record under the shared .git, or its local branch, so the session's
+        own git and the release can write and remove all of it. The worker's
+        umask never decides who may write a file the session needs.
+        """
+        env = self._git_env(session_ref)
+        keep = ",".join(sorted(env))
+        argv = ["git", "-c", "core.hooksPath=/dev/null", "-c",
+                f"credential.helper={CREDENTIAL_HELPER}", "-c", f"safe.directory={self.shared}",
+                "-C", str(self.shared), *args]
+        return self.run(["sudo", "--non-interactive", "--user", self.session_user,
+                         f"--preserve-env={keep}", "--", *argv], check=check, env=env)
 
     def _add_worktree(self, session_ref: str, handoff: Handoff) -> None:
         """Fetch the card's branch into the shared checkout, add repo/ at the base."""
@@ -889,11 +902,14 @@ class LaptopBuilder(_Sessions):
     def release(self, session_ref: str) -> None:
         """Remove the session's files, the workspace as the user that wrote it."""
         top = self.dir(session_ref)
+        if self.checkout is Checkout.WORKTREE:
+            # git removes the worktree and its record together; the rm and the
+            # prune below cover a worktree git could not remove.
+            self._shared_git(session_ref, "worktree", "remove", "--force",
+                             str(top / "workspace" / "repo"), check=False)
         self.run(["sudo", "--non-interactive", "--user", self.session_user, "--",
                   "rm", "-rf", str(top / "workspace")], check=False)
         if self.checkout is Checkout.WORKTREE:
-            # The folder is gone, so prune drops git's record of the worktree;
-            # then the local branch the session made can be deleted.
             self._shared_git(session_ref, "worktree", "prune", check=False)
             state = self._state(session_ref)
             if state.get("shared_branch_existed") is False:
