@@ -287,6 +287,15 @@ def _shape(qid: str, value: str, draft: Mapping, operator: Operator) -> None:
         raise Refused(f"{value!r} is not owner/name")
     if qid == "tracker_site" and not SITE.fullmatch(value):
         raise Refused(f"{value!r} is not a host name, such as name.atlassian.net")
+    # The credential questions offer only entries for the answered site and
+    # host, so an answer no entry matches would leave them with no choice.
+    if qid == "tracker_site" and not any(
+            c.site == value for c in operator.tracker_credentials.values()):
+        raise Refused(f"the operator file has no tracker credential for {value!r}; "
+                      "add one there first")
+    if qid == "host" and not any(
+            c.host == value for c in operator.host_credentials.values()):
+        raise Refused(f"the operator file has no {value} host credential; add one there first")
     if qid == "board":
         if draft.get("tracker") == Tracker.GITHUB_PROJECTS and not GITHUB_BOARD.fullmatch(value):
             raise Refused(f"{value!r} is not a GitHub Projects board, owner/number or number")
@@ -474,7 +483,12 @@ def _reenter(ports: Ports, state: dict, data: dict) -> None:
         if question.id not in state["answers"] or state["answers"][question.id] != value:
             state["answers"][question.id] = value
             state["by"][question.id] = {"actor": FROM_FILE, "at": None}
+            state.pop("gate_note", None)  # a gate command changed outside onboard
     state["stale"] = {}
+    # A gate the host failed on the trivial card is no longer true either,
+    # and only the host's output says so; the file cannot.
+    if state.get("gate_note"):
+        state["stale"]["gate_command"] = state["gate_note"]
     try:
         project = _project(ports, state)
     except ConfigError as error:
@@ -482,7 +496,7 @@ def _reenter(ports: Ports, state: dict, data: dict) -> None:
         return
     if project is None:
         return
-    state["stale"] = checks.stale(ports.probe, project, ports.operator().accounts)
+    state["stale"].update(checks.stale(ports.probe, project, ports.operator().accounts))
     try:
         check_names(project, ports.operator())
     except ConfigError as error:
@@ -534,6 +548,8 @@ def answer(ports: Ports, session: str, qid: str, value, actor: str) -> dict:
         state["answers"][qid] = saved
         state["by"][qid] = {"actor": actor, "at": now}
         state["stale"].pop(qid, None)
+        if qid == "gate_command":
+            state.pop("gate_note", None)
         state["verified"] = False
         state["trivial"] = None
         try:
@@ -630,6 +646,7 @@ def _follow(ports: Ports, state: dict, project: Project, out: dict, actor: str) 
         note = (f"the trivial card {key}'s gate failed on the host with this output; "
                 f"correct the gate command:\n{scrub(output)}")
         state["stale"]["gate_command"] = note
+        state["gate_note"] = note
         state["trivial"] = None
         state["verified"] = False
         question = questions.BY_ID["gate_command"]

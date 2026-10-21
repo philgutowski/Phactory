@@ -467,6 +467,10 @@ def test_a_wrong_gate_command_returns_to_the_gate_question_with_the_host_output(
     assert 'npm ERR! Missing script: "test"' in result["question"]["note"]
     assert result["verified"] is False
 
+    restarted = machine.start(world.ports, SLUG, OPERATOR)  # the terminal run again
+    assert restarted["question"]["id"] == "gate_command"
+    assert 'Missing script: "test"' in restarted["question"]["note"]
+
     fixed = machine.answer(world.ports, SLUG, "gate_command", "make check", OPERATOR)
     assert fixed["outcome"] == machine.FILE_CARD
     assert load_project(SLUG, world.root).gate_command == "make check"
@@ -524,3 +528,10 @@ def test_a_fault_no_question_fixes_is_named_not_pinned_on_a_question(world):
     result = machine.start(world.ports, SLUG, OPERATOR)
     assert result["outcome"] == machine.REFUSED
     assert "rules.file" in result["reason"]
+
+
+def test_a_site_no_credential_serves_is_refused_up_front(world):
+    machine.start(world.ports, SLUG, OPERATOR)
+    result = machine.answer(world.ports, SLUG, "tracker_site", "other.atlassian.net", OPERATOR)
+    assert result["outcome"] == machine.REFUSED
+    assert "no tracker credential" in result["reason"]
