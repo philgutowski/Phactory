@@ -103,6 +103,10 @@ class Records(Protocol):
 
     def card(self, project_id: int, key: str) -> dict | None: ...
 
+    def scores(self, build_ids: list[int]) -> dict[int, dict[str, dict]]: ...
+
+    def open_findings(self, project_id: int) -> list[dict]: ...
+
     def stale_claims(self, project_id: int, older_than: datetime) -> list[dict]: ...
 
     def audit(self, slug: str, subject: str, tool: str, arguments: dict, result: dict,
@@ -353,6 +357,22 @@ class PostgresRecords:
 
     def card(self, project_id: int, key: str) -> dict | None:
         return queries.card_detail(self.conn, project_id, key)
+
+    def scores(self, build_ids: list[int]) -> dict[int, dict[str, dict]]:
+        """Each build's score results by kind, for the builds named."""
+        if not build_ids:
+            return {}
+        with self.conn.cursor(row_factory=dict_row) as cur:
+            rows = cur.execute("SELECT build_id, kind, result FROM scores "
+                               "WHERE build_id = ANY(%s) ORDER BY build_id, kind",
+                               (list(build_ids),)).fetchall()
+        out: dict[int, dict[str, dict]] = {}
+        for row in rows:
+            out.setdefault(row["build_id"], {})[row["kind"]] = row["result"]
+        return out
+
+    def open_findings(self, project_id: int) -> list[dict]:
+        return queries.open_findings(self.conn, project_id)
 
     def stale_claims(self, project_id: int, older_than: datetime) -> list[dict]:
         return [row for row in queries.stale_claims(self.conn, older_than)

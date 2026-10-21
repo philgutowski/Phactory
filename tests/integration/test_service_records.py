@@ -154,3 +154,28 @@ def test_a_fresh_claim_is_not_retried(w, conn):
     w.clock.now = datetime.now(UTC) + timedelta(seconds=30)
 
     assert watch.cycle(w.ports, SLUG)["retried"] == []
+
+
+def test_compose_reads_scores_and_open_findings_from_postgres(w, conn):
+    """U20: the page's landed row and findings come from the scores and findings tables."""
+    project_id = store.ensure_project(conn, SLUG)
+    landed = store.claim(conn, project_id, "EX-6", "test").build_id
+    _walk(conn, landed, ("dispatched", {}), ("building", {}), ("returned", {}),
+          ("pr_open", {}), ("awaiting_approval", {}), ("queued", {}), ("gate_running", {}),
+          ("merged", {}), ("verifying", {}), ("landed", {}), ("scored", {}))
+    store.record_score(conn, landed, "deterministic",
+                       {"total": {"verdict": "pass", "passed": 3, "failed": 0, "of": 3}})
+    conn.execute("INSERT INTO findings (project_id, build_id, class, fingerprint, excerpt) "
+                 "VALUES (%s, %s, 'runner_step', 'fp-1', 'step 4 failed')",
+                 (project_id, landed))
+    conn.execute("INSERT INTO findings (project_id, class, fingerprint, state) "
+                 "VALUES (%s, 'runner_step', 'fp-2', 'closed')", (project_id,))
+
+    found = status.compose(w.ports, SLUG)
+
+    assert found["counts"]["landed_today"] == 1
+    [row] = found["landed"]
+    assert row["key"] == "EX-6"
+    assert row["scores"] == {"deterministic": "pass, 3 of 3", "judged": None}
+    assert [(f["fingerprint"], f["excerpt"]) for f in found["findings"]] == [
+        ("fp-1", "step 4 failed")]
