@@ -12,7 +12,8 @@ shape, in the same order, whatever adapter carries it:
     5. In flight     files other in flight builds declare or have pushed
     6. Done          the done line, from the card's good and test
     7. Credential    the name of the credential git pushes with, never its value
-    8. Side reference the card's action log reference, refs/slipway/log/<key>
+    8. Side reference the card's action log reference, refs/slipway/log/<key>,
+                     and the one procedure that writes it
 
 and then the card itself, its title and body as the tracker returned them.
 The card's good and test come from its slipway block through the card
@@ -28,13 +29,27 @@ to merged: a build not yet returned contributes the paths its card declares,
 and a returned build contributes the paths its pushed diff actually touches
 instead, since by then the diff is the truth. A card that declared no paths
 contributes nothing until it pushes.
+
+The side reference (follow up #56). Two parties write it, one after the
+other, never together. While the session runs, the builder is its only
+writer: it keeps actions.jsonl inside the git directory, where no commit on
+the branch can pick it up, and after its last branch push it writes one
+commit whose tree is that file alone, the child of the reference's current
+tip, with the plumbing commands section 8 lists (hash-object, mktree,
+commit-tree, push of that one commit). A plain push of HEAD would put the
+branch's history on the reference, so the handoff never asks for one. Once
+the session is terminal, the adapter is the only writer: it writes the
+build's closing commit, trace.jsonl, transcript.jsonl, and the builder's
+actions.jsonl carried forward from the tip, as the child of the builder's
+commit (builders/cli.py push_side_reference). So every commit is the child
+of the tip its writer read, and no two writers race for it.
 """
 
 from collections.abc import Iterable
 from dataclasses import dataclass
 
 from slipway.cards.contract import parse
-from slipway.trace.shape import ACTIONS_FILE, side_reference
+from slipway.trace.shape import ACTIONS_FILE, TRACE_FILE, side_reference
 from slipway.trackers.base import ClosingReference
 
 # The Tools primitive. Generic capability names; each adapter grants its own
@@ -125,14 +140,51 @@ def _done(good: str | None, test: str | None, gate_command: str, branch: str) ->
     return " ".join(parts)
 
 
+def _side_reference(key: str, reference: str) -> list[str]:
+    """Section 8: the action log and the one procedure that pushes it."""
+    log = f".git/{ACTIONS_FILE}"
+    commands = (
+        f"blob=$(git hash-object -w {log})",
+        f"tree=$(printf '100644 blob %s\\t{ACTIONS_FILE}\\n' \"$blob\" | git mktree)",
+        f'if git fetch origin {reference}; then parent="-p FETCH_HEAD"; else parent=""; fi',
+        f'commit=$(git commit-tree "$tree" $parent -m "slipway log {key} actions")',
+        f'git push origin "$commit:{reference}"',
+    )
+    prose_before = (
+        f"Keep an action log at {log}, inside the git directory, so no commit on the",
+        "branch can pick it up: one JSON object per line, with its type under \"type\", for each",
+        "tool call, file change, command, and outside connection.",
+        "After your last push to the branch, push the log from the repository root with exactly",
+        "these commands:",
+    )
+    prose_after = (
+        f"They push one commit that holds {ACTIONS_FILE} alone, as the child of the reference's "
+        "tip.",
+        f"Never push HEAD or the branch to {reference}, and never commit the log to the branch.",
+        "While your session runs, you are this reference's only writer. Once it ends, Slipway",
+        f"writes the build's closing commit on top of yours, with {TRACE_FILE} beside "
+        f"{ACTIONS_FILE}.",
+    )
+    return [
+        f"8. Side reference: {reference}",
+        *(_INDENT + line for line in prose_before),
+        "",
+        *(_INDENT * 2 + line for line in commands),
+        "",
+        *(_INDENT + line for line in prose_after),
+    ]
+
+
 def render(project, card, base: str, branch: str, in_flight: Iterable[InFlightBuild] = (),
-           rules: str = "", closing: ClosingReference | None = None) -> Handoff:
+           rules: str | None = None, closing: ClosingReference | None = None) -> Handoff:
     """Render the handoff for one card.
 
     project is the loaded project file (config.project.Project), card the
     tracker's Card, base the commit the branch starts from, branch the name
-    Slipway created, in_flight the project's other builds, and rules the
-    operator's rules text for this project. closing is the tracker's
+    Slipway created, and in_flight the project's other builds. rules is the
+    operator's rules text for this project; left as None, it is the project
+    file's own rules (Project.rules, the [rules] table), so the workflow
+    passes nothing for it. closing is the tracker's
     closing reference for the card: when the tracker keys on a branch token
     (Jira does), the branch must carry it, or the card would never move to
     in progress when the branch is created (KTD27).
@@ -145,6 +197,8 @@ def render(project, card, base: str, branch: str, in_flight: Iterable[InFlightBu
     block = parse(card.body)
     reference = side_reference(card.key)
     files = in_flight_files(in_flight, exclude_key=card.key)
+    if rules is None:
+        rules = project.rules
     rules_text = _rules(rules, tuple(project.machine_bound_tests))
     done = _done(block.good, block.test, project.gate_command, branch)
 
@@ -172,12 +226,7 @@ def render(project, card, base: str, branch: str, in_flight: Iterable[InFlightBu
         "already configured.",
         f"{_INDENT}Never print it, and never write it to a file or a commit.",
         "",
-        f"8. Side reference: {reference}",
-        f"{_INDENT}Keep an action log in {ACTIONS_FILE}: one JSON object per line, with its "
-        "type under \"type\",",
-        f"{_INDENT}for each tool call, file change, command, and outside connection.",
-        f"{_INDENT}Before you finish, push it as the only file of a commit to {reference}.",
-        f"{_INDENT}Never commit it to the branch.",
+        *_side_reference(card.key, reference),
         "",
         "The card:",
         "",
