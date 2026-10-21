@@ -713,6 +713,14 @@ def test_the_delivery_log_dedupes_within_its_bound():
     assert log.seen("bitbucket", "c") is False  # a different host is a different key
 
 
+def test_a_forgotten_delivery_is_new_again():
+    log = webhooks.DeliveryLog()
+    assert log.seen("github", "a") is False
+    log.forget("github", "a")
+    assert log.seen("github", "a") is False
+    log.forget("github", "never seen")  # forgetting an unknown id is a no op
+
+
 def test_normalised_carries_the_store_fields():
     headers, body = github_delivery("github_pull_request_closed", "pull_request")
     stored = verify("github", headers, body, secrets_for).normalised()

@@ -77,7 +77,7 @@ KTD7 says Slipway enqueues with `enqueuePullRequest` once reviews and checks pas
 4. **Delivery id.** Missing is `no_delivery_id`, because a row without one cannot dedupe.
 5. **Parse.** The host's event header and the payload's action map onto the six kinds. An event Slipway does not track is returned as `Dropped` with its reason, not refused: a `ping` or a `labeled` action is a valid delivery with nothing to do, and the endpoint should answer it with success so the host does not retry. When the caller passes `opened_by_slipway`, a pull request event for a number Slipway did not open is dropped the same way.
 
-`Event.normalised()` is the mapping `ingest_host_event` (U7) stores: `host`, `delivery_id`, `repository`, `pr_number`, `kind`, `merge_commit`, `head_commit`, then the tested commit, the tested head, the check name and state, and the event's own details. `DeliveryLog` is the in process half of dedupe, a bounded memory of recent delivery ids the endpoint may consult before the database; the durable half is the table's unique key on host and delivery id.
+`Event.normalised()` is the mapping `ingest_host_event` (U7) stores: `host`, `delivery_id`, `repository`, `pr_number`, `kind`, `merge_commit`, `head_commit`, then the tested commit, the tested head, the check name and state, and the event's own details. `DeliveryLog` is the in process half of dedupe, a bounded memory of recent delivery ids the endpoint may consult before the database; the durable half is the table's unique key on host and delivery id. `forget` drops an id again, which the endpoint calls when storing a delivery fails, so the host's redelivery is stored rather than answered as a duplicate.
 
 Where each kind's fields come from:
 
