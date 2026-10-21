@@ -614,3 +614,54 @@ def test_the_engine_facade_names_the_workflow_and_carries_the_build_id():
     engine.push_host_event(facade, 4, {"kind": events.PR_MERGED, "pr_number": 7})
     assert pushed == [(events.PR_MERGED, {"kind": events.PR_MERGED, "pr_number": 7,
                                           "build_id": 4})]
+
+
+# U26: a project's own branch names and titles, and the external lander.
+
+def lander_project(world):
+    path = world.home / "projects" / "example.toml"
+    path.write_text(path.read_text()
+                    .replace('landing_path = "auto_merge_strict"',
+                             'landing_path = "external_lander"\n'
+                             'branch_template = "{key}-{slug}"\n'
+                             'pull_request_title = "{key}: {title}"'))
+
+
+def test_a_project_template_names_the_branch_and_title_and_the_lander_lands_it(tmp_path):
+    world = World(tmp_path)
+    lander_project(world)
+    build_id = world.card("XY-12")
+    world.tracker.cards["XY-12"] = replace(world.tracker.cards["XY-12"], title="Fix export")
+    armed = []
+    world.host.enqueue = lambda pr, landing=None: armed.append(pr)
+
+    async def scenario():
+        task = world.start(build_id)
+        await parked(world, build_id)
+        world.host.change(world.pr_of(build_id), state=MERGED, merged=True,
+                          merge_commit=sha(77))
+        world.engine.push(events.PR_MERGED, build_id)
+        return await task
+
+    outcome = run(scenario)
+    assert outcome["outcome"] == "scored"
+    assert world.records.build(build_id).branch == "XY-12-fix-export"
+    assert world.host.prs[world.pr_of(build_id)].title == "XY-12: Fix export"
+    assert armed == []  # auto_merge is on in the file, and still nothing is armed
+    assert "enqueue" not in world.records.evidence(build_id, "pr_open")
+
+
+def test_a_branch_left_by_an_earlier_build_ends_the_build_when_the_name_has_no_build_id(
+        tmp_path):
+    world = World(tmp_path)
+    lander_project(world)
+    build_id = world.card("XY-13")
+    world.host.branches["XY-13-card-xy-13"] = sha(500)  # an earlier build's work
+
+    outcome = drive(world, build_id)
+    assert outcome["outcome"] == "returned_empty"
+    evidence = world.records.evidence(build_id, "returned_empty")
+    assert evidence["halt"] == "builder_failed"
+    assert "XY-13-card-xy-13 already exists" in evidence["reason"]
+    assert world.builder.starts == []
+    assert world.host.branches["XY-13-card-xy-13"] == sha(500)

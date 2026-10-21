@@ -17,12 +17,31 @@ session reference:
       run/          token (the git credential, rewritten on refresh) and
                     handoff.txt; mounted read only into a container
       workspace/    home/, config/ (an empty CLAUDE_CONFIG_DIR), repo/ (a
-                    fresh clone), out/ (the CLI's final JSON result)
+                    fresh clone, or a worktree; below), out/ (the CLI's final
+                    JSON result)
       transcript.jsonl   the session transcript, copied out and scrubbed
       state.json    the card, branch, base, and, once terminal, the result
 
 Nothing is shared between two sessions: no directory, no mount, no
 configuration (AE3).
+
+Worktree checkout (U26). A git worktree is a second working folder of one
+repository: it has its own checked out branch and files, and shares the
+repository's commits. A laptop builder made with checkout worktree and the
+path of the laptop's shared checkout (a clone other sessions also use) does
+not clone. Before the session it fetches the card's branch into the shared
+checkout and adds a worktree at the base commit as the session's repo/; the
+session switches to the card's branch there, and its git reads the remote
+and the branch's upstream from its own environment, so nothing is written
+to the shared checkout's configuration. Every git call on the shared
+checkout runs as the session user, so the files it makes are the session's
+to write and remove. On release git removes the worktree, its files go, and
+the local branch the session made is deleted; a branch of that name the
+shared checkout already had is never reset or deleted. The shared
+checkout's own branch, files, and status are never touched. The session
+user needs write access to the shared checkout's .git folder, which the
+laptop's install gives through the worker's group. clone stays the
+default, and a container always clones.
 
 Credentials. The account token (CLAUDE_CODE_OAUTH_TOKEN for a subscription,
 ANTHROPIC_API_KEY for an API key) reaches the session by environment only:
@@ -81,6 +100,7 @@ from slipway.builders.base import (
 from slipway.builders.handoff import Handoff
 from slipway.config.bindings import BindingInvalid, ResolvedBinding
 from slipway.config.operator import AccountKind
+from slipway.config.project import Checkout
 from slipway.redact import scrub
 from slipway.trace.shape import (
     ACTIONS_FILE,
@@ -133,6 +153,26 @@ exec claude -p --session-id "$SLIPWAY_SESSION_ID" --model "$SLIPWAY_MODEL" \\
   --permission-mode "$SLIPWAY_PERMISSION_MODE" --output-format json \\
   < "$SLIPWAY_HANDOFF" > "$SLIPWAY_OUT/result.json"
 """
+
+# The worktree variant: the worker added repo/ as a worktree at the base, so
+# the session marks both folders safe for its own git (they belong to other
+# users), switches to the card's branch, and sets the branch's remote and
+# upstream through git's environment config, which only this session reads.
+# core.sharedRepository=group makes every object folder it adds writable by
+# the group, so the operator's own git can still write beside it.
+WORKTREE_SCRIPT = SESSION_SCRIPT.replace(
+    'git clone --quiet --branch "$SLIPWAY_BRANCH" "$SLIPWAY_REMOTE" "$SLIPWAY_REPO"\n'
+    'cd "$SLIPWAY_REPO"\n',
+    'git config --global --add safe.directory "$SLIPWAY_SHARED"\n'
+    'git config --global --add safe.directory "$SLIPWAY_REPO"\n'
+    'export GIT_CONFIG_COUNT=4 GIT_CONFIG_KEY_0=remote.slipway.url \\\n'
+    '  GIT_CONFIG_VALUE_0="$SLIPWAY_REMOTE" GIT_CONFIG_KEY_1="branch.$SLIPWAY_BRANCH.remote" \\\n'
+    '  GIT_CONFIG_VALUE_1=slipway GIT_CONFIG_KEY_2="branch.$SLIPWAY_BRANCH.merge" \\\n'
+    '  GIT_CONFIG_VALUE_2="refs/heads/$SLIPWAY_BRANCH" \\\n'
+    '  GIT_CONFIG_KEY_3=core.sharedRepository GIT_CONFIG_VALUE_3=group\n'
+    'cd "$SLIPWAY_REPO"\n'
+    'git switch --quiet --create "$SLIPWAY_BRANCH"\n',
+)
 
 # Variables a session may inherit from the process that launches it. Every
 # other variable, a database connection, a Hatchet token, SLIPWAY_HOME, is
@@ -619,7 +659,8 @@ class _Sessions:
             tip = remote_tip(self.run, self._git_env(session_ref), self.git.remote,
                              f"refs/heads/{state['branch']}")
             commit = tip if tip and tip != state["base"] else None
-            reason = f"session exited with code {exit_code}"
+            reason = (f"session exited with code {exit_code}" if exit_code is not None
+                      else "no session ran")
             if stop:
                 reason += f", {stop}"
             if detail:
@@ -770,11 +811,16 @@ class LaptopBuilder(_Sessions):
 
     def __init__(self, root: Path, git: GitAccess, session_user: str, path: str,
                  run: Run = default_run, environ: Mapping[str, str] | None = None,
-                 now: Callable[[], datetime] = now_utc, refresh_seconds: float = 60.0):
+                 now: Callable[[], datetime] = now_utc, refresh_seconds: float = 60.0,
+                 checkout: Checkout | str = Checkout.CLONE, shared: Path | None = None):
         super().__init__(root, git, run, environ, now)
         if session_user in ("", "root"):
             raise ValueError("a laptop session never runs as root")
         self.session_user, self.path, self.refresh_seconds = session_user, path, refresh_seconds
+        self.checkout = Checkout(checkout)
+        if self.checkout is Checkout.WORKTREE and shared is None:
+            raise ValueError("a worktree checkout needs the path of the shared checkout")
+        self.shared = Path(shared) if shared is not None else None
 
     def environment(self, session_ref: str, handoff: Handoff, binding: ResolvedBinding,
                     session_id: str, token_value: str) -> dict[str, str]:
@@ -783,15 +829,62 @@ class LaptopBuilder(_Sessions):
         variables = session_env(Paths(str(top / "run"), str(top / "workspace")), handoff,
                                 binding, self.git, session_id)
         token_variable = self._state(session_ref)["token_variable"]
+        if self.checkout is Checkout.WORKTREE:
+            variables["SLIPWAY_SHARED"] = str(self.shared)
         return {"PATH": self.path, **variables, token_variable: token_value}
 
     def invocation(self, env: Mapping[str, str]) -> list[str]:
         keep = ",".join(sorted(env))
+        script = WORKTREE_SCRIPT if self.checkout is Checkout.WORKTREE else SESSION_SCRIPT
         return ["sudo", "--non-interactive", "--user", self.session_user,
-                f"--preserve-env={keep}", "--", "/bin/sh", "-c", SESSION_SCRIPT]
+                f"--preserve-env={keep}", "--", "/bin/sh", "-c", script]
+
+    def _shared_git(self, session_ref: str, *args: str, check: bool = True):
+        """A git call on the shared checkout, as the session user, with no hook.
+
+        The session user runs every git call that writes the worktree, its
+        record under the shared .git, or its local branch, so the session's
+        own git and the release can write and remove all of it. The worker's
+        umask never decides who may write a file the session needs.
+        """
+        env = self._git_env(session_ref)
+        keep = ",".join(sorted(env))
+        argv = ["git", "-c", "core.hooksPath=/dev/null", "-c",
+                f"credential.helper={CREDENTIAL_HELPER}", "-c", f"safe.directory={self.shared}",
+                "-c", "core.sharedRepository=group", "-C", str(self.shared), *args]
+        return self.run(["sudo", "--non-interactive", "--user", self.session_user,
+                         f"--preserve-env={keep}", "--", *argv], check=check, env=env)
+
+    def _add_worktree(self, session_ref: str, handoff: Handoff) -> None:
+        """Fetch the card's branch into the shared checkout, add repo/ at the base."""
+        repo = self.dir(session_ref) / "workspace" / "repo"
+        # A branch of that name already in the shared checkout is someone
+        # else's: the session's switch then fails rather than reset it, and
+        # release leaves it alone.
+        found = self._shared_git(session_ref, "rev-parse", "--verify", "--quiet",
+                                 f"refs/heads/{handoff.branch}", check=False)
+        state = self._state(session_ref)
+        state["shared_branch_existed"] = found.returncode == 0
+        self._save(session_ref, state)
+        # --no-write-fetch-head: FETCH_HEAD may be the operator's own file,
+        # which the session user cannot write.
+        self._shared_git(session_ref, "fetch", "--quiet", "--no-write-fetch-head",
+                         self.git.remote,
+                         f"refs/heads/{handoff.branch}")
+        self._shared_git(session_ref, "worktree", "add", "--quiet", "--detach", str(repo),
+                         handoff.base)
 
     def start(self, handoff: Handoff, binding: ResolvedBinding, credential: Credential) -> str:
         session_ref, top, session_id, value = self._prepare(handoff, binding, credential)
+        if self.checkout is Checkout.WORKTREE:
+            try:
+                self._add_worktree(session_ref, handoff)
+            except subprocess.CalledProcessError as error:
+                # No session ran; the build ends returned_empty with the
+                # reason, and laptop_build still releases what was made.
+                detail = (error.stderr or "").strip() or f"git exited {error.returncode}"
+                self._finish(session_ref, None, f"the worktree could not be added: {detail}")
+                return session_ref
         env = self.environment(session_ref, handoff, binding, session_id, value)
         stop = threading.Event()
         failed: list[CredentialError] = []
@@ -823,8 +916,19 @@ class LaptopBuilder(_Sessions):
     def release(self, session_ref: str) -> None:
         """Remove the session's files, the workspace as the user that wrote it."""
         top = self.dir(session_ref)
+        if self.checkout is Checkout.WORKTREE:
+            # git removes the worktree and its record together; the rm and the
+            # prune below cover a worktree git could not remove.
+            self._shared_git(session_ref, "worktree", "remove", "--force",
+                             str(top / "workspace" / "repo"), check=False)
         self.run(["sudo", "--non-interactive", "--user", self.session_user, "--",
                   "rm", "-rf", str(top / "workspace")], check=False)
+        if self.checkout is Checkout.WORKTREE:
+            self._shared_git(session_ref, "worktree", "prune", check=False)
+            state = self._state(session_ref)
+            if state.get("shared_branch_existed") is False:
+                self._shared_git(session_ref, "branch", "--quiet", "-D", state["branch"],
+                                 check=False)
         shutil.rmtree(top, ignore_errors=True)
 
 

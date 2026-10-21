@@ -6,6 +6,7 @@ a test that fell back to ~/.slipway would find nothing rather than read the
 real home directory.
 """
 
+import re
 import shutil
 from pathlib import Path
 
@@ -19,13 +20,18 @@ from slipway.config.bindings import (
 )
 from slipway.config.operator import AccountKind, Host, load_operator
 from slipway.config.project import (
+    DEFAULT_BRANCH_TEMPLATE,
+    DEFAULT_PULL_REQUEST_TITLE,
+    Checkout,
     LandingPath,
     MergeMethod,
     TraceDetail,
     Tracker,
+    branch_namespace,
     check_names,
     load_project,
 )
+from slipway.hosts.base import PINNED, pinned_landing
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "config"
 SLUG = "example"
@@ -336,3 +342,100 @@ def test_env_name_refusal_does_not_echo_the_value(tmp_path):
         reader.env("token_env")
     assert secret not in str(info.value)
     assert "length 35" in str(info.value)
+
+
+# U26: the first project's lane. lander.toml is shaped like the first
+# project's file, with every value invented.
+
+LANDER = "lander"
+SRC = Path(__file__).resolve().parents[2] / "src" / "slipway"
+
+
+@pytest.fixture
+def lander(isolated_home):
+    shutil.copy(FIXTURES / "lander.toml", isolated_home / "projects" / f"{LANDER}.toml")
+    return isolated_home / "projects" / f"{LANDER}.toml"
+
+
+def test_an_external_lander_project_file_loads_and_pins_the_landing(lander):
+    project = load_project(LANDER)
+    assert project.landing_path is LandingPath.EXTERNAL_LANDER
+    assert project.checkout is Checkout.WORKTREE
+    assert project.ready_status == "Backlog"
+    # No host setting reveals an outside lander, so the value comes from the
+    # file, which the probe takes in place of anything it could read.
+    landing = pinned_landing(project)
+    assert landing.path == LandingPath.EXTERNAL_LANDER and landing.path_source == PINNED
+
+
+def test_the_branch_template_renders_the_projects_own_names(lander):
+    project = load_project(LANDER)
+    assert project.branch_for("XY-12", "Fix export", 7) == "XY-12-fix-export"
+    assert project.branch_for("XY-12", "Fix the CSV export: dates & times!", 7) == (
+        "XY-12-fix-the-csv-export-dates-times")
+    assert project.branch_for("XY-12", "", 7) == "XY-12-card"
+    assert project.title_for("XY-12", "Export keeps dates") == "XY-12: Export keeps dates"
+    assert branch_namespace(project.branch_template) == ""
+
+
+def test_a_long_title_is_cut_at_a_word(lander):
+    project = load_project(LANDER)
+    branch = project.branch_for("XY-1", "word " * 30, 1)
+    assert branch.startswith("XY-1-word-word") and not branch.endswith("-")
+    assert len(branch) <= len("XY-1-") + 40
+
+
+def test_defaults_keep_todays_names(isolated_home):
+    project = load_project(SLUG)
+    assert project.branch_template == DEFAULT_BRANCH_TEMPLATE
+    assert project.branch_for("EX-12", "Anything", 31) == "slipway/EX-12-31"
+    assert project.pull_request_title == DEFAULT_PULL_REQUEST_TITLE
+    assert project.title_for("EX-12", "Add the page") == "Add the page"
+    assert project.checkout is Checkout.CLONE
+    assert branch_namespace(project.branch_template) == "slipway/"
+
+
+@pytest.mark.parametrize(("template", "says"), [
+    ("{slug}", "must carry {key}"),
+    ("feature/{slug}-{build}", "must carry {key}"),
+    ("{key} {slug}", "not a legal branch name"),
+    ("lane..{key}", "not a legal branch name"),
+    ("{key}.lock", "not a legal branch name"),
+    ("{key}.{slug}", "not a legal branch name"),  # a card titled "Lock"
+    ("/{key}", "not a legal branch name"),
+    ("-{key}", "not a legal branch name"),
+    ("{key}-{title}", "may use only {key}, {slug}, {build}"),
+    ("{key!r}", "may use only"),
+    ("{key", "is not a template"),
+])
+def test_a_branch_template_without_key_or_illegal_is_refused_at_load(lander, template, says):
+    edit(lander, 'branch_template = "{key}-{slug}"', f'branch_template = "{template}"')
+    error = failure(lambda: load_project(LANDER))
+    assert error.field == "branch_template"
+    assert says in error.message
+
+
+def test_a_title_template_without_the_title_is_refused(lander):
+    edit(lander, 'pull_request_title = "{key}: {title}"', 'pull_request_title = "{key}"')
+    error = failure(lambda: load_project(LANDER))
+    assert error.field == "pull_request_title" and "{title}" in error.message
+
+
+def test_an_unknown_checkout_names_the_key(lander):
+    edit(lander, 'checkout = "worktree"', 'checkout = "copy"')
+    assert failure(lambda: load_project(LANDER)).field == "checkout"
+
+
+def test_no_value_of_the_first_projects_file_is_in_the_code(lander):
+    # R1: the fixture holds the project's values; src/slipway holds none of them.
+    project = load_project(LANDER)
+    values = [project.repository, project.board + "-12", project.lane_label,
+              project.gate_command, project.host_credential, "example-lander"]
+    # And no word naming the first project or its customer, by whole word,
+    # so "integration" is not a hit.
+    names = re.compile(r"\b(integra|workbench|integrel)\b", re.IGNORECASE)
+    for path in SRC.rglob("*.py"):
+        text = path.read_text()
+        for value in values:
+            assert value not in text, f"{value!r} in {path}"
+        assert not names.search(text), f"{names.search(text)[0]!r} in {path}"

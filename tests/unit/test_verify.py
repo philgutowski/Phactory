@@ -225,6 +225,72 @@ def test_plain_merge_folds_in_what_landed_meanwhile(tmp_path, method):
     assert v.evidence["merged_tree"] != gitread.tree_of(card.cache, card.confirmed)
 
 
+# U26: the external lander. A lander of the project's own puts the branch on
+# main and pushes; the host then marks the pull request merged.
+
+def lander_merges(card: Landing, change: str | None = None) -> str:
+    """The lander's own landing: merge the branch into main and push.
+
+    change, when given, is a new b.py the lander slips into its merge commit.
+    """
+    r = card.repo
+    r.git("merge", "-q", "--no-ff", "--no-commit", BRANCH)
+    if change is not None:
+        (r.work / "src" / "b.py").write_text(change)
+        r.git("add", "src/b.py")
+    r.git("commit", "-q", "-m", "XY-12 land the branch")
+    return card._push()
+
+
+def test_external_lander_landed_when_its_merge_carries_the_confirmed_changes(tmp_path):
+    card = Landing(tmp_path)
+    merged = lander_merges(card)
+    v = card.verify(merged, path=LandingPath.EXTERNAL_LANDER)
+    assert v.outcome == verify.LANDED
+    assert v.evidence["landing_path"] == LandingPath.EXTERNAL_LANDER
+    assert v.evidence["merged_tree"] == gitread.tree_of(card.cache, card.confirmed)
+    assert v.check(verify.CONFIRMED_LANDED).result == verify.PASS
+
+
+def test_external_lander_folds_in_cards_another_lander_put_on_main_first(tmp_path):
+    # The project's own feeder landed a sibling card after this build's base.
+    card = Landing(tmp_path, behind=True)
+    merged = lander_merges(card)
+    v = card.verify(merged, path=LandingPath.EXTERNAL_LANDER)
+    assert v.outcome == verify.LANDED
+    assert v.evidence["merged_tree"] != gitread.tree_of(card.cache, card.confirmed)
+
+
+def test_external_lander_with_no_merge_commit_from_the_host_reads_the_tip(tmp_path):
+    card = Landing(tmp_path)
+    tip = lander_merges(card)
+    v = card.verify(None, path=LandingPath.EXTERNAL_LANDER)
+    assert v.outcome == verify.LANDED
+    assert v.evidence["merged"] == tip
+
+
+def test_external_lander_with_no_merge_commit_and_a_later_card_names_the_landers_push(
+        tmp_path):
+    card = Landing(tmp_path)
+    pushed = lander_merges(card)
+    card.repo.commit("other.txt", "the feeder's next card\n", "sibling card after")
+    card.repo.git("push", "-q", "origin", "main")
+    v = card.verify(None, path=LandingPath.EXTERNAL_LANDER)
+    assert v.outcome == verify.LANDED
+    assert v.evidence["merged"] == pushed != v.evidence["branch_tip"]
+
+
+def test_external_lander_that_changed_the_cards_files_is_commit_mismatch(tmp_path):
+    card = Landing(tmp_path)
+    merged = lander_merges(card, change="b = 999\n")
+    v = card.verify(merged, path=LandingPath.EXTERNAL_LANDER)
+    assert v.outcome == verify.HALTED
+    assert v.halt_class == COMMIT_MISMATCH
+    assert v.halt.evidence["relation"] == verify.TREE_EQUALS_CONFIRMED_MERGED_INTO_PARENT
+    assert v.halt.evidence["landing_path"] == LandingPath.EXTERNAL_LANDER
+    assert_names_unique(v)
+
+
 def test_tracker_read_fails_is_a_blocking_skip_with_no_class(tmp_path):
     card = Landing(tmp_path)
     merged = card.land("squash")

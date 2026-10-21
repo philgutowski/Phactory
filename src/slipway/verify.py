@@ -32,10 +32,24 @@ The relation per landing path, as measured in docs/spikes/merge-paths.md:
                                   under merge commit, squash, and rebase
     plain_merge                   tree of merged equals the tree of merging
                                   confirmed into merged's first parent
+    external_lander               as plain_merge, on the commit the lander
+                                  pushed
 
 plain_merge is a repository with auto merge on but no required up to date
 check: the branch may be behind when it lands, so the trees differ by
 whatever reached the branch meanwhile, and the relation folds that in.
+
+external_lander is a project whose own lander, not Slipway and not the
+host's queue, puts the branch on the base branch and pushes (U26). Other
+cards may reach the branch between the build's base and that push, such as
+a feeder's, so the relation is plain_merge's: the commit the lander pushed
+carries exactly the confirmed changes on top of its first parent. A host
+that marks a pull request merged by an outside push may give no merge
+commit, so when the host gave none merged is the first commit on the
+branch's first parent line that holds the confirmed commit (landed_at),
+not the tip, which may already carry a later card. That assumes a lander
+that merges: after a squash or a rebase no commit holds confirmed, so
+merged is the tip, which is right only while no later card sits on it.
 
 The outcome is one of:
 
@@ -77,6 +91,7 @@ RELATIONS = {
     LandingPath.BITBUCKET_QUEUE: TESTED_COMMIT,
     LandingPath.AUTO_MERGE_STRICT: TREE_EQUALS_CONFIRMED,
     LandingPath.PLAIN_MERGE: TREE_EQUALS_CONFIRMED_MERGED_INTO_PARENT,
+    LandingPath.EXTERNAL_LANDER: TREE_EQUALS_CONFIRMED_MERGED_INTO_PARENT,
 }
 
 LANDED = "landed"
@@ -162,6 +177,18 @@ def hand_landing(repo: Path, baseline: str, merged: str, card_key: str) -> str |
     return None
 
 
+def landed_at(repo: Path, baseline: str, confirmed: str, tip: str) -> str:
+    """The first commit on the branch's first parent line that holds confirmed.
+
+    That is the lander's push when the host named no merge commit; a commit
+    another lander pushed after it is never taken for it. The tip when no
+    commit since baseline holds confirmed, so the relation then fails.
+    """
+    line = gitread.run(repo, "rev-list", "--first-parent", "--reverse",
+                       f"{baseline}..{tip}").split()
+    return next((c for c in line if gitread.is_ancestor(repo, confirmed, c)), tip)
+
+
 def verify(repo, baseline, confirmed, tested, merged, card_key,
            tracker_status: TrackerStatus, landing_path, *, tested_head=None,
            branch=None) -> Verdict:
@@ -187,6 +214,8 @@ def verify(repo, baseline, confirmed, tested, merged, card_key,
         branch = branch or gitread.default_branch(repo)
         tip = gitread.rev_parse(repo, f"refs/heads/{branch}")
         run.evidence.update(branch=branch, branch_tip=tip)
+        if landing_path == LandingPath.EXTERNAL_LANDER and not merged:
+            merged = run.evidence["merged"] = landed_at(repo, baseline, confirmed, tip)
         _commits(repo, run, baseline, confirmed, tested, tested_head, merged, tip,
                  relation, branch)
         run.evidence["hand_landing"] = hand_landing(repo, baseline, merged, card_key)
