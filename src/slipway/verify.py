@@ -47,7 +47,9 @@ carries exactly the confirmed changes on top of its first parent. A host
 that marks a pull request merged by an outside push may give no merge
 commit, so when the host gave none merged is the first commit on the
 branch's first parent line that holds the confirmed commit (landed_at),
-not the tip, which may already carry a later card.
+not the tip, which may already carry a later card. That assumes a lander
+that merges: after a squash or a rebase no commit holds confirmed, so
+merged is the tip, which is right only while no later card sits on it.
 
 The outcome is one of:
 
