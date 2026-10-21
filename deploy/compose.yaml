@@ -1,0 +1,64 @@
+# The seed of the VPS compose file, from the U4 spike (docs/spikes/hatchet.md).
+# It holds the Hatchet engine and its Postgres only; U22 and the deploy cards
+# add the Slipway app, the worker, Dagger, and the runner instances, and must
+# keep the listener and secret rules in deploy/README.md (KTD28).
+#
+# Secret values come from the root owned environment file, passed with
+# `docker compose --env-file /etc/slipway/slipway.env up -d`. Compose refuses to
+# start while any `${NAME:?}` below is unset, so no default password can ship.
+
+services:
+  hatchet-postgres:
+    image: postgres:15.6
+    environment:
+      POSTGRES_USER: hatchet
+      POSTGRES_PASSWORD: ${HATCHET_POSTGRES_PASSWORD:?set in the environment file}
+      POSTGRES_DB: hatchet
+    volumes:
+      - hatchet_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hatchet -d hatchet"]
+      interval: 5s
+      retries: 20
+    restart: unless-stopped
+    # No ports: reachable on the compose network only.
+
+  hatchet-lite:
+    # Pinned to the engine the spike ran. Expression based max_runs needs
+    # 0.106.0 or later (KTD4).
+    image: ghcr.io/hatchet-dev/hatchet/hatchet-lite:v0.110.5
+    depends_on:
+      hatchet-postgres:
+        condition: service_healthy
+    ports:
+      # Dashboard and REST API: loopback only, reached over an SSH tunnel.
+      - "127.0.0.1:8888:8888"
+      # gRPC, the one public Hatchet listener, for the laptop worker (KTD28).
+      - "7077:7077"
+    environment:
+      RABBITMQ_ENABLED: "false"
+      DATABASE_URL: postgresql://hatchet:${HATCHET_POSTGRES_PASSWORD:?}@hatchet-postgres:5432/hatchet?sslmode=disable
+      SERVER_DEFAULT_ENGINE_VERSION: V1
+      SERVER_URL: ${HATCHET_SERVER_URL:?the dashboard URL, for example http://localhost:8888}
+      SERVER_AUTH_COOKIE_DOMAIN: ${HATCHET_COOKIE_DOMAIN:?}
+      SERVER_AUTH_COOKIE_INSECURE: "f"
+      SERVER_AUTH_SET_EMAIL_VERIFIED: "t"
+      SERVER_GRPC_BIND_ADDRESS: 0.0.0.0
+      SERVER_GRPC_PORT: "7077"
+      SERVER_GRPC_BROADCAST_ADDRESS: ${HATCHET_GRPC_BROADCAST_ADDRESS:?the public host:7077 workers dial}
+      SERVER_INTERNAL_CLIENT_INTERNAL_GRPC_BROADCAST_ADDRESS: localhost:7077
+      # The spike ran with "t". TLS on the public gRPC port is the deploy
+      # card's to finish (KTD28); until then leave this "t" only behind a
+      # firewall that admits the laptop's address alone.
+      SERVER_GRPC_INSECURE: ${HATCHET_GRPC_INSECURE:-f}
+      # Replaces the built in admin@example.com account on first boot. The
+      # spike proved these two names, not the SEED_ prefixed ones.
+      ADMIN_EMAIL: ${HATCHET_ADMIN_EMAIL:?}
+      ADMIN_PASSWORD: ${HATCHET_ADMIN_PASSWORD:?}
+    volumes:
+      - hatchet_config:/config
+    restart: unless-stopped
+
+volumes:
+  hatchet_pg:
+  hatchet_config:
