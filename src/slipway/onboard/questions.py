@@ -34,7 +34,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from slipway.config.operator import Host
-from slipway.config.project import LandingPath, MergeMethod, TraceDetail, Tracker
+from slipway.config.project import Checkout, LandingPath, MergeMethod, TraceDetail, Tracker
 
 TEXT, CHOICE, LIST, NUMBER, YES_NO = "text", "choice", "list", "number", "yes_no"
 
@@ -42,6 +42,7 @@ TEXT, CHOICE, LIST, NUMBER, YES_NO = "text", "choice", "list", "number", "yes_no
 # operator file; LIVE ones are listed by the probe (checks.py).
 HOSTS, TRACKERS = "hosts", "trackers"
 LANDING_PATHS, MERGE_METHODS, TRACE_DETAILS = "landing_paths", "merge_methods", "trace_details"
+CHECKOUTS = "checkouts"
 ACCOUNTS, LANGFUSE_PROJECTS = "accounts", "langfuse_projects"
 TRACKER_CREDENTIALS, HOST_CREDENTIALS = "tracker_credentials", "host_credentials"
 TRACKER_SITES, BUILDER_WORKERS = "tracker_sites", "builder_workers"
@@ -53,6 +54,7 @@ FIXED = {
     LANDING_PATHS: tuple(p.value for p in LandingPath),
     MERGE_METHODS: tuple(m.value for m in MergeMethod),
     TRACE_DETAILS: tuple(d.value for d in TraceDetail),
+    CHECKOUTS: tuple(c.value for c in Checkout),
 }
 OPERATOR = (ACCOUNTS, LANGFUSE_PROJECTS, TRACKER_CREDENTIALS, HOST_CREDENTIALS, TRACKER_SITES,
             BUILDER_WORKERS)
@@ -153,6 +155,9 @@ QUESTIONS: tuple[Question, ...] = (
        "A worker is a machine the operator holds; leave empty for none.",
        kind=CHOICE, choices_from=BUILDER_WORKERS, free_text=False, operator_only=True,
        required=False),
+    _q("checkout", "How does a laptop build get its working copy? Leave empty for a fresh "
+       "clone.", "A worktree is a second working folder added from the laptop's own checkout.",
+       kind=CHOICE, choices_from=CHECKOUTS, free_text=False, required=False),
     _q("auto_merge", "May the host merge a pull request on its own once the gate is green?",
        "Auto merge lands without a person; without it a person approves each one.",
        kind=YES_NO, free_text=False, default=NO, operator_only=True),
@@ -164,6 +169,13 @@ QUESTIONS: tuple[Question, ...] = (
        "Verify relates the merged commit to the confirmed one by this method.",
        kind=CHOICE, choices_from=MERGE_METHODS, free_text=False, operator_only=True,
        required=False),
+    _q("branch_template", "What should a card's branch be called? Use {key}, {slug}, and "
+       "{build}; leave empty for slipway/{key}-{build}.",
+       "The text before the first placeholder is the namespace the machine identity is held "
+       "to (KTD6), and the board finds the card by {key}.", required=False),
+    _q("pull_request_title", "What should a pull request be titled? Use {key} and {title}; "
+       "leave empty for the card's title.", "The tracker's own token is still put in front "
+       "when the title does not carry it.", required=False),
     _q("build_cap", "How many builds may run at once?",
        "The cap holds spend and review load.", kind=NUMBER, default=2, operator_only=True),
     _q("daily_dispatch_cap", "How many builds may start in one day (UTC)?",

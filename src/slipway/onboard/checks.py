@@ -9,7 +9,8 @@ R30 names four properties a project must have before Slipway builds for it:
 3. An external gate that refuses broken changes: the host requires a check
    before merge, the landing path and merge method are known, and the
    machine identity (the credential builders push with, KTD6) is restricted
-   to Slipway's branch namespace, refs/heads/slipway/**.
+   to Slipway's branch namespace, refs/heads/slipway/** for the default
+   branch template (U26 lets a project name its own prefix).
 4. A written definition of verification: every card says what done means.
 
 Slipway reads 2 and 3 from the host and the tracker through a Probe. It
@@ -38,7 +39,7 @@ from dataclasses import dataclass, field
 from typing import Protocol
 
 from slipway.config.operator import Host
-from slipway.config.project import Project, Tracker
+from slipway.config.project import Project, Tracker, branch_namespace
 from slipway.hosts.base import HostError, Landing, ProbeUndetermined
 
 DURABLE_STATE = "durable_state"
@@ -48,8 +49,16 @@ VERIFICATION = "verification"
 SINGLE_DISPATCHER = "single_dispatcher"
 PROPERTIES = (DURABLE_STATE, EXTERNAL_GATE, INDEPENDENCE, VERIFICATION)
 
-# The branch namespace builders may push to (KTD6), as a ruleset names it.
-NAMESPACE = "refs/heads/slipway/**"
+
+
+def namespace(project: Project) -> str:
+    """The references builders may push to (KTD6), as a ruleset names them.
+
+    The prefix is the literal text in front of the branch template's first
+    placeholder (U26), so refs/heads/slipway/** for the default template.
+    """
+    return f"refs/heads/{branch_namespace(project.branch_template)}**"
+
 # Where the GitHub Projects status workflow lives in Slipway's repository.
 BOARD_TEMPLATE = "templates/slipway-board.yml"
 # Where a project adopts it in its own repository.
@@ -197,9 +206,10 @@ def gate_step(project: Project) -> str:
 def restriction_step(project: Project) -> str:
     if project.host is Host.BITBUCKET:
         return (f"in {project.repository}'s branch permissions, let the access token "
-                f"{project.host_credential!r} write only to slipway/** branches")
+                f"{project.host_credential!r} write only to "
+                f"{branch_namespace(project.branch_template)}** branches")
     return (f"add a ruleset on {project.repository} that blocks the identity of "
-            f"{project.host_credential!r} from every reference except {NAMESPACE}, with "
+            f"{project.host_credential!r} from every reference except {namespace(project)}, with "
             "that identity absent from the bypass list")
 
 
@@ -212,11 +222,16 @@ def external_gate(probe: Probe, project: Project, attested: Mapping[str, dict]) 
     what = "that the host requires a passing check before merge"
     if asked := _unread(EXTERNAL_GATE, "required_check", required, what, attested):
         return asked
+    if not branch_namespace(project.branch_template):
+        return _fail(EXTERNAL_GATE, "a branch namespace: the branch template starts with a "
+                     "placeholder, so no push rule can hold the machine identity to it",
+                     "answer branch_template with a fixed prefix, such as slipway/{key}-{build}",
+                     question="branch_template")
     restricted = probe.restriction(project)
     if restricted.ok is False:
         return _fail(EXTERNAL_GATE, "the machine identity is not restricted to Slipway's "
                      f"branch namespace ({restricted.detail})", restriction_step(project))
-    what = f"that the machine identity can push only to {NAMESPACE}"
+    what = f"that the machine identity can push only to {namespace(project)}"
     if asked := _unread(EXTERNAL_GATE, "restriction", restricted, what, attested):
         return asked
     try:

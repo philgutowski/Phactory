@@ -61,9 +61,16 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 
-from slipway.config import ConfigError, home, read_toml, strings
+from slipway.config import ConfigError, Reader, home, read_toml, strings
 from slipway.config.operator import Operator, load_operator
-from slipway.config.project import Project, Tracker, check_names, parse_project, project_path
+from slipway.config.project import (
+    Project,
+    Tracker,
+    check_names,
+    parse_project,
+    project_path,
+    read_branch_template,
+)
 from slipway.onboard import checks, questions
 from slipway.onboard.questions import (
     CHOICE,
@@ -295,6 +302,11 @@ def _shape(qid: str, value: str, draft: Mapping, operator: Operator) -> None:
         if host and entry.host != host:
             raise Refused(f"{value!r} is a {entry.host} credential, the project's host is "
                           f"{host}")
+    if qid == "branch_template":
+        try:
+            read_branch_template(Reader(Path("project"), {"branch_template": value}))
+        except ConfigError as error:
+            raise Refused(error.message) from None
     if qid in ("trivial_card_target", "evals_path"):
         path = PurePosixPath(value)
         if path.is_absolute() or ".." in path.parts:
@@ -502,6 +514,10 @@ def answer(ports: Ports, session: str, qid: str, value, actor: str) -> dict:
         state["verified"] = False
         state["trivial"] = None
         _write_project(ports, state, actor)
+        if qid in state["stale"]:
+            # The whole file refused this very answer, so it is refused, and
+            # nothing is saved: the state file is written only below.
+            return refuse(state["stale"].pop(qid), _shown(saved))
     result = _next(ports, state, actor)
     _save(ports.root, state)
     _audit(ports, session, actor, "onboard_answer",

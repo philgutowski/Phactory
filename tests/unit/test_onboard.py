@@ -44,8 +44,9 @@ BITBUCKET = {
     "roles.builder.effort": "", "roles.builder.time_budget_minutes": "",
     "roles.judge.account": "api-main", "roles.judge.model": "model-medium",
     "roles.judge.effort": "", "roles.judge.time_budget_minutes": "",
-    "builder_worker": "laptop", "auto_merge": "", "landing_path": "bitbucket_queue",
-    "merge_method": "squash", "build_cap": "", "daily_dispatch_cap": "",
+    "builder_worker": "laptop", "checkout": "", "auto_merge": "",
+    "landing_path": "bitbucket_queue", "merge_method": "squash", "branch_template": "",
+    "pull_request_title": "", "build_cap": "", "daily_dispatch_cap": "",
     "trace_project": "example-traces", "trace_detail": "",
     "allowed_subjects": f"{OPERATOR}, {MANAGER}", "evals_path": "",
     "trivial_card_target": "", "runner_labels": "", "machine_bound_tests": "",
@@ -155,11 +156,13 @@ def world(tmp_path) -> World:
 def onboard(world: World, answers: dict, actor: str = OPERATOR) -> dict:
     """Answer every question the machine asks from answers; return the first other result."""
     result = machine.start(world.ports, SLUG, actor)
-    while result["outcome"] == machine.QUESTION:
+    for _ in range(3 * len(QUESTIONS)):  # a bound, so a question asked forever fails
+        if result["outcome"] != machine.QUESTION:
+            return result
         qid = result["question"]["id"]
         result = machine.answer(world.ports, SLUG, qid, answers[qid], actor)
         assert result["outcome"] != machine.REFUSED, result
-    return result
+    raise AssertionError(f"onboard kept asking: {result}")
 
 
 def scripted(lines):
@@ -230,11 +233,55 @@ def test_an_unrestricted_identity_stops_at_the_gate_with_the_fix(world):
     assert result["outcome"] == machine.NEEDS_FIX
     assert result["property"] == checks.EXTERNAL_GATE
     assert "not restricted" in result["missing"]
-    assert checks.NAMESPACE in result["next_step"]
+    assert "refs/heads/slipway/**" in result["next_step"]
 
     world.probe.restricted = Finding(True, "restricted now")
     again = machine.answer(world.ports, SLUG, "recheck", "yes", OPERATOR)
     assert again["outcome"] == machine.FILE_CARD
+
+
+def test_the_restriction_follows_the_branch_template(world):
+    world.probe.restricted = Finding(False, "the token can write to main")
+    result = onboard(world, {**GITHUB, "branch_template": "agent/{key}-{slug}"})
+    assert "refs/heads/agent/**" in result["next_step"]
+
+
+def test_a_template_with_no_prefix_has_no_namespace_to_hold(world):
+    result = onboard(world, {**GITHUB, "branch_template": "{key}-{build}"})
+    assert result["outcome"] == machine.NEEDS_FIX
+    assert result["question"]["id"] == "branch_template"
+
+    fixed = machine.answer(world.ports, SLUG, "branch_template", "slipway/{key}", OPERATOR)
+    assert fixed["outcome"] == machine.FILE_CARD
+
+
+def test_the_u26_fields_reach_the_project_file(world):
+    onboard(world, {**BITBUCKET, "checkout": "worktree", "landing_path": "external_lander",
+                    "branch_template": "slipway/{key}-{slug}",
+                    "pull_request_title": "{key}: {title}"})
+    project = load_project(SLUG, world.root)
+    assert project.checkout == "worktree"
+    assert project.landing_path == "external_lander"
+    assert project.branch_for("EX-3", "Add a page", 9) == "slipway/EX-3-add-a-page"
+    assert project.title_for("EX-3", "Add a page") == "EX-3: Add a page"
+
+
+def test_a_bad_branch_template_is_refused_with_the_reason(world):
+    machine.start(world.ports, SLUG, OPERATOR)
+    result = machine.answer(world.ports, SLUG, "branch_template", "slipway/{build}", OPERATOR)
+    assert result["outcome"] == machine.REFUSED
+    assert "must carry {key}" in result["reason"]
+    assert "branch_template" not in machine.status(world.ports, SLUG)["answers"]
+
+
+def test_an_answer_the_whole_file_refuses_is_not_saved(world):
+    onboard(world, BITBUCKET)
+    before = world.project_file.read_bytes()
+    result = machine.answer(world.ports, SLUG, "pull_request_title", "{key}", OPERATOR)
+    assert result["outcome"] == machine.REFUSED
+    assert "must carry {title}" in result["reason"]
+    assert world.project_file.read_bytes() == before
+    assert machine.status(world.ports, SLUG)["outcome"] == machine.FILE_CARD
 
 
 def test_an_unreadable_restriction_is_attested_with_identity(world):
