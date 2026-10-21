@@ -80,7 +80,7 @@ def cycle(ports: verbs.Ports, slug: str) -> dict:
         if result["outcome"] == verbs.REFUSED and "cap" in result:
             out["cap"] = result["reason"]
             break
-        records.audit(project.slug, ACTOR, "dispatch", {"key": key, "reason": None}, result)
+        verbs.audit(ports, project.slug, ACTOR, "dispatch", {"key": key, "reason": None}, result)
         if result["outcome"] == verbs.DISPATCHED:
             out["dispatched"].append({"key": key, "build_id": result["build_id"],
                                       "started": result["started"]})
