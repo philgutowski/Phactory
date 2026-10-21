@@ -313,6 +313,15 @@ def test_landed_today_shows_both_scores_and_findings_show_their_excerpt(tmp_path
     assert "fp-9" in findings and "step 4: &lt;exit 1&gt;" in findings
 
 
+def test_a_score_that_is_not_an_object_still_renders(tmp_path):
+    w = world(tmp_path)
+    w.records.score(w.records.seed("EX-2", "scored"), "judged", [0.9])
+
+    found = get(make(w), f"/projects/{SLUG}", session(w))
+
+    assert "Judged: written." in section(found.text, "landed")[0]
+
+
 def test_a_card_in_its_state_for_hours_shows_its_age(tmp_path):
     w = world(tmp_path)
     w.records.seed("EX-1", "gate_red", pr_number=1, at=w.clock() - timedelta(hours=3),

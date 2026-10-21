@@ -72,6 +72,8 @@ def score_line(result: dict | None) -> str | None:
     """One score as a short line, such as "pass, 3 of 3", or None when it is not written yet."""
     if result is None:
         return None
+    if not isinstance(result, dict):  # a step that wrote a bare value still shows as written
+        return "written"
     total = result.get("total") if isinstance(result.get("total"), dict) else result
     verdict = total.get("verdict")
     if "passed" in total and "of" in total:
