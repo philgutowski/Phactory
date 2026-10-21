@@ -36,7 +36,9 @@ Each returns a plain mapping whose `outcome` tells the caller what to do next:
 | `waiting` | the trivial card is not done, or only the operator's questions are left | `reason` |
 | `verified` | the trivial card scored | `card_key` |
 
-Every result also carries `answers`, so `status` alone is enough to resume.
+Every result also carries `answers`, so `status` alone is enough to resume. `status` without an actor shows the operator's view, which is what the terminal wants; the MCP front end (U18) must pass the caller's subject so a manager agent gets its own view.
+
+A fault in a key no question fills, such as a `[rules]` table whose file is missing, is refused with its reason rather than pinned on a question, since no answer could fix it.
 
 ## What is saved, and where
 

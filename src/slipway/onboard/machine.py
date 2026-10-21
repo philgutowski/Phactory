@@ -401,10 +401,24 @@ def _write_project(ports: Ports, state: dict, actor: str) -> None:
         project = parse_project(path, data)
         check_names(project, ports.operator())
     except ConfigError as error:
-        question = questions.by_field(error.field) or questions.BY_ID["host"]
-        state["stale"][question.id] = error.message
+        _mark(state, error)
         return
     _write(path, to_toml(data, actor))
+
+
+def _mark(state: dict, error: ConfigError, keep: bool = False) -> None:
+    """Mark the question that fills the key at fault as no longer true.
+
+    A key no question fills, such as a [rules] table whose file is missing,
+    has no answer that could fix it, so the error is raised to the caller.
+    """
+    question = questions.by_field(error.field)
+    if question is None:
+        raise error
+    if keep:
+        state["stale"].setdefault(question.id, error.message)
+    else:
+        state["stale"][question.id] = error.message
 
 
 # The three calls.
@@ -462,8 +476,7 @@ def _reenter(ports: Ports, state: dict, data: dict) -> None:
     try:
         project = _project(ports, state)
     except ConfigError as error:
-        question = questions.by_field(error.field) or questions.BY_ID["host"]
-        state["stale"][question.id] = error.message
+        _mark(state, error)
         return
     if project is None:
         return
@@ -471,8 +484,7 @@ def _reenter(ports: Ports, state: dict, data: dict) -> None:
     try:
         check_names(project, ports.operator())
     except ConfigError as error:
-        question = questions.by_field(error.field) or questions.BY_ID["host"]
-        state["stale"].setdefault(question.id, error.message)
+        _mark(state, error, keep=True)
 
 
 def answer(ports: Ports, session: str, qid: str, value, actor: str) -> dict:
@@ -522,7 +534,11 @@ def answer(ports: Ports, session: str, qid: str, value, actor: str) -> dict:
         state["stale"].pop(qid, None)
         state["verified"] = False
         state["trivial"] = None
-        _write_project(ports, state, actor)
+        try:
+            _write_project(ports, state, actor)
+        except ConfigError as error:
+            return refuse(f"the project file has a fault no question fixes: {error}",
+                          _shown(saved))
         if qid in state["stale"]:
             # The whole file refused this very answer, so it is refused, and
             # nothing is saved: the state file is written only below.

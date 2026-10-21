@@ -502,3 +502,13 @@ def test_a_subject_off_the_list_causes_no_probe_read_on_reentry(world):
     world.probe.repository = counted
     assert machine.start(world.ports, SLUG, STRANGER)["outcome"] == machine.REFUSED
     assert world.probe.reads == []
+
+
+def test_a_fault_no_question_fixes_is_named_not_pinned_on_a_question(world):
+    onboard(world, BITBUCKET)
+    with world.project_file.open("a") as handle:
+        handle.write('\n[rules]\nfile = "missing.rules.md"\n')
+
+    result = machine.start(world.ports, SLUG, OPERATOR)
+    assert result["outcome"] == machine.REFUSED
+    assert "rules.file" in result["reason"]
