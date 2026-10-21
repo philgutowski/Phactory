@@ -45,6 +45,16 @@ ISSUE_PATH = "/rest/api/3/issue/%s"
 SEARCH_PATH = "/rest/api/3/search/jql"
 SEARCH_PAGE_SIZE = 100
 SEARCH_PAGE_LIMIT = 20
+PROJECT_SEARCH_PATH = "/rest/api/3/project/search"
+PROJECT_PATH = "/rest/api/3/project/%s"
+STATUSES_PATH = "/rest/api/3/project/%s/statuses"
+LABEL_PATH = "/rest/api/3/label"
+ISSUE_TYPES_PATH = "/rest/api/3/issue/createmeta/%s/issuetypes"
+CREATE_PATH = "/rest/api/3/issue"
+TRANSITIONS_PATH = "/rest/api/3/issue/%s/transitions"
+LISTING_PAGE_SIZE = 100
+# Jira's status category for every done status, whatever a site names them.
+DONE_CATEGORY = "done"
 
 
 def _adf_text(node):
@@ -100,15 +110,17 @@ class JiraTracker:
         return f"JiraTracker(site={self._site!r}, board={self._board!r})"
 
     # Transport.
-    def _request(self, method, path, params=None):
+    def _request(self, method, path, params=None, body=None):
         """Returns (payload, None) or (None, reason). Never raises for a transport failure."""
         url = f"https://{self._site}{path}"
         if params:
             url += "?" + urllib.parse.urlencode(params)
-        request = urllib.request.Request(url, method=method, headers={
-            "Authorization": self._authorization,
-            "Accept": "application/json",
-        })
+        headers = {"Authorization": self._authorization, "Accept": "application/json"}
+        data = None
+        if body is not None:
+            data = json.dumps(body).encode("utf-8")
+            headers["Content-Type"] = "application/json"
+        request = urllib.request.Request(url, data=data, method=method, headers=headers)
         try:
             with self._opener.open(request, timeout=NETWORK_TIMEOUT_SECONDS) as body:
                 raw = body.read().decode("utf-8")
@@ -192,3 +204,107 @@ class JiraTracker:
         """Jira links a pull request to a card by its upper case key in the title or branch."""
         token = str(key).upper()
         return ClosingReference(title_token=token, branch_token=token)
+
+    # Onboarding listings (U28).
+    def _paged(self, path, key):
+        """Every page of a startAt paged listing, to a bound. Returns (values, reason)."""
+        found, start = [], 0
+        for _ in range(SEARCH_PAGE_LIMIT):
+            payload, reason = self._get(path, {"startAt": start,
+                                               "maxResults": LISTING_PAGE_SIZE})
+            if payload is None:
+                return [], reason
+            values = payload.get("values") or []
+            found += [v.get(key) if isinstance(v, dict) else v for v in values]
+            if payload.get("isLast", True) or not values:
+                return [str(v) for v in found if v], None
+            start += len(values)
+        return [], f"{path} ran past {SEARCH_PAGE_LIMIT} pages"
+
+    def boards(self):
+        """The keys of the Jira projects this credential can see."""
+        found, reason = self._paged(PROJECT_SEARCH_PATH, "key")
+        return tuple(found), reason
+
+    def labels(self):
+        """The site's labels; Jira keeps one list for every project."""
+        found, reason = self._paged(LABEL_PATH, None)
+        return tuple(found), reason
+
+    def statuses(self):
+        """Every status the board's issue types can reach, once each, in Jira's order."""
+        if not self._board:
+            return (), "no board is chosen yet"
+        payload, reason = self._get(STATUSES_PATH % urllib.parse.quote(self._board, safe=""))
+        if payload is None:
+            return (), reason
+        names = [str(status.get("name")) for kind in payload or []
+                 for status in (kind or {}).get("statuses") or [] if status.get("name")]
+        return tuple(dict.fromkeys(names)), None
+
+    def read_board(self):
+        """Whether the board's project exists: (True or False, detail), None on a failed read."""
+        if not self._board:
+            return False, "no board is named"
+        payload, reason = self._get(PROJECT_PATH % urllib.parse.quote(self._board, safe=""))
+        if payload is None:
+            if reason and reason.startswith("jira returned 404"):
+                return False, f"board {self._board} was not found on {self._site}"
+            return None, reason
+        return True, f"board {self._board} ({payload.get('name') or 'unnamed'}) is readable"
+
+
+class JiraScratch:
+    """Files and closes the board movement check's scratch card (U28).
+
+    open(title) returns (key, reason), close(key) a reason or None, and
+    leftovers(title) the open cards a crashed run left, as (keys, reason).
+    """
+
+    def __init__(self, project, **kwargs):
+        self._tracker = JiraTracker(project, **kwargs)
+        self._board = project.board
+        self._done = self._tracker._done
+
+    def open(self, title: str):
+        board = urllib.parse.quote(self._board, safe="")
+        payload, reason = self._tracker._get(ISSUE_TYPES_PATH % board)
+        if payload is None:
+            return None, reason
+        kinds = payload.get("issueTypes") or payload.get("values") or []
+        standard = [k for k in kinds if not k.get("subtask") and k.get("id")]
+        if not standard:
+            return None, f"board {self._board} has no issue type a card can be filed in"
+        created, reason = self._tracker._request("POST", CREATE_PATH, body={"fields": {
+            "project": {"key": self._board}, "summary": title,
+            "issuetype": {"id": str(standard[0]["id"])}}})
+        if created is None:
+            return None, reason
+        key = created.get("key")
+        return (str(key), None) if key else (None, "jira filed a card but gave no key")
+
+    def close(self, key) -> str | None:
+        path = TRANSITIONS_PATH % urllib.parse.quote(str(key), safe="")
+        payload, reason = self._tracker._get(path)
+        if payload is None:
+            return reason
+        moves = payload.get("transitions") or []
+
+        def lands(move, named: bool) -> bool:
+            target = move.get("to") or {}
+            if named:
+                return str(target.get("name") or "").lower() in self._done
+            return (target.get("statusCategory") or {}).get("key") == DONE_CATEGORY
+
+        chosen = next((m for named in (True, False) for m in moves if lands(m, named)), None)
+        if chosen is None:
+            return f"{key} has no transition to a done status"
+        _, reason = self._tracker._request("POST", path,
+                                           body={"transition": {"id": str(chosen.get("id"))}})
+        return reason
+
+    def leftovers(self, title: str):
+        jql = (f"project = {_quote(self._board)} AND summary ~ {_quote(_quote(title))} "
+               "AND statusCategory != Done ORDER BY created ASC")
+        found, reason = self._tracker._search(jql)
+        return tuple(card.key for card in found if card.title == title), reason

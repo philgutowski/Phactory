@@ -1,0 +1,21 @@
+{
+  "self": "https://example.atlassian.net/rest/api/3/project/search",
+  "maxResults": 100,
+  "startAt": 0,
+  "total": 2,
+  "isLast": true,
+  "values": [
+    {
+      "id": "10000",
+      "key": "EX",
+      "name": "Example",
+      "projectTypeKey": "software"
+    },
+    {
+      "id": "10001",
+      "key": "OPS",
+      "name": "Operations",
+      "projectTypeKey": "software"
+    }
+  ]
+}

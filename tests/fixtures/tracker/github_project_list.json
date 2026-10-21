@@ -1,0 +1,27 @@
+{
+  "projects": [
+    {
+      "number": 7,
+      "title": "Example board",
+      "closed": false,
+      "id": "PVT_kwDOAexample7",
+      "url": "https://github.com/orgs/example-org/projects/7",
+      "owner": {
+        "login": "example-org",
+        "type": "Organization"
+      }
+    },
+    {
+      "number": 3,
+      "title": "Old board",
+      "closed": true,
+      "id": "PVT_kwDOAexample3",
+      "url": "https://github.com/orgs/example-org/projects/3",
+      "owner": {
+        "login": "example-org",
+        "type": "Organization"
+      }
+    }
+  ],
+  "totalCount": 2
+}

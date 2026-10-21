@@ -12,6 +12,25 @@ The interface every adapter implements:
     status(key)            -> TrackerStatus     the card's status, and whether it is terminal
     closing_reference(key) -> ClosingReference  the tokens the tracker's automation keys on
 
+Onboarding (U19, U28) adds four listings. Each returns names only and
+writes nothing:
+
+    boards()      -> (names, reason)   the boards this credential can see
+    labels()      -> (names, reason)   the labels a card on the board can carry
+    statuses()    -> (names, reason)   the board's columns or workflow statuses
+    read_board()  -> (exists, detail)  whether the project's board exists
+
+An adapter for listings may be built before the board is chosen, so boards()
+and labels() never need one. read_board answers True or False when the
+tracker said, and None when the read itself failed.
+
+One thing onboarding needs is a write: the board movement check (KTD27)
+files a scratch card, a throwaway card whose key the scratch branch and
+pull request carry, and closes it afterwards. That is not on the adapter,
+which stays read only (R34). Each tracker module has a separate Scratch
+class with exactly three methods, open(title), close(key), and
+leftovers(title), and nothing else in Slipway builds one.
+
 ready returns candidates, not a verdict: the ready rule itself is
 slipway.cards.contract.ready, which the caller applies to each card. read
 fills Card.status the same way ready does, so a caller that reads one card by
@@ -90,4 +109,10 @@ class ClosingReference:
 # The public surface of every adapter. The tests assert no other public
 # method exists, so a closeout, filing, or comment search method cannot creep
 # back in from the origin files.
-INTERFACE = ("candidates", "ready", "read", "status", "closing_reference")
+INTERFACE = ("candidates", "ready", "read", "status", "closing_reference",
+             "boards", "labels", "statuses", "read_board")
+
+# What every Scratch class offers, and the title every scratch card carries,
+# so a later run finds a crashed run's card by it.
+SCRATCH_INTERFACE = ("open", "close", "leftovers")
+SCRATCH_TITLE = "Slipway onboarding scratch card"

@@ -1,0 +1,22 @@
+{
+  "pagelen": 100,
+  "page": 1,
+  "size": 1,
+  "values": [
+    {
+      "type": "branchrestriction",
+      "id": 3201,
+      "kind": "require_passing_builds_to_merge",
+      "branch_match_kind": "glob",
+      "pattern": "main",
+      "value": 1,
+      "users": [],
+      "groups": [],
+      "links": {
+        "self": {
+          "href": "https://api.bitbucket.org/2.0/repositories/example-ws/example-app/branch-restrictions/3201"
+        }
+      }
+    }
+  ]
+}

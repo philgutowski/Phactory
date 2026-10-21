@@ -15,6 +15,32 @@ What each method calls:
     pull_request       GET pullrequests/<id>
     probe_landing      nothing live: the pinned values, else ProbeUndetermined
 
+The onboarding reads and the scratch writes (U28):
+
+    read_repository       GET repositories/<workspace>/<slug>
+    read_required_checks  GET branch-restrictions?kind=require_passing_builds_to_merge
+    read_restriction      GET branch-restrictions?kind=push, and GET user for the
+                          identity the token acts as
+    base_commits          GET refs/branches/<main>
+    branches              GET refs/branches?q=name ~ "<prefix>"
+    delete_branch         DELETE refs/branches/<name>
+    open_pull_requests    GET pullrequests?q=destination.branch.name = "<base>" ...
+    close_pull_request    POST pullrequests/<id>/decline
+
+A branch restriction is Bitbucket's per pattern branch rule. A merge check
+is one of kind require_passing_builds_to_merge: the pull request may not
+merge until that many builds on its head pass. Bitbucket does not name the
+builds, so the required check reads as "1 passing build". A branch
+permission is one of kind push: only the users and groups it lists may push
+to branches matching its pattern. Bitbucket's patterns are globs with no
+way to exclude a prefix, so the restriction read holds the main branch, the
+one the gate protects: a push permission must match it, and the identity
+the token acts as must not be among its users. Where Bitbucket will not say
+who the token acts as, a permission that lists no one still proves it, and
+any other answers None. Reading branch restrictions needs the token's
+repository admin scope; without it both reads answer None, so onboard asks
+the operator instead.
+
 Bitbucket Cloud's merge queue has no REST endpoint to add an entry, list the
 queue, or read the queue's strategy (BCLOUD-24176 is still gathering
 interest, docs/research/2026-10-14-plan/framework-docs-apis.md Part C2), so
@@ -32,6 +58,7 @@ Bitbucket needs a url, so post_check refuses a check without one before any
 request.
 """
 
+import fnmatch
 import re
 
 from slipway.hosts.base import (
@@ -48,6 +75,7 @@ from slipway.hosts.base import (
     Landing,
     ProbeUndetermined,
     PullRequest,
+    Reading,
     body_of,
     message_of,
     pinned_landing,
@@ -63,6 +91,13 @@ BUILD_STATE = {CheckState.PENDING: "INPROGRESS", CheckState.SUCCESS: "SUCCESSFUL
 STATES = {"OPEN": OPEN, "MERGED": MERGED, "DECLINED": CLOSED, "SUPERSEDED": CLOSED}
 
 ALREADY_EXISTS = re.compile(r"already (exists|has|open)", re.IGNORECASE)
+
+MERGE_CHECK = "require_passing_builds_to_merge"
+PUSH = "push"
+GLOB = "glob"
+PAGE_SIZE = 100
+# Pages one listing may take; a repository with more is a reason, not a guess.
+PAGE_LIMIT = 10
 
 
 class BitbucketHost:
@@ -177,6 +212,115 @@ class BitbucketHost:
         raise ProbeUndetermined(
             "Bitbucket Cloud exposes no API for its merge queue or its strategy; pin "
             + " and ".join(missing) + " in the project file")
+
+
+    # Onboarding reads (U28).
+    def _main(self) -> str:
+        return (self._repo().get("mainbranch") or {}).get("name") or "main"
+
+    def _pages(self, path: str, params: dict, what: str) -> list | None:
+        """Every value of a paged listing, or None when Bitbucket refuses to show it."""
+        url, query, found = self._path(path), dict(params, pagelen=PAGE_SIZE), []
+        for _ in range(PAGE_LIMIT):
+            response = self._client.get(url, query)
+            if response.status in (401, 403):
+                return None
+            body = self._expect(response, 200, what=what) or {}
+            found += body.get("values") or []
+            url, query = body.get("next"), None
+            if not url:
+                return found
+        raise HostError(f"{what} ran past {PAGE_LIMIT} pages")
+
+    def _restrictions(self, kind: str) -> list | None:
+        """The branch restrictions of one kind whose glob matches the main branch."""
+        found = self._pages("branch-restrictions", {"kind": kind},
+                            f"the {kind} branch restrictions")
+        if found is None:
+            return None
+        main = self._main()
+        return [r for r in found if (r.get("branch_match_kind") or GLOB) == GLOB
+                and fnmatch.fnmatchcase(main, str(r.get("pattern") or ""))]
+
+    def read_repository(self) -> Reading:
+        response = self._client.get(f"/repositories/{self._workspace}/{self._slug}")
+        if response.status != 200:
+            return Reading(False, f"Bitbucket answered {message_of(response)} (HTTP "
+                                  f"{response.status}) for {self._repository}")
+        self._repo_cache = response.body
+        return Reading(True, f"{self._repository} is reachable, main branch {self._main()}")
+
+    def read_required_checks(self) -> tuple[str, ...]:
+        found = self._restrictions(MERGE_CHECK)
+        if found is None:
+            raise ProbeUndetermined("Bitbucket would not show the branch restrictions; the "
+                                    "token needs the repository admin scope to read them")
+        counts = [int(r.get("value") or 0) for r in found]
+        most = max(counts, default=0)
+        if most < 1:
+            return ()
+        return (f"{most} passing build" + ("s" if most > 1 else ""),)
+
+    def read_restriction(self, namespace: str) -> Reading:
+        found = self._restrictions(PUSH)
+        main = self._main()
+        if found is None:
+            return Reading(None, "Bitbucket would not show the branch permissions; the token "
+                                 "needs the repository admin scope to read them")
+        if not found:
+            return Reading(False, f"no branch permission limits who may push to {main}")
+        me = self._client.get("/user")
+        identity = (me.body or {}).get("uuid") if me.ok and isinstance(me.body, dict) else None
+        for restriction in found:
+            users = [u.get("uuid") for u in restriction.get("users") or [] if u]
+            if identity and identity in users:
+                return Reading(False, f"the branch permission on {restriction.get('pattern')} "
+                                      f"lets the token's identity push to {main}")
+        if identity:
+            return Reading(True, f"only listed users may push to {main}, and the token's "
+                                 f"identity is not one; it may push under {namespace}")
+        if any(not (r.get("users") or r.get("groups")) for r in found):
+            return Reading(True, f"no one may push to {main} directly")
+        return Reading(None, f"Bitbucket did not say who the token acts as, and the branch "
+                             f"permission on {main} lists users or groups")
+
+    # Scratch writes for the board movement check (U28, KTD27).
+    def base_commits(self) -> tuple[str, str, str | None]:
+        main = self._main()
+        response = self._client.get(self._path(f"refs/branches/{main}"))
+        target = (self._expect(response, 200, what=f"the head of {main!r}") or {}).get(
+            "target") or {}
+        parents = target.get("parents") or []
+        return main, str(target.get("hash") or ""), (parents[0].get("hash") if parents else None)
+
+    def branches(self, prefix: str) -> tuple[str, ...]:
+        found = self._pages("refs/branches", {"q": f'name ~ "{prefix}"'},
+                            f"the branches under {prefix!r}")
+        if found is None:
+            raise HostError(f"Bitbucket refused to list the branches under {prefix!r}")
+        return tuple(str(b.get("name")) for b in found
+                     if str((b or {}).get("name") or "").startswith(prefix))
+
+    def delete_branch(self, name: str) -> bool:
+        response = self._client.delete(self._path(f"refs/branches/{name}"))
+        if response.status == 204:
+            return True
+        if response.status == 404:
+            return False
+        raise HostError(f"Bitbucket refused to delete the branch {name!r}: "
+                        f"{message_of(response)} (HTTP {response.status})")
+
+    def open_pull_requests(self, base: str) -> tuple[PullRequest, ...]:
+        query = f'destination.branch.name = "{base}" AND state = "OPEN"'
+        found = self._pages("pullrequests", {"q": query}, f"the pull requests into {base!r}")
+        if found is None:
+            raise HostError(f"Bitbucket refused to list the pull requests into {base!r}")
+        return tuple(_pull_request(item) for item in found)
+
+    def close_pull_request(self, pr) -> None:
+        number = pr.number if isinstance(pr, PullRequest) else int(str(pr).lstrip("#"))
+        response = self._client.post(self._path(f"pullrequests/{number}/decline"), {})
+        self._expect(response, 200, what=f"declining pull request #{number}")
 
 
 def _pull_request(body: dict) -> PullRequest:
