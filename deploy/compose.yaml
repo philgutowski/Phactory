@@ -1,7 +1,8 @@
 # The VPS compose file. The U4 spike (docs/spikes/hatchet.md) seeded it with
 # the Hatchet engine and its Postgres; U22 added the runner instance and
-# Dagger. The deploy cards add the Slipway app and the worker, and every
-# service keeps the listener and secret rules in deploy/README.md (KTD28).
+# Dagger; U29 added the Slipway app, the worker, their Postgres, and Caddy.
+# Every service keeps the listener and secret rules in deploy/README.md
+# (KTD28), and tests/unit/test_app.py parses this file to check them.
 #
 # Secret values come from the root owned environment file, passed with
 # `docker compose --env-file /etc/slipway/slipway.env up -d`. Compose refuses to
@@ -36,8 +37,8 @@ services:
       # Dashboard and REST API: bound to loopback (the VPS's own 127.0.0.1,
       # unreachable from outside), reached over an SSH tunnel.
       - "127.0.0.1:8888:8888"
-      # gRPC, the one public Hatchet listener, for the laptop worker (KTD28).
-      - "7077:7077"
+      # gRPC is not published here: Caddy publishes 7077 behind TLS and
+      # forwards it to this container on the compose network (KTD28).
     environment:
       RABBITMQ_ENABLED: "false"
       DATABASE_URL: postgresql://hatchet:${HATCHET_POSTGRES_PASSWORD:?}@hatchet-postgres:5432/hatchet?sslmode=disable
@@ -50,12 +51,10 @@ services:
       SERVER_GRPC_PORT: "7077"
       SERVER_GRPC_BROADCAST_ADDRESS: ${HATCHET_GRPC_BROADCAST_ADDRESS:?the public host:7077 workers dial}
       SERVER_INTERNAL_CLIENT_INTERNAL_GRPC_BROADCAST_ADDRESS: localhost:7077
-      # Required, so a boot never picks TLS silently. The spike ran with "t".
-      # TLS on the public gRPC port is the deploy card's to finish (KTD28):
-      # with "f" the engine expects TLS, and this file names no certificate
-      # settings yet, so "f" is untested until that card adds them. Set "t"
-      # only behind a firewall that admits the laptop's address alone.
-      SERVER_GRPC_INSECURE: ${HATCHET_GRPC_INSECURE:?t or f, see the comment above}
+      # Plain gRPC inside the compose network only. Caddy holds the
+      # certificate and terminates TLS on the public port (U29), so the
+      # engine itself never serves TLS and needs no certificate settings.
+      SERVER_GRPC_INSECURE: "t"
       # Replaces the built in admin@example.com account on first boot. The
       # spike proved these two names, not the SEED_ prefixed ones.
       ADMIN_EMAIL: ${HATCHET_ADMIN_EMAIL:?}
@@ -101,6 +100,111 @@ services:
     restart: unless-stopped
     # No ports: a job reaches it as tcp://dagger:1234 on the builder network.
 
+  # Slipway's own Postgres, the slipway database only (never Hatchet's). The
+  # official image creates the database as UTF8 (deploy/README.md).
+  slipway-postgres:
+    image: postgres:15.6
+    environment:
+      POSTGRES_USER: slipway
+      POSTGRES_PASSWORD: ${SLIPWAY_POSTGRES_PASSWORD:?set in the environment file}
+      POSTGRES_DB: slipway
+    volumes:
+      - slipway_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U slipway -d slipway"]
+      interval: 5s
+      retries: 20
+    restart: unless-stopped
+    # No ports: reachable on the compose network only.
+
+  # The app (U29): the status page and the webhook endpoint on port 8000 of
+  # the compose network, published only through Caddy. Its environment is
+  # the app row of deploy/README.md and nothing else: the shared values
+  # below, plus its own environment file holding the identity provider's
+  # client secret and every webhook secret, which no other service reads.
+  app:
+    image: ${SLIPWAY_IMAGE:?the tag built from deploy/app.Dockerfile}
+    command: ["python", "-m", "slipway.app"]
+    depends_on:
+      slipway-postgres:
+        condition: service_healthy
+    environment:
+      SLIPWAY_HOME: /srv/slipway/home
+      SLIPWAY_DATABASE_URL: postgresql://slipway:${SLIPWAY_POSTGRES_PASSWORD:?}@slipway-postgres:5432/slipway
+      HATCHET_CLIENT_TOKEN: ${HATCHET_CLIENT_TOKEN:?minted in the Hatchet dashboard}
+      # The engine is reached on the compose network, where it speaks plain
+      # gRPC; only the public port carries TLS.
+      HATCHET_CLIENT_HOST_PORT: hatchet-lite:7077
+      HATCHET_CLIENT_TLS_STRATEGY: none
+      SLIPWAY_BASE_URL: https://${SLIPWAY_DOMAIN:?the public name of the VPS}
+      SLIPWAY_SESSION_KEY: ${SLIPWAY_SESSION_KEY:?at least 32 random bytes}
+    env_file:
+      - ${SLIPWAY_APP_ENV_FILE:?the root owned, mode 600 environment file of the app}
+    volumes:
+      # projects/ writable for onboard, operator.toml alone and read only,
+      # both at the paths load_project() and load_operator() expect.
+      - ${SLIPWAY_HOME_DIR:?the configuration root on the VPS}/projects:/srv/slipway/home/projects
+      - ${SLIPWAY_HOME_DIR:?}/operator.toml:/srv/slipway/home/operator.toml:ro
+    restart: unless-stopped
+    # No ports: Caddy forwards 443 here.
+
+  # The VPS worker (U29): the card workflow, the watch cron, and the
+  # runner tracking cron once its scripts are set up. It receives the rest
+  # of the operator file's variables from its own environment file, and
+  # starts builder containers through the VPS's Docker socket.
+  worker:
+    image: ${SLIPWAY_IMAGE:?}
+    command: ["python", "-m", "slipway.workflow.worker"]
+    depends_on:
+      slipway-postgres:
+        condition: service_healthy
+    environment:
+      SLIPWAY_HOME: /srv/slipway/home
+      SLIPWAY_DATABASE_URL: postgresql://slipway:${SLIPWAY_POSTGRES_PASSWORD:?}@slipway-postgres:5432/slipway
+      HATCHET_CLIENT_TOKEN: ${HATCHET_CLIENT_TOKEN:?}
+      HATCHET_CLIENT_HOST_PORT: hatchet-lite:7077
+      HATCHET_CLIENT_TLS_STRATEGY: none
+      SLIPWAY_BUILDER_IMAGE: ${SLIPWAY_BUILDER_IMAGE:?the tag built from deploy/builder.Dockerfile}
+      SLIPWAY_BUILDER_NETWORK: ${SLIPWAY_BUILDER_NETWORK:?}
+      SLIPWAY_BUILDER_USER: ${SLIPWAY_BUILDER_USER:?the uid:gid that owns SLIPWAY_SESSIONS}
+      SLIPWAY_SESSIONS: ${SLIPWAY_SESSIONS:?the folder builder sessions live in}
+    env_file:
+      - ${SLIPWAY_WORKER_ENV_FILE:?the root owned, mode 600 environment file of the worker}
+    group_add:
+      # The group that owns /var/run/docker.sock on the VPS.
+      - ${DOCKER_GID:?the gid of the Docker socket}
+    volumes:
+      - ${SLIPWAY_HOME_DIR:?}:/srv/slipway/home:ro
+      # The git cache is the one thing the worker writes under SLIPWAY_HOME
+      # (gitread.cache_path), so it gets its own writable volume there.
+      - slipway_git_cache:/srv/slipway/home/cache
+      # The same path inside and out: docker resolves a builder container's
+      # bind mounts on the VPS, from paths the worker writes.
+      - ${SLIPWAY_SESSIONS:?}:${SLIPWAY_SESSIONS:?}
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+    # No ports.
+
+  # Caddy (U29), the one holder of a certificate: TLS on 443 for the app
+  # and on 7077 for the engine's gRPC (deploy/Caddyfile). These are the only
+  # two ports this file publishes to the internet.
+  caddy:
+    image: caddy:2.8.4
+    depends_on:
+      - app
+      - hatchet-lite
+    ports:
+      - "443:443"
+      - "7077:7077"
+    environment:
+      SLIPWAY_DOMAIN: ${SLIPWAY_DOMAIN:?}
+      SLIPWAY_ACME_EMAIL: ${SLIPWAY_ACME_EMAIL:?the address Let's Encrypt writes to about the certificate}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+
 networks:
   # The isolated builder network (KTD12, KTD25): builder containers, the
   # runner instance, and Dagger. The worker starts builder containers on it
@@ -113,3 +217,7 @@ volumes:
   hatchet_config:
   runner_builds:
   dagger_state:
+  slipway_pg:
+  slipway_git_cache:
+  caddy_data:
+  caddy_config:

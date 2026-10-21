@@ -20,6 +20,8 @@ dependencies = [
 dev = [
     "pytest>=8",
     "ruff>=0.6",
+    # Parses deploy/compose.yaml in tests/unit/test_app.py (U29).
+    "pyyaml>=6",
 ]
 
 [tool.setuptools.packages.find]

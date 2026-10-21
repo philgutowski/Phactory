@@ -28,10 +28,28 @@ Two workers, two registrations:
 
 Stop either with SIGTERM for a deploy: the engine lets running children
 finish first (the spike's step 5).
+
+The VPS worker's entry point is `python -m slipway.workflow.worker` (U29),
+which main() below serves. It reads, besides SLIPWAY_HOME,
+SLIPWAY_DATABASE_URL, and the Hatchet client's own variables:
+
+    SLIPWAY_BUILDER_IMAGE     the tag built from deploy/builder.Dockerfile
+    SLIPWAY_BUILDER_NETWORK   the isolated builder network's name
+    SLIPWAY_BUILDER_USER      the uid:gid builder containers run as
+    SLIPWAY_SESSIONS          the writable folder builder sessions live in;
+                              the same path on the VPS and in the worker,
+                              because docker resolves bind mounts on the VPS
+
+and refuses to start, naming the variable, while one is unset. It also
+points git at a credential helper, a small program git asks for a
+password: `python -m slipway.workflow.worker credential` answers with the
+host credential of the project whose repository git is reading, so the
+git cache never holds a token in a URL.
 """
 
 import json
 import os
+import sys
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -40,9 +58,9 @@ from typing import Any
 
 from slipway import gitread
 from slipway import verify as verify_module
-from slipway.builders.base import BuilderResult
+from slipway.builders.base import BuilderResult, Credential, Schedule
 from slipway.builders.handoff import InFlightBuild
-from slipway.config import home
+from slipway.config import ConfigError, home
 from slipway.config.bindings import ResolvedBinding, resolve_binding
 from slipway.config.operator import Host, load_operator
 from slipway.config.project import load_project
@@ -373,6 +391,148 @@ def laptop_worker(hatchet, label: str, run: Callable, slots: int = 1):
                           workflows=[tasks[card.LAPTOP_BUILD]])
 
 
-__all__ = ["CacheGit", "HatchetSteps", "LABEL_KEY", "PostgresRecords",
-           "WallClock", "laptop_worker", "real_ports", "register", "task_options",
-           "vps_worker"]
+# The entry point (U29).
+
+BUILDER_IMAGE = "SLIPWAY_BUILDER_IMAGE"
+BUILDER_NETWORK = "SLIPWAY_BUILDER_NETWORK"
+BUILDER_USER = "SLIPWAY_BUILDER_USER"
+SESSIONS = "SLIPWAY_SESSIONS"
+DATABASE_URL = "SLIPWAY_DATABASE_URL"
+REQUIRED = (DATABASE_URL, BUILDER_IMAGE, BUILDER_NETWORK, BUILDER_USER, SESSIONS)
+
+# The user name each host expects beside a token over HTTPS. These are the
+# hosts' own conventions, not a project's.
+GIT_USERNAMES = {Host.GITHUB: "x-access-token", Host.BITBUCKET: "x-token-auth"}
+
+
+class LaptopScheduled:
+    """The builder port's answer for a project built on the laptop (KTD12).
+
+    The VPS worker only reads its schedule: worker_process sends the build
+    to the laptop worker through laptop_trigger, which runs the real
+    LaptopBuilder there.
+    """
+
+    schedule = Schedule.WORKER_PROCESS
+
+
+def remote_of(project) -> str:
+    return f"https://{GIT_HOSTS[project.host]}/{project.repository}.git"
+
+
+def container_builders(environ: Mapping[str, str]) -> Callable[[Any, ResolvedBinding], Any]:
+    """card.Ports.builder for the VPS: a container per card, or the laptop's schedule."""
+    from slipway.builders.cli import ContainerBuilder, GitAccess
+
+    def builder(project, binding: ResolvedBinding):
+        if project.builder_worker:
+            return LaptopScheduled()
+        git = GitAccess(remote_of(project), GIT_USERNAMES[project.host])
+        return ContainerBuilder(Path(environ[SESSIONS]) / project.slug, git,
+                                environ[BUILDER_IMAGE], environ[BUILDER_NETWORK],
+                                environ[BUILDER_USER], environ=environ)
+
+    return builder
+
+
+def host_credentials(environ: Mapping[str, str]) -> Callable[[Any], Credential]:
+    """card.Ports.credential: the project's host credential as a builder Credential.
+
+    The operator file's host credentials are static tokens in the
+    environment, so the credential has no expiry and is never refreshed
+    (builders.base.Credential, follow up #54).
+    """
+
+    def credential(project) -> Credential:
+        def mint():
+            return resolve_host_credential(project, load_operator(), environ).token, None
+
+        return Credential(project.host_credential, mint)
+
+    return credential
+
+
+def credential_answer(request: Mapping[str, str], environ: Mapping[str, str],
+                      root: Path | None = None) -> dict[str, str]:
+    """git's credential helper protocol: the request's host and path, the answer's login.
+
+    git sends protocol, host, and path (with credential.useHttpPath set);
+    the answer is the project's host credential when exactly one project
+    file names that repository on that host, and nothing otherwise, which
+    git reads as "no credential here".
+    """
+    if request.get("protocol") != "https":
+        return {}
+    repository = request.get("path", "").removesuffix(".git").strip("/")
+    for host, address in GIT_HOSTS.items():
+        if request.get("host") != address:
+            continue
+        for slug in verbs.configured_slugs(root):
+            try:
+                project = load_project(slug, root)
+            except ConfigError:
+                continue
+            if project.host is host and project.repository == repository:
+                found = resolve_host_credential(project, load_operator(root), environ)
+                return {"username": GIT_USERNAMES[host], "password": found.token}
+    return {}
+
+
+def credential_helper(argv: list[str], stdin, stdout, environ: Mapping[str, str]) -> int:
+    """`python -m slipway.workflow.worker credential get`: answer git on stdout."""
+    if argv[-1:] != ["get"]:
+        return 0  # store and erase: nothing is kept, so nothing to do
+    request = dict(line.rstrip("\n").split("=", 1) for line in stdin if "=" in line)
+    try:
+        answer = credential_answer(request, environ)
+    except Exception as error:  # git then fails the fetch, naming no value
+        print(f"slipway credential helper: {type(error).__name__}", file=sys.stderr)
+        return 1
+    for name, value in answer.items():
+        stdout.write(f"{name}={value}\n")
+    return 0
+
+
+def git_helper_config(executable: str = sys.executable) -> dict[str, str]:
+    """The environment that points every git call at the credential helper."""
+    return {
+        "GIT_CONFIG_COUNT": "2",
+        "GIT_CONFIG_KEY_0": "credential.helper",
+        "GIT_CONFIG_VALUE_0": f"!{executable} -m slipway.workflow.worker credential",
+        "GIT_CONFIG_KEY_1": "credential.useHttpPath",
+        "GIT_CONFIG_VALUE_1": "true",
+    }
+
+
+def missing(environ: Mapping[str, str]) -> list[str]:
+    return [name for name in REQUIRED if not environ.get(name)]
+
+
+def main(argv: list[str] | None = None, environ=None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    environ = os.environ if environ is None else environ
+    if argv[:1] == ["credential"]:
+        return credential_helper(argv, sys.stdin, sys.stdout, environ)
+    unset = missing(environ)
+    if unset:
+        print(f"slipway worker: unset: {', '.join(unset)}", file=sys.stderr)
+        return 2
+    import psycopg
+    from hatchet_sdk import Hatchet
+
+    environ.update(git_helper_config())
+    dsn = environ[DATABASE_URL]
+    worker = vps_worker(Hatchet(), lambda: psycopg.connect(dsn, autocommit=True),
+                        container_builders(environ), host_credentials(environ))
+    worker.start()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+
+
+__all__ = ["CacheGit", "HatchetSteps", "LABEL_KEY", "LaptopScheduled", "PostgresRecords",
+           "WallClock", "container_builders", "credential_answer", "git_helper_config",
+           "host_credentials", "laptop_worker", "main", "real_ports", "register",
+           "task_options", "vps_worker"]
