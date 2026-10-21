@@ -1,7 +1,7 @@
-# The seed of the VPS compose file, from the U4 spike (docs/spikes/hatchet.md).
-# It holds the Hatchet engine and its Postgres only; U22 and the deploy cards
-# add the Slipway app, the worker, Dagger, and the runner instances, and must
-# keep the listener and secret rules in deploy/README.md (KTD28).
+# The VPS compose file. The U4 spike (docs/spikes/hatchet.md) seeded it with
+# the Hatchet engine and its Postgres; U22 added the runner instance and
+# Dagger. The deploy cards add the Slipway app and the worker, and every
+# service keeps the listener and secret rules in deploy/README.md (KTD28).
 #
 # Secret values come from the root owned environment file, passed with
 # `docker compose --env-file /etc/slipway/slipway.env up -d`. Compose refuses to
@@ -50,12 +50,12 @@ services:
       SERVER_GRPC_PORT: "7077"
       SERVER_GRPC_BROADCAST_ADDRESS: ${HATCHET_GRPC_BROADCAST_ADDRESS:?the public host:7077 workers dial}
       SERVER_INTERNAL_CLIENT_INTERNAL_GRPC_BROADCAST_ADDRESS: localhost:7077
-      # The spike ran with "t". TLS on the public gRPC port is the deploy
-      # card's to finish (KTD28): with this unset the engine expects TLS, and
-      # this seed names no certificate settings yet, so a boot without
-      # HATCHET_GRPC_INSECURE=t is untested until that card adds them. Leave it "t" only
-      # behind a firewall that admits the laptop's address alone.
-      SERVER_GRPC_INSECURE: ${HATCHET_GRPC_INSECURE:-f}
+      # Required, so a boot never picks TLS silently. The spike ran with "t".
+      # TLS on the public gRPC port is the deploy card's to finish (KTD28):
+      # with "f" the engine expects TLS, and this file names no certificate
+      # settings yet, so "f" is untested until that card adds them. Set "t"
+      # only behind a firewall that admits the laptop's address alone.
+      SERVER_GRPC_INSECURE: ${HATCHET_GRPC_INSECURE:?t or f, see the comment above}
       # Replaces the built in admin@example.com account on first boot. The
       # spike proved these two names, not the SEED_ prefixed ones.
       ADMIN_EMAIL: ${HATCHET_ADMIN_EMAIL:?}
@@ -64,6 +64,52 @@ services:
       - hatchet_config:/config
     restart: unless-stopped
 
+  # One runner instance (U22, KTD20, KTD25): a supervisor running one just in
+  # time runner process per repository the instance serves, restarted after
+  # every job. The settings and registration tokens come from the runner's
+  # own environment file, which holds nothing else and which no other
+  # service receives (KTD28); deploy/runner/supervise.sh lists its names.
+  # No Docker socket, no published port, the builder network only.
+  zig-runner:
+    image: ${RUNNER_IMAGE:?the tag built from deploy/runner.Dockerfile}
+    env_file:
+      - ${RUNNER_ENV_FILE:?the root owned, mode 600 environment file of the runner}
+    volumes:
+      # swap.sh, run by the worker, moves the links under instances/; the
+      # runner only launches what they point at. Both mount the volume at
+      # the same path, so the links resolve the same way in each.
+      - runner_builds:/srv/slipway-runner:ro
+    networks:
+      - builder
+    restart: always
+
+  # The Dagger engine, for jobs that run Dagger pipelines. Dagger needs a
+  # privileged container, which is root on the VPS, so it starts only with
+  # the dagger profile (docker compose --profile dagger up -d) and only once
+  # a project's jobs need it. It listens on the builder network only.
+  dagger:
+    # Left empty unless the profile is used; compose then refuses to start
+    # the service without it, naming the missing image.
+    image: ${DAGGER_ENGINE_IMAGE:-}
+    profiles: ["dagger"]
+    privileged: true
+    command: ["--addr", "tcp://0.0.0.0:1234"]
+    volumes:
+      - dagger_state:/var/lib/dagger
+    networks:
+      - builder
+    restart: unless-stopped
+    # No ports: a job reaches it as tcp://dagger:1234 on the builder network.
+
+networks:
+  # The isolated builder network (KTD12, KTD25): builder containers, the
+  # runner instance, and Dagger. The worker starts builder containers on it
+  # by this name.
+  builder:
+    name: ${SLIPWAY_BUILDER_NETWORK:?the builder network name the worker uses}
+
 volumes:
   hatchet_pg:
   hatchet_config:
+  runner_builds:
+  dagger_state:
