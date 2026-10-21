@@ -490,6 +490,17 @@ def test_same_gate_run_written_twice_is_one_row(conn, project):
     assert conn.execute("SELECT conclusion FROM gate_runs").fetchone()[0] == "success"
 
 
+def test_a_score_written_twice_is_one_row_per_build_and_kind(conn, project):
+    build = store.claim(conn, project, "C-1", "watch").build_id
+    first = store.record_score(conn, build, "deterministic", {"total": {"verdict": "partial"}})
+    second = store.record_score(conn, build, "deterministic", {"total": {"verdict": "pass"}})
+    assert first == second
+    row = conn.execute("SELECT project_id, kind, result FROM scores").fetchall()
+    assert row == [(project, "deterministic", {"total": {"verdict": "pass"}})]
+    with pytest.raises(LookupError):
+        store.record_score(conn, 999999, "deterministic", {})
+
+
 # Queries and retention.
 
 def test_status_buckets_and_in_flight_files(conn, project):
