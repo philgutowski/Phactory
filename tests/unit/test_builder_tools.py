@@ -35,8 +35,8 @@ from test_onboard import (
 
 from _card_fakes import World as CardWorld
 from _card_fakes import parked, run
-from slipway.builders.base import Credential, Schedule
-from slipway.builders.cli import SESSION_SCRIPT, WORKTREE_SCRIPT, LaptopReturn
+from slipway.builders.base import BUILDER_FAILED, RETURNED_EMPTY, Credential, Schedule
+from slipway.builders.cli import SESSION_SCRIPT, WORKTREE_SCRIPT, LaptopReturn, laptop_build
 from slipway.builders.handoff import TOOLS
 from slipway.builders.tools import (
     BROWSERS_VARIABLE,
@@ -226,6 +226,13 @@ def test_a_laptop_with_no_computer_use_server_refuses_desktop(tmp_path, binding)
         builder.start(handoff(laptop_project('["desktop"]')), binding,
                       Credential("example-app", minting(GIT_TOKENS)))
     assert not (tmp_path / "sessions").exists() or not any((tmp_path / "sessions").iterdir())
+    # Run as the laptop task, the refusal ends the build with its reason
+    # on the record instead of failing the task.
+    back = laptop_build(builder, handoff(laptop_project('["desktop"]')), binding,
+                        Credential("example-app", minting(GIT_TOKENS)))
+    assert back.result.outcome == RETURNED_EMPTY and back.result.halt_class == BUILDER_FAILED
+    assert "names no computer use server" in back.result.reason
+    assert back.transcript == ""
 
 
 def test_a_laptop_build_with_desktop_records_tools_granted_and_names_it_in_the_handoff(

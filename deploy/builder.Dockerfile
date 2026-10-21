@@ -59,6 +59,7 @@ RUN test -n "${PLAYWRIGHT_MCP_VERSION}" \
  && chmod a+rx cli.js \
  && ln -sf "$PWD/cli.js" /usr/local/bin/playwright-mcp \
  && npx --no-install playwright install --with-deps chromium \
+ && chmod -R a+rX "${PLAYWRIGHT_BROWSERS_PATH}" \
  && command -v playwright-mcp \
  && rm -rf /var/lib/apt/lists/* \
  && npm cache clean --force

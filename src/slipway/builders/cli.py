@@ -106,7 +106,7 @@ from slipway.builders.base import (
     SessionStatus,
 )
 from slipway.builders.handoff import Handoff
-from slipway.builders.tools import MCP_CONFIG_FILE, Grant, grant, refuse
+from slipway.builders.tools import MCP_CONFIG_FILE, Grant, ToolRefused, grant, refuse
 from slipway.config.bindings import BindingInvalid, ResolvedBinding
 from slipway.config.operator import AccountKind
 from slipway.config.project import Checkout
@@ -1012,8 +1012,19 @@ class LaptopReturn:
 
 def laptop_build(builder: LaptopBuilder, handoff: Handoff, binding: ResolvedBinding,
                  credential: Credential) -> LaptopReturn:
-    """The body of the laptop_build child: run one session, return, clean up."""
-    session_ref = builder.start(handoff, binding, credential)
+    """The body of the laptop_build child: run one session, return, clean up.
+
+    A tool the laptop cannot grant (U27) is refused before any session or
+    folder exists, so the build ends returned_empty with the reason on its
+    record, as a refused container start does, rather than failing the task.
+    """
+    try:
+        session_ref = builder.start(handoff, binding, credential)
+    except ToolRefused as refused:
+        result = BuilderResult(handoff.branch, None, f"the session did not start: {refused}",
+                               "", model=binding.model, account=binding.account.name,
+                               halt_class=BUILDER_FAILED)
+        return LaptopReturn(result, "", 0)
     try:
         status = builder.poll(session_ref)
         text = builder.transcript(session_ref) or ""
