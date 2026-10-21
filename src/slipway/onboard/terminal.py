@@ -19,7 +19,8 @@ End of input (Ctrl D) stops the session. Run the command again to pick up
 where it stopped: every accepted answer is already saved.
 
 run takes the ports, an input callable, and an output callable, so the tests
-drive it with scripted answers. main builds the real ports: the operator
+drive it with scripted answers, and the slipway CLI's onboard verb (U21)
+calls it the same way. real_ports builds the real ports: the operator
 file under SLIPWAY_HOME, the live probe (checks.LiveProbe), and the records
 in Postgres when SLIPWAY_DSN names a database. Without one, audit rows go to
 a JSON lines file beside the session's state, and the trivial card's build
@@ -176,18 +177,18 @@ def _host_for(operator):
     return host_for
 
 
-def main(argv: list[str] | None = None) -> int:
+def real_ports(slug: str, root: Path | None = None) -> machine.Ports:
+    """The machine's ports for one session: the live probe and the records.
+
+    The records are Postgres when SLIPWAY_DSN names a database, else the
+    JSON lines file beside the session's state.
+    """
     from slipway.config import home
     from slipway.config.operator import load_operator
     from slipway.onboard.checks import LiveProbe
     from slipway.service.verbs import PostgresRecords, tracker_for
 
-    parser = argparse.ArgumentParser(prog="slipway onboard",
-                                     description="Onboard a project, one question at a time.")
-    parser.add_argument("slug", help="the project's short name, as in its MCP URL")
-    parser.add_argument("--actor", help="your subject; defaults to the operator's")
-    args = parser.parse_args(argv)
-    root = home()
+    root = root or home()
     operator = load_operator(root)
     dsn = os.environ.get(DSN_VARIABLE, "").strip()
     if dsn:
@@ -195,10 +196,19 @@ def main(argv: list[str] | None = None) -> int:
 
         records = PostgresRecords(psycopg.connect(dsn, autocommit=True))
     else:
-        records = FileRecords(root / machine.ONBOARD / f"{args.slug}.audit.jsonl")
+        records = FileRecords(root / machine.ONBOARD / f"{slug}.audit.jsonl")
     probe = LiveProbe(operator, tracker_for, _host_for(operator), BUILDERS)
-    ports = machine.real_ports(records, probe, root)
-    return run(ports, args.slug, args.actor or operator.operator_subject)
+    return machine.real_ports(records, probe, root)
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(prog="slipway onboard",
+                                     description="Onboard a project, one question at a time.")
+    parser.add_argument("slug", help="the project's short name, as in its MCP URL")
+    parser.add_argument("--actor", help="your subject; defaults to the operator's")
+    args = parser.parse_args(argv)
+    ports = real_ports(args.slug)
+    return run(ports, args.slug, args.actor or ports.operator().operator_subject)
 
 
 if __name__ == "__main__":

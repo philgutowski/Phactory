@@ -16,6 +16,10 @@ dependencies = [
     "hatchet-sdk>=1.42.1,<2",
 ]
 
+[project.scripts]
+# The slipway terminal (U21): each verb a thin client of the service layer.
+slipway = "slipway.cli:main"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8",
