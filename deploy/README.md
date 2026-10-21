@@ -66,7 +66,7 @@ The operator chooses the names of the credential variables, so compose cannot li
 | Service | Mount |
 |:-|:-|
 | `app` | `projects/` writable (onboard saves project files), and `operator.toml` alone as a read only file mount |
-| `worker` | Read only, `operator.toml` present, with a writable volume over `cache/` for the git cache (`gitread.cache_path`), the one thing the worker writes under `SLIPWAY_HOME`. `SLIPWAY_HOME_DIR/cache` must exist on the VPS as an empty folder, since Docker cannot create a mount point inside a read only mount. |
+| `worker` | Read only, `operator.toml` present, with `SLIPWAY_HOME_DIR/cache` bound writable over `cache/` for the git cache (`gitread.cache_path`), the one thing the worker writes under `SLIPWAY_HOME`. That folder must exist on the VPS, owned by the image's uid, before the worker starts. |
 
 The worker also mounts `SLIPWAY_SESSIONS` at the same path and the Docker socket, which it uses only to start, inspect, and remove builder containers. The app mounts neither.
 
@@ -90,7 +90,7 @@ Run these on the VPS as root, from the repository's `deploy/` folder. `ENV` stan
 
 1. Point `SLIPWAY_DOMAIN`'s DNS record at the VPS. Caddy needs it to answer before it can obtain a certificate.
 2. Build the images from the repository root: `docker build -f deploy/app.Dockerfile --build-arg SLIPWAY_UID=<uid> --build-arg SLIPWAY_GID=<gid> -t <SLIPWAY_IMAGE> .`, and the builder image from `builder.Dockerfile` with the same uid and gid.
-3. Create the folders: `SLIPWAY_HOME_DIR` with `operator.toml`, `projects/` owned by the image's uid, and an empty `cache/`; and `SLIPWAY_SESSIONS`, owned by the same uid.
+3. Create the folders: `SLIPWAY_HOME_DIR` with `operator.toml`, `projects/` and `cache/` both owned by the image's uid; and `SLIPWAY_SESSIONS`, owned by the same uid.
 4. Write the three environment files, each root owned and mode 600: the main one with every variable in the table above, the app's, and the worker's. For the very first boot `HATCHET_CLIENT_TOKEN` does not exist yet; set it to `pending`.
 5. Start Hatchet alone: `docker compose ENV up -d hatchet-postgres hatchet-lite`. Open the dashboard through an SSH tunnel (`ssh -L 8888:127.0.0.1:8888 <vps>`), sign in with `HATCHET_ADMIN_EMAIL`, mint a client token, and put it in the main file as `HATCHET_CLIENT_TOKEN`.
 6. Create the schema: `docker compose ENV run --rm worker sh -c 'python -m slipway.records.migrate "$SLIPWAY_DATABASE_URL"'`.

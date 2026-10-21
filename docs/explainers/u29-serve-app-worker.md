@@ -79,7 +79,7 @@ The rule is the table in `deploy/README.md`. Two choices make it hold in `compos
 - The operator chooses the names of credential variables, so compose cannot list them. The app and the worker each read their own environment file, as the runner already did: `SLIPWAY_APP_ENV_FILE` (the client secret and the webhook secrets) and `SLIPWAY_WORKER_ENV_FILE` (accounts, tracker and host credentials, Langfuse keys). Everything else is named in `compose.yaml` from the main file, and the test checks that the app's names are exactly the seven it needs.
 - Only Caddy publishes ports, 443 and 7077. The engine's dashboard stays on the VPS's loopback, and the app, both databases, and the engine's own gRPC are on the compose network only. Because Caddy terminates TLS for the engine, `HATCHET_GRPC_INSECURE` is gone and the engine runs plain gRPC inside, which closes the TLS gap the U4 seed left.
 
-The worker's configuration root is read only, as before, with two additions: a writable volume over `cache/` for the git cache, and `SLIPWAY_SESSIONS` mounted at the same path inside and out, because Docker resolves a builder container's bind mounts on the VPS. It also joins the Docker socket's group to start builder containers; the app has no socket and no sessions.
+The worker's configuration root is read only, as before, with two additions: the VPS folder `SLIPWAY_HOME_DIR/cache`, owned by the image's uid, bound writable over `cache/` for the git cache, and `SLIPWAY_SESSIONS` mounted at the same path inside and out, because Docker resolves a builder container's bind mounts on the VPS. It also joins the Docker socket's group to start builder containers; the app has no socket and no sessions.
 
 ## Running the tests
 

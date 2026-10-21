@@ -176,8 +176,9 @@ services:
     volumes:
       - ${SLIPWAY_HOME_DIR:?}:/srv/slipway/home:ro
       # The git cache is the one thing the worker writes under SLIPWAY_HOME
-      # (gitread.cache_path), so it gets its own writable volume there.
-      - slipway_git_cache:/srv/slipway/home/cache
+      # (gitread.cache_path), so its folder on the VPS, owned by the image's
+      # uid, is bound writable over the read only root.
+      - ${SLIPWAY_HOME_DIR:?}/cache:/srv/slipway/home/cache
       # The same path inside and out: docker resolves a builder container's
       # bind mounts on the VPS, from paths the worker writes.
       - ${SLIPWAY_SESSIONS:?}:${SLIPWAY_SESSIONS:?}
@@ -218,6 +219,5 @@ volumes:
   runner_builds:
   dagger_state:
   slipway_pg:
-  slipway_git_cache:
   caddy_data:
   caddy_config:
