@@ -21,13 +21,16 @@ Slipway does not write code. A builder does: a Claude Managed Agents session (U1
 - **GenAI semantic conventions.** OpenTelemetry's agreed attribute names for model calls and tool calls, such as `gen_ai.request.model` and `gen_ai.usage.input_tokens`, so any OpenTelemetry viewer reads the spans without a Slipway plugin.
 - **Shape record.** One of the five small types an adapter's mapper produces from a provider's log: `ModelRequest`, `ToolCall`, `FileChange`, `Command`, `Connection`.
 - **JSON lines.** A text file with one JSON object per line.
+- **Git plumbing.** The low level git commands that build one object at a time (`hash-object` stores a file, `mktree` builds a directory listing, `commit-tree` builds a commit with the parent you name), as opposed to `add` and `commit`, which work from the branch you have checked out.
+- **Rules table.** The optional `[rules]` table in a project file, which holds the operator's rules text for the project, inline or in a file beside the project file.
 
 ## What each file does
 
 | File | What it does |
 |:-|:-|
 | `src/slipway/builders/base.py` | The `Builder` protocol, the primitive table (in the docstring and as `PRIMITIVES`), `Schedule`, `Credential`, `BuilderResult`, `SessionStatus`, and `check_base`, the base validation. |
-| `src/slipway/builders/handoff.py` | `render(project, card, base, branch, in_flight, rules, closing)` returns a `Handoff`, the fixed document plus the fields an adapter needs. `in_flight_files` computes the in flight list. `TOOLS` is the fixed tool list. |
+| `src/slipway/builders/handoff.py` | `render(project, card, base, branch, in_flight, rules, closing)` returns a `Handoff`, the fixed document plus the fields an adapter needs. `rules` defaults to the project file's own. `in_flight_files` computes the in flight list. `TOOLS` is the fixed tool list. |
+| `src/slipway/config/project.py` | The project file (U6). Follow up #56 added the `[rules]` table and `read_rules`, which gives `Project.rules`. |
 | `src/slipway/trace/shape.py` | The five shape records, `Trace` (the span builder), the OTLP JSON writer, JSON lines read and write, `scrubbed` (the shared redaction seam for records), and the side reference convention: `side_reference(key)`, the file names, the commit message. |
 | `tests/unit/test_handoff.py` | The golden handoff, in flight files, the base check, the primitive table, the protocol, and the credential. |
 | `tests/unit/test_shape.py` | Spans with GenAI names, a structural OTLP check, events on their tool call, the root's cost and its start and end, `scrubbed` over every string field of every record type, JSON lines, the side reference, and the import rule for `builders` and `trace`. |
@@ -42,7 +45,7 @@ KTD26 maps each primitive to exactly one carrier. A primitive with no row is not
 | Harness | `start(handoff, binding, credential) -> session_ref` | The agent loop. `start` hands it the handoff, the role's resolved binding (account, model, effort, from U6's `resolve_binding(slug, role)`), and the credential. |
 | Environment | `poll`, `release`, `delete`, `events`, `schedule` | Where the session runs and what it leaves. `poll(session_ref)` returns a `SessionStatus`; a terminal one carries the `BuilderResult`. `release` archives a provider session or removes a container. `delete` removes the provider's record, only after the trace is read back (KTD17). `events` yields shape records from the adapter's own mapper, or `None` when the provider keeps no log. `schedule` is `remote_session` (the workflow polls) or `worker_process` (the task runs on a labelled worker and blocks). |
 | Tools | `Handoff.tools` | The fixed tool list: shell, file read, file edit, git. Each adapter grants its own tools that provide these and nothing else. |
-| Skills | `Handoff.rules` | The operator's rules text for the project, plus the project's machine bound tests. |
+| Skills | `Handoff.rules` | The operator's rules text for the project (the project file's rules table), plus the project's machine bound tests. |
 | Credentials | `Credential` | A refreshable secret scoped as KTD6 says: a repository wide machine identity, with the host's ruleset enforcing the `slipway/` branch namespace. The adapter injects it; the handoff names it and never prints it. |
 | Schedule | `ResolvedBinding.time_budget_minutes` | The role's time budget. The workflow (U14) enforces it as a deadline from the moment the build child starts (KTD22). No adapter method waits or counts time. |
 
@@ -66,15 +69,49 @@ A credential counts as static only when both the value it holds and the new mint
 | Title line | the card's key and title |
 | 1. Base | the caller: the commit on the base branch the branch was created at |
 | 2. Branch | the caller: the branch Slipway created at dispatch (KTD27) |
-| 3. Rules | the `rules` argument (the operator's rules text), then the project file's `machine_bound_tests` |
+| 3. Rules | the project file's rules table (`Project.rules`), or the `rules` argument when the caller passes one, then the project file's `machine_bound_tests` |
 | 4. Tools | `TOOLS` |
 | 5. In flight files | `in_flight_files(in_flight, exclude_key=card.key)` |
 | 6. Done | the card's `good` and `test` through `cards.contract.parse`, the project's `gate_command`, the branch |
 | 7. Credential | the project file's `host_credential`, the operator file entry's name, never its value |
-| 8. Side reference | `side_reference(card.key)` and the action log instructions |
+| 8. Side reference | `side_reference(card.key)`, the action log instructions, and the push procedure |
 | The card | the card's body as the tracker returned it |
 
 Two checks run first. A missing base or branch is refused. When the tracker's `ClosingReference` (U8) carries a `branch_token`, as Jira's does, the branch must contain it, or the tracker would never see the branch and the card would never move to in progress.
+
+### The rules table
+
+The project file names its rules in one optional table, with exactly one key:
+
+```toml
+[rules]
+text = """
+Write tests first.
+Keep each function under forty lines.
+"""
+```
+
+or
+
+```toml
+[rules]
+file = "example.rules.md"
+```
+
+A `file` is relative to the project file's own directory, `$SLIPWAY_HOME/projects/`, so `example.rules.md` sits beside `example.toml`. It is read each time the project file is read. Each failure names its dotted key, as every project file check does:
+
+| Fault | Key | Message |
+|:-|:-|:-|
+| neither key, or both | `rules` | must hold exactly one of text or file |
+| any other key | `rules.<key>` | is not a known key |
+| `rules = "..."`, a string, not a table | `rules` | must be dict |
+| blank `text` | `rules.text` | must not be empty |
+| an absolute path | `rules.file` | must be relative to the project file's directory |
+| a path that climbs out, such as `../x.md` | `rules.file` | must stay inside the project file's directory |
+| no such file, a blank file, or bytes that are not UTF 8 | `rules.file` | not found, is empty, is not a readable text file |
+| a token shape in the file's text | `rules.file` | looks like a secret; name it instead |
+
+The file's text passes the same secret check as every string in the project file, so a rules file cannot smuggle a token into a handoff. No table means `Project.rules` is empty and the handoff says "The project gives no rules beyond this handoff." `render` reads `project.rules` when the caller passes no `rules`, so the workflow (U14) passes nothing; a caller that passes `rules` still wins, which the golden test uses.
 
 An absent `good` renders "The card names no definition of done; meet its text as written." An absent `test` renders "The card names no test." No in flight files render "None."
 
@@ -128,10 +165,22 @@ Slipway handoff for card EX-12: Add the hello page
    Never print it, and never write it to a file or a commit.
 
 8. Side reference: refs/slipway/log/EX-12
-   Keep an action log in actions.jsonl: one JSON object per line, with its type under "type",
-   for each tool call, file change, command, and outside connection.
-   Before you finish, push it as the only file of a commit to refs/slipway/log/EX-12.
-   Never commit it to the branch.
+   Keep an action log at .git/actions.jsonl, inside the git directory, so no commit on the
+   branch can pick it up: one JSON object per line, with its type under "type", for each
+   tool call, file change, command, and outside connection.
+   After your last push to the branch, push the log from the repository root with exactly
+   these commands:
+
+      blob=$(git hash-object -w .git/actions.jsonl)
+      tree=$(printf '100644 blob %s\tactions.jsonl\n' "$blob" | git mktree)
+      if git fetch origin refs/slipway/log/EX-12; then parent="-p FETCH_HEAD"; else parent=""; fi
+      commit=$(git commit-tree "$tree" $parent -m "slipway log EX-12 actions")
+      git push origin "$commit:refs/slipway/log/EX-12"
+
+   They push one commit that holds actions.jsonl alone, as the child of the reference's tip.
+   Never push HEAD or the branch to refs/slipway/log/EX-12, and never commit the log to the branch.
+   While your session runs, you are this reference's only writer. Once it ends, Slipway
+   writes the build's closing commit on top of yours, with trace.jsonl beside actions.jsonl.
 
 The card:
 
@@ -209,10 +258,32 @@ Every build's records also live in git on the project's repository, so the trace
 |:-|:-|
 | Reference | `refs/slipway/log/<card key>`. Outside `refs/heads`, so it is no branch and never shows on the board. The host ruleset (KTD6) names it beside `refs/heads/slipway/**` for the machine identity. A key that cannot name a git reference is refused. |
 | Commits | One per build attempt and writer, each the child of the reference's previous tip, so the history is the attempt list. |
-| `actions.jsonl` | The builder's own action log, which the handoff's section 8 asks it to keep and push. |
+| `actions.jsonl` | The builder's own action log, which the handoff's section 8 asks it to keep at `.git/actions.jsonl` and push with the procedure below. |
 | `trace.jsonl` | The shape records the adapter mapped from the provider's log, written before the session is released (KTD17). |
 | `transcript.jsonl` | The raw transcript, when the builder has one (the CLI builder does). |
 | Message | `slipway log <card key> build <build id>` from `log_commit_message`. |
+
+### Who writes it, and how
+
+Two parties write the reference, one after the other, never together:
+
+```
+session running                      session terminal (poll says done)
+  builder is the only writer           adapter is the only writer
+  |                                    |
+  after its last branch push:          before release (KTD17):
+  hash-object .git/actions.jsonl       read the tip's actions.jsonl
+  mktree  (actions.jsonl alone)        write trace.jsonl, transcript.jsonl,
+  fetch the tip, if there is one         and actions.jsonl carried forward
+  commit-tree, parent = that tip       commit, parent = the builder's commit
+  push that one commit                 push
+```
+
+The builder keeps its log at `.git/actions.jsonl`. Git never stages a file inside its own directory, so no `git add` on the branch can pick the log up, and the builder never has to remember to leave it out. Section 8 gives the builder five plumbing commands to run as they are. They push one commit whose tree is `actions.jsonl` alone, the child of the reference's tip when there is one and a commit with no parent when there is none. The obvious command, `git push origin HEAD:refs/slipway/log/EX-12`, would put the whole branch history on the reference instead, so the handoff never asks for it and forbids it by name. A fetch that fails for any reason other than a missing reference leaves `parent` empty, and the push of a parentless commit onto an existing reference is then refused as not a fast forward, so the procedure fails safe rather than dropping history.
+
+Once the session is terminal, the adapter writes the build's closing commit, as U13's `push_side_reference` in `src/slipway/builders/cli.py` already does: `trace.jsonl` and `transcript.jsonl`, plus the tip's `actions.jsonl` carried forward and scrubbed, as the child of the builder's commit. U12 follows the same rule. Because the builder writes only while the session runs and the adapter only after it ends, each commit is the child of the tip its writer just read, and the two never share the child of previous tip rule at the same moment.
+
+A test runs the five commands exactly as the fixture renders them, in a throwaway clone with a branch commit pushed, and checks that the reference holds one commit with `actions.jsonl` alone, no parent, and no branch commit in its history, that the working copy stays clean, and that a second run is the child of the first.
 
 Each line is one record as JSON with its type under `type` (`model_request`, `tool_call`, `file_change`, `command`, `connection`), written by `dump_jsonl` and read by `load_jsonl`, which refuses an unknown type or field. When a provider returns no event log after a session ends, the trace is built from `actions.jsonl` (AE5).
 
@@ -224,10 +295,10 @@ Redaction (KTD24). `dump_jsonl` and `otlp()` write tool arguments, tool results,
 
 ## Where this differs from the plan
 
-- **`render` takes two more arguments.** `rules`, the operator's rules text, because the project file has no rules field and this card does not change config. `closing`, the tracker's closing reference, so a branch missing the tracker's branch token is refused before dispatch.
+- **`render` takes two more arguments.** `rules`, the operator's rules text, which follow up #56 made optional: left out, it is the project file's rules table. `closing`, the tracker's closing reference, so a branch missing the tracker's branch token is refused before dispatch.
 - **The handoff has a Tools section and the card's own text.** KTD26 says the handoff names the fixed tool list, and a builder needs the card it is building. The six sections the test scenario names keep their order.
 - **The side reference has no excluded path alternative.** The plan offers an excluded path the project file names; the project file has no such field, so the reference is always `refs/slipway/log/<key>`.
-- **The builder pushes its own action log.** R22 and AE5 say the trace is built from the action log the builder pushed when the provider returns none, so section 8 asks for `actions.jsonl` on the side reference, beside the adapter's `trace.jsonl`.
+- **The builder pushes its own action log.** R22 and AE5 say the trace is built from the action log the builder pushed when the provider returns none, so section 8 asks for `actions.jsonl` on the side reference, beside the adapter's `trace.jsonl`. Follow up #56 fixed the procedure and the order of writers above. It keeps the adapter from collecting the file itself, because a hosted session (U12) may leave no file system the adapter can read after the session ends, while a push to the reference works for both builders.
 - **`BuilderResult` has `halt_class`,** and `check_base` sets it to `builder_failed`. A branch still at the base is also `returned_empty`, since Slipway created the branch there.
 - **`check_base` takes `is_ancestor` as a callable** instead of calling git, because `builders` may not import gitread and U10 owns it.
 - **No OpenTelemetry library.** `pyproject.toml` is not this card's to change, so `Trace` writes the OTLP JSON mapping with the standard library and the test checks it by structure, not with the protobuf schema.

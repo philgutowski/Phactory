@@ -1,5 +1,6 @@
 """U11 test scenarios for the builder contract and the handoff."""
 
+import os
 import pickle
 import re
 import subprocess
@@ -10,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from _repo import make_repo
+from _repo import _GIT_ENV, make_repo
 from slipway.builders import base as base_module
 from slipway.builders.base import (
     BUILDER_FAILED,
@@ -33,6 +34,7 @@ from slipway.builders.handoff import (
     in_flight_files,
     render,
 )
+from slipway.config import ConfigError
 from slipway.config.project import parse_project
 from slipway.records.queries import IN_FLIGHT_STATES as RECORDS_IN_FLIGHT_STATES
 from slipway.trackers.base import Card, ClosingReference
@@ -158,6 +160,131 @@ def test_the_rendered_handoff_has_no_dash_punctuation(project):
     text = rendered(project).text
     assert not re.search("[" + chr(0x2013) + chr(0x2014) + "]", text)
     assert "-" * 2 not in text
+
+
+# The side reference procedure (follow up #56).
+
+def procedure(text):
+    """The command lines section 8 lists, in order."""
+    section = text[text.index("8. Side reference:"):text.index("The card:")]
+    return [line.strip() for line in section.splitlines() if line.startswith(" " * 6)]
+
+
+def run_procedure(repo, text, log):
+    (repo.work / ".git" / "actions.jsonl").write_text(log)
+    script = "set -e\n" + "\n".join(procedure(text)) + "\n"
+    subprocess.run(["sh", "-c", script], cwd=repo.work, env={**os.environ, **_GIT_ENV},
+                   check=True, capture_output=True, text=True)
+    return repo.git("ls-remote", "origin", "refs/slipway/log/EX-12").split()[0]
+
+
+def test_section_8_names_one_writer_and_one_procedure(project):
+    text = rendered(project).text
+    assert "push the log from the repository root with exactly" in text
+    assert procedure(text) == [
+        "blob=$(git hash-object -w .git/actions.jsonl)",
+        "tree=$(printf '100644 blob %s\\tactions.jsonl\\n' \"$blob\" | git mktree)",
+        'if git fetch origin refs/slipway/log/EX-12; then parent="-p FETCH_HEAD"; '
+        'else parent=""; fi',
+        'commit=$(git commit-tree "$tree" $parent -m "slipway log EX-12 actions")',
+        'git push origin "$commit:refs/slipway/log/EX-12"',
+    ]
+    assert "Never push HEAD or the branch to refs/slipway/log/EX-12" in text
+    assert "you are this reference's only writer" in text
+    assert "Slipway\n   writes the build's closing commit" in text
+
+
+def test_the_procedure_pushes_one_file_and_no_branch_history(project, tmp_path):
+    repo = make_repo(tmp_path)
+    repo.git("checkout", "-q", "-b", BRANCH)
+    work = repo.commit("hello.py", "print('hello')\n", "hello")
+    repo.git("push", "-q", "origin", BRANCH)
+    text = rendered(project).text
+
+    first = run_procedure(repo, text, '{"type": "command"}\n')
+    assert repo.git("ls-tree", "--name-only", first) == "actions.jsonl"
+    assert repo.git("show", f"{first}:actions.jsonl") == '{"type": "command"}'
+    assert repo.git("log", "-1", "--format=%s|%P", first) == "slipway log EX-12 actions|"
+    # The log is no part of the branch, and the branch is no part of the log.
+    assert repo.git("status", "--porcelain") == ""
+    assert subprocess.run(["git", "merge-base", "--is-ancestor", work, first],
+                          cwd=repo.work, capture_output=True).returncode == 1
+
+    # A second push, such as a retried attempt, is the child of the tip it read.
+    second = run_procedure(repo, text, '{"type": "file_change"}\n')
+    assert repo.git("log", "-1", "--format=%P", second) == first
+    assert repo.git("ls-tree", "--name-only", second) == "actions.jsonl"
+
+
+# The project file's rules (follow up #56).
+
+def project_with(tmp_path, rules=None, files=None):
+    data = tomllib.loads((FIXTURES / "config" / "project.toml").read_text())
+    if rules is not None:
+        data["rules"] = rules
+    folder = tmp_path / "projects"
+    folder.mkdir(exist_ok=True)
+    for name, content in (files or {}).items():
+        (folder / name).write_text(content)
+    return parse_project(folder / "example.toml", data)
+
+
+def test_rules_inline_reach_the_handoff_when_the_caller_passes_none(tmp_path):
+    project = project_with(tmp_path, {"text": RULES})
+    assert project.rules == RULES
+    handoff = render(project, CARD, BASE, BRANCH, IN_FLIGHT, closing=CLOSING)
+    assert handoff.text == GOLDEN.read_text()
+
+
+def test_rules_from_a_file_beside_the_project_file(tmp_path):
+    project = project_with(tmp_path, {"file": "example.rules.md"},
+                           {"example.rules.md": RULES + "\n"})
+    assert project.rules == RULES + "\n"
+    assert render(project, CARD, BASE, BRANCH, closing=CLOSING).rules.startswith(RULES)
+
+
+def test_no_rules_table_means_no_rules(tmp_path):
+    project = project_with(tmp_path)
+    assert project.rules == ""
+    assert "gives no rules" in render(project, CARD, BASE, BRANCH, closing=CLOSING).rules
+
+
+def test_an_explicit_rules_argument_wins_over_the_project_file(tmp_path):
+    project = project_with(tmp_path, {"text": "From the file."})
+    assert render(project, CARD, BASE, BRANCH, rules=RULES, closing=CLOSING).rules \
+        .startswith(RULES)
+
+
+@pytest.mark.parametrize(("rules", "files", "field", "message"), [
+    ({}, None, "rules", "exactly one of text or file"),
+    ({"text": RULES, "file": "x.md"}, None, "rules", "exactly one of text or file"),
+    ({"path": "x.md"}, None, "rules.path", "not a known key"),
+    ("Write tests first.", None, "rules", "must be dict"),
+    ({"text": "  "}, None, "rules.text", "must not be empty"),
+    ({"file": "missing.md"}, None, "rules.file", "not found"),
+    ({"file": "empty.md"}, {"empty.md": "\n"}, "rules.file", "is empty"),
+    ({"file": "../outside.md"}, None, "rules.file", "inside the project file's directory"),
+    ({"file": "/etc/hostname"}, None, "rules.file", "relative"),
+    ({"file": "binary.md"}, {"binary.md": None}, "rules.file", "not a readable text file"),
+])
+def test_a_bad_rules_table_names_its_key(tmp_path, rules, files, field, message):
+    (tmp_path / "outside.md").write_text(RULES)
+    if files and None in files.values():
+        (tmp_path / "projects").mkdir()
+        (tmp_path / "projects" / "binary.md").write_bytes(b"\xff\xfe\x00")
+        files = None
+    with pytest.raises(ConfigError) as error:
+        project_with(tmp_path, rules, files)
+    assert error.value.field == field
+    assert message in error.value.message
+
+
+def test_a_rules_file_that_holds_a_secret_is_refused(tmp_path):
+    with pytest.raises(ConfigError, match="looks like a secret") as error:
+        project_with(tmp_path, {"file": "example.rules.md"},
+                     {"example.rules.md": f"Push with {SECRET}.\n"})
+    assert error.value.field == "rules.file"
+    assert SECRET not in str(error.value)
 
 
 # In flight files.

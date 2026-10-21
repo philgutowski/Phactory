@@ -18,6 +18,16 @@ Validation runs in three passes, and each failure names the dotted key:
    credential for another site than tracker_site. It is a separate call
    because resolve (bindings.py) reports the same faults as binding_invalid
    at dispatch instead; onboard calls it before it saves a project file.
+
+Rules (follow up #56). The optional [rules] table is the operator's rules
+text for the project, the text the handoff's section 3 carries. It holds
+exactly one key: text, the rules written inline, or file, the path of a
+rules file relative to the project file's own directory, such as
+"example.rules.md" beside "example.toml". The file must stay inside that
+directory, so a project file cannot pull in another file on the machine.
+It is read with the project file, and its text passes the same secret check
+as every string in the project file. Project.rules is the text either way,
+and an empty string when the table is absent.
 """
 
 import re
@@ -111,6 +121,7 @@ class Project:
     runner_labels: tuple[str, ...] = ()
     machine_bound_tests: tuple[str, ...] = ()
     builder_worker: str | None = None
+    rules: str = ""
 
 
 KNOWN = {
@@ -119,9 +130,10 @@ KNOWN = {
     "allowed_builders", "roles", "auto_merge", "build_cap", "daily_dispatch_cap",
     "trivial_card_target", "trace_project", "trace_detail", "tracker_credential",
     "host_credential", "allowed_subjects", "evals_path", "landing_path", "merge_method",
-    "runner_labels", "machine_bound_tests", "builder_worker",
+    "runner_labels", "machine_bound_tests", "builder_worker", "rules",
 }
 ROLE_KEYS = {"account", "model", "effort", "time_budget_minutes"}
+RULES_KEYS = ("text", "file")
 # Fields whose value is the name of an operator file entry. Only these, plus
 # roles.<role>.account, are checked for the shape of an environment variable
 # name; a status label or board key in capitals is a legitimate value.
@@ -165,6 +177,36 @@ def refuse_env_names(path: Path, data: dict) -> None:
                 f"{value!r} looks like an environment variable name; a project file names "
                 "credentials by their operator file entry",
             )
+
+
+def read_rules(path: Path, top: Reader) -> str:
+    """The [rules] table's text, inline or from its file; empty when absent."""
+    table = top.table("rules", required=False)
+    if table is None:
+        return ""
+    table.refuse_unknown(RULES_KEYS)
+    given = [key for key in RULES_KEYS if key in table.data]
+    if len(given) != 1:
+        top.fail("rules", "must hold exactly one of text or file")
+    if given == ["text"]:
+        return table.text("text")
+    name = table.text("file")
+    if Path(name).is_absolute():
+        table.fail("file", "must be relative to the project file's directory")
+    folder = path.parent.resolve()
+    target = (folder / name).resolve()
+    if not target.is_relative_to(folder):
+        table.fail("file", "must stay inside the project file's directory")
+    try:
+        text = target.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        table.fail("file", f"{name!r} not found")
+    except (IsADirectoryError, UnicodeDecodeError) as error:
+        table.fail("file", f"{name!r} is not a readable text file: {error}")
+    if not text.strip():
+        table.fail("file", f"{name!r} is empty")
+    refuse_secrets(path, {"rules": {"file": text}})
+    return text
 
 
 def parse_project(path: Path, data: dict) -> Project:
@@ -215,6 +257,7 @@ def parse_project(path: Path, data: dict) -> Project:
         runner_labels=top.strs("runner_labels", required=False),
         machine_bound_tests=top.strs("machine_bound_tests", required=False),
         builder_worker=top.text("builder_worker", required=False),
+        rules=read_rules(path, top),
     )
 
 
