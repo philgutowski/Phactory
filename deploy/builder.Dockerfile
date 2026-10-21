@@ -49,9 +49,15 @@ RUN test -n "${CLAUDE_CODE_VERSION}" \
 # the adapter names the same folder in the server's own environment
 # (IMAGE_BROWSERS in src/slipway/builders/tools.py).
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
+# The package has named its binary mcp-server-playwright, mcp, and
+# playwright-mcp in different releases, each pointing at its cli.js, so the
+# one name the adapter runs is linked to cli.js whatever the pinned version.
 RUN test -n "${PLAYWRIGHT_MCP_VERSION}" \
  && npm install -g "@playwright/mcp@${PLAYWRIGHT_MCP_VERSION}" \
  && cd "$(npm root -g)/@playwright/mcp" \
+ && test -f cli.js \
+ && chmod a+rx cli.js \
+ && ln -sf "$PWD/cli.js" /usr/local/bin/playwright-mcp \
  && npx --no-install playwright install --with-deps chromium \
  && command -v playwright-mcp \
  && rm -rf /var/lib/apt/lists/* \

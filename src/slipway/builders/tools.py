@@ -40,7 +40,11 @@ from dataclasses import dataclass, field
 from slipway.config.project import LAPTOP_ONLY, BuilderTool
 
 # The Playwright MCP server, as the builder image installs it, and the
-# name the session's tools carry it under (mcp__playwright__...).
+# name the session's tools carry it under (mcp__playwright__...). The
+# package has renamed its binary across releases (npm view @playwright/mcp
+# bin: mcp-server-playwright up to 0.0.4x, mcp at 0.0.60, playwright-mcp at
+# 0.0.83), so the image links this one name to the package's cli.js, the
+# target every release's binary points at, whatever version is pinned.
 PLAYWRIGHT_SERVER = "playwright"
 PLAYWRIGHT_COMMAND = "playwright-mcp"
 # The name a laptop's computer use server is given in the configuration.

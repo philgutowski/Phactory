@@ -62,6 +62,6 @@ The handoff text is the first message of the session's transcript, and the trans
 The live part of this card is yours:
 
 1. Build the builder image with `--build-arg PLAYWRIGHT_MCP_VERSION=<a pinned version>` beside the existing arguments.
-2. On the laptop, install the server for the session user: `npm install -g @playwright/mcp@<the same version>`, so `playwright-mcp` is on the session's PATH. Then, from that package's folder, run `PLAYWRIGHT_BROWSERS_PATH=<a folder the session user can read> npx playwright install chromium`, and start the laptop worker's `LaptopBuilder` with `browsers_path` set to that folder.
+2. On the laptop, install the server for the session user: `npm install -g @playwright/mcp@<the same version>`, and make sure `playwright-mcp` is on the session's PATH. The package has named its binary `mcp-server-playwright`, `mcp`, and `playwright-mcp` in different releases (0.0.83 installs `playwright-mcp`), so for another version link `playwright-mcp` to the package's `cli.js`, as the image does. Then, from that package's folder, run `PLAYWRIGHT_BROWSERS_PATH=<a folder the session user can read> npx playwright install chromium`, and start the laptop worker's `LaptopBuilder` with `browsers_path` set to that folder.
 3. Run one laptop card that takes a headless screenshot, and record it in the pull request.
 4. For each opt in, add it to one project's `builder_tools` (through onboard or by hand), run one card, and record the run. `desktop` also needs the laptop worker started with its computer use server.
