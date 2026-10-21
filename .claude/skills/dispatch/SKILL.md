@@ -33,9 +33,19 @@ Work from a clean checkout of `main` with the environment from `CLAUDE.md` set u
 ```sh
 REPO=philgutowski/slipway
 S=$(mktemp -d)
-gh api --paginate --slurp "repos/$REPO/issues?state=all&per_page=100" > "$S/issues.json"
-gh api --paginate --slurp "repos/$REPO/pulls?state=open&per_page=100" > "$S/pulls.json"
-gh api --paginate --slurp "repos/$REPO/branches?per_page=100" > "$S/branches.json"
+# Page by number: the proxy refuses the repositories/<id> links --paginate follows.
+# A failed page stops the run, so the ready rule never reads a short board.
+fetch() {
+  n=1; echo "[" > "$S/$1.json"
+  while :; do
+    page=$(gh api "repos/$REPO/$2&per_page=100&page=$n") || { echo "fetch of $1 page $n failed" >&2; return 1; }
+    [ "$(printf %s "$page" | tr -d '[:space:]')" = "[]" ] && break
+    [ $n -gt 1 ] && echo "," >> "$S/$1.json"; printf '%s\n' "$page" >> "$S/$1.json"; n=$((n + 1))
+  done
+  echo "]" >> "$S/$1.json"
+}
+fetch issues "issues?state=all" && fetch pulls "pulls?state=open" && fetch branches "branches?" \
+  || echo "board fetch failed: stop and retry, do not dispatch" >&2
 git fetch origin main
 BASE=$(git rev-parse origin/main)
 ```

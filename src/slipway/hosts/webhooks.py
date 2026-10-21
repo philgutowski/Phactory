@@ -136,6 +136,14 @@ class DeliveryLog:
             self._seen.popitem(last=False)
         return False
 
+    def forget(self, host: str, delivery_id: str) -> None:
+        """Drop a recorded delivery, so the host's redelivery is not taken for a duplicate.
+
+        The endpoint records an id before it stores the delivery; when storing
+        fails, it forgets the id so the retry is stored instead of answered.
+        """
+        self._seen.pop((str(host), str(delivery_id)), None)
+
 
 class WebhookRefused(Exception):
     """The delivery is not one Slipway accepts. reason is one of the words above."""
