@@ -70,6 +70,8 @@ class FakeServiceRecords:
         self.score_rows: dict[int, dict[str, dict]] = {}
         self.findings: list[dict] = []
         self.snapshots = 0
+        self.migrations: list = []
+        self.pending_migrations: tuple = ()
 
     def project_id(self, slug):
         return self.projects.setdefault(slug, len(self.projects) + 1)
@@ -159,6 +161,23 @@ class FakeServiceRecords:
         return [dict(r) for r in self.builds.values()
                 if r["project_id"] == project_id and r["state"] == "claimed"
                 and r["run_id"] is None and r["updated_at"] < older_than]
+
+    def events_since(self, project_id, cursor, limit):
+        """The transitions after cursor, each id its place in the list, as events_since reads."""
+        rows = []
+        for n, t in enumerate(self.transitions, 1):
+            build = self.builds[t["build_id"]]
+            if build["project_id"] == project_id and n > cursor:
+                rows.append({"id": n, "build_id": t["build_id"], "card_key": build["card_key"],
+                             "from_state": t.get("from"), "to_state": t["to"],
+                             "actor": t.get("actor"), "evidence": t["evidence"],
+                             "at": t.get("at")})
+        rows = rows[:limit]
+        return {"rows": rows, "cursor": rows[-1]["id"] if rows else cursor, "truncated": False}
+
+    def migrate(self, database):
+        self.migrations.append(database)
+        return list(self.pending_migrations)
 
     def audit(self, slug, subject, tool, arguments, result, client=None):
         self.audit_rows.append({"project_slug": slug, "subject": subject, "tool": tool,
