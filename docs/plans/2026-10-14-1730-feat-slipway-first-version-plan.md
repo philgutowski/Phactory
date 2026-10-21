@@ -30,7 +30,7 @@ Phillip approved this order on 2026-10-21, after the build had reached the end o
 3. **Builder tools.** U27, a headless browser for every project, and the operator's real browser and desktop as a per project opt in (new).
 4. **Later.** U16 soon after step 2, since it needs no outside service. Then U1 and U12 (Managed Agents mounts GitHub repositories only, and the first project builds on the laptop), U3 and U18 (the MCP surface and voice), U15 and U17 (they wait on the Integrel export question), U22 and U23 (the Zig runner), and U24 last, with Integra Workbench as its first cold onboarding.
 
-The Unit Index carries the new dependencies, so the ready rule and the dispatch skill pick the order up from the board.
+The Unit Index carries the new dependencies. The ready rule reads each card's own Dependencies line, so the board issues were edited to match on the same day (U18, U19, U21, U24) and U26 and U27 were filed as #83 and #84.
 
 ---
 
@@ -641,7 +641,7 @@ flowchart LR
 | U15 | Trace export to Langfuse | `src/slipway/trace/langfuse.py` | U7, U11, U12, U13, U14 |
 | U16 | Deterministic score and check_card | `src/slipway/evals/deterministic.py` | U8, U9, U10, U14 |
 | U17 | Judged score and replay as a Langfuse experiment | `src/slipway/evals/judged.py`, `replay.py` | U15, U16 |
-| U18 | MCP server, tools, audit | `src/slipway/mcp/`, `src/slipway/app.py` | U3, U7, U25 |
+| U18 | MCP server, tools, audit | `src/slipway/mcp/`, `src/slipway/app.py` | U3, U7, U19, U25 |
 | U19 | Onboard state machine, terminal first | `src/slipway/onboard/` | U6, U8, U9, U25 |
 | U20 | Status page | `src/slipway/page/` | U7, U25 |
 | U21 | CLI, first slice | `src/slipway/cli.py` | U25, U19 |
@@ -1053,7 +1053,7 @@ flowchart LR
 
 - **Goal:** The per project MCP server with the eleven tools, token audience and subject validation, and the redacted audit row on every call.
 - **Requirements:** R8, R25, R26, R27, R28, KTD13, KTD14, KTD23, KTD24, AE4.
-- **Dependencies:** U3, U7, U25.
+- **Dependencies:** U3, U7, U19, U25.
 - **Files:** `src/slipway/mcp/server.py`, `src/slipway/mcp/tools.py`, `src/slipway/mcp/audit.py`, `src/slipway/auth.py`, `src/slipway/app.py`, `tests/unit/test_mcp_tools.py`, `tests/integration/test_mcp_isolation.py`.
 - **Approach:**
   1. One ASGI app serving one parameterised route `/mcp/p/{slug}` and its protected resource metadata path, resolving the project file at request time and answering not found for an unreserved slug; `auth.py`'s verifier from U3 with `validate_token_resource` on, issuer pinned, no audience refused, subject checked against the project's allowed subjects, and the operator's subject known from the operator file.
