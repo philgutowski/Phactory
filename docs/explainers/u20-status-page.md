@@ -10,6 +10,7 @@ The status page is the operator's read only view of every card Slipway is workin
 - **Authorization code flow.** The login where the browser goes to the identity provider, comes back with a one time code, and the server trades that code for tokens directly with the provider.
 - **PKCE.** Proof key for code exchange: a random secret, the verifier, whose hash goes out with the browser and whose plain value goes out only with the code, so a code stolen on the way back is useless alone.
 - **ID token.** The token in which the provider names who signed in, with their subject, the client it is for, and when it expires.
+- **TLS.** The encryption under https: the server proves who it is with a certificate the client checks, so a reply cannot be forged or read on the way.
 - **HMAC.** A keyed hash. Only the holder of the key can make a value that checks, so a cookie signed with it cannot be forged or edited.
 - **Age.** How long a card has been in its current state, such as `40m` or `2h`.
 - **Finding.** A fault Slipway saw in a gate run that is not the card's own, such as a runner step that failed (KTD20).
@@ -68,7 +69,7 @@ There is no form in any template, the page accepts only GET, and every response 
 
 ## The abandoned rule
 
-The plan's states table says an abandoned card is shown once, then dropped when the card leaves the ready status. `compose` reads the tracker for that one fact, and only for cards whose latest build is abandoned, so a status read stays cheap. A card still in the project's ready status is shown under needs you; one moved off it is dropped from the counts and every list. When the tracker cannot be read the card stays, since hiding it would hide work.
+The plan's states table says an abandoned card is shown once, then dropped when the card leaves the ready status. `compose` reads the tracker for that one fact, and only for cards whose latest build is abandoned, so a status read stays cheap. A card still in the project's ready status is shown under needs you; one moved off it is dropped from the counts and every list. When the tracker cannot be read the card stays, since hiding it would hide work. The read is not cached: an abandoned card leaves the list as soon as it is dispatched again or moved off the ready status, so there are rarely more than a few, and one tracker read each per page load is well inside a tracker's rate limit. A cache would add shared state to a stateless page and keep a dropped card on screen after the person moved it.
 
 ## Where this departs from the card, and why
 

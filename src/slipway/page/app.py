@@ -50,8 +50,8 @@ HEADERS = [
     ("Referrer-Policy", "no-referrer"),
     ("X-Content-Type-Options", "nosniff"),
 ]
-GROUPS = (("needs_you", "Needs you"), ("being_built", "Being built"),
-          ("waiting_to_land", "Waiting to land"))
+# The groups drawn from status.compose's cards list; needs you has its own entries.
+CARD_GROUPS = ("being_built", "waiting_to_land")
 
 
 @cache
@@ -96,7 +96,7 @@ def render_project(found: dict, heading: str) -> str:
                   age=esc(e.get("age")), line=esc(e["line"]), what=esc(e["what"]),
                   link=link(e.get("link"))) for e in found["needs_you"]]
     groups = {"needs_you": needs}
-    for name, _title in GROUPS[1:]:
+    for name in CARD_GROUPS:
         groups[name] = [fill("card_row", key=esc(c["key"]), state=_state(c["state"]),
                              age=esc(c.get("age")), link=link(c.get("link")))
                         for c in found["cards"] if c["bucket"] == name]
