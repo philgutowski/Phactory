@@ -550,3 +550,25 @@ def test_a_builder_outside_the_list_is_refused(world):
     machine.start(world.ports, SLUG, OPERATOR)
     result = machine.answer(world.ports, SLUG, "allowed_builders", "clie", OPERATOR)
     assert result["outcome"] == machine.REFUSED
+
+
+def test_a_rules_file_removed_after_the_write_is_refused_not_raised(world):
+    onboard(world, BITBUCKET)
+    rules = world.root / "projects" / "example.rules.md"
+    rules.write_text("Keep it small.\n")
+    state_file = world.root / "onboard" / f"{SLUG}.json"
+    state = json.loads(state_file.read_text())
+    state["base"] = {"rules": {"file": "example.rules.md"}}
+    state_file.write_text(json.dumps(state))
+    machine.answer(world.ports, SLUG, "evals_path", "evals/", OPERATOR)  # rewrites the file
+    rules.unlink()
+
+    result = machine.start(world.ports, SLUG, OPERATOR)
+    assert result["outcome"] == machine.REFUSED
+    assert "rules.file" in result["reason"]
+
+
+def test_a_bad_session_id_is_refused_by_every_call(world):
+    assert machine.answer(world.ports, "../x", "host", "github", OPERATOR)["outcome"] == (
+        machine.REFUSED)
+    assert machine.status(world.ports, "../x")["outcome"] == machine.REFUSED

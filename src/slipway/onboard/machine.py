@@ -519,8 +519,11 @@ def _restale(ports: Ports, state: dict, project: Project | None = None) -> None:
     if project is None:
         try:
             project = _project(ports, state)
-        except ConfigError:
-            return  # a mark the state already holds names the fault
+        except ConfigError as error:
+            # A key no question fills, such as a rules file removed since the
+            # write, is raised to start, which refuses with its reason.
+            _mark(state, error, keep=True)
+            return
     if project is None:
         return
     state["stale"].update(checks.stale(ports.probe, project, ports.operator().accounts))
@@ -532,7 +535,10 @@ def _restale(ports: Ports, state: dict, project: Project | None = None) -> None:
 
 def answer(ports: Ports, session: str, qid: str, value, actor: str) -> dict:
     """Validate one answer, then save it, or refuse it and leave everything as it was."""
-    state = _load(ports.root, session)
+    try:
+        state = _load(ports.root, session)
+    except ConfigError as error:
+        return {"session": session, "outcome": REFUSED, "reason": error.message}
     question = questions.find(qid, state["attest"])
 
     def refuse(reason: str, shown_value=None) -> dict:
@@ -597,7 +603,10 @@ def answer(ports: Ports, session: str, qid: str, value, actor: str) -> dict:
 
 def status(ports: Ports, session: str, actor: str | None = None) -> dict:
     """Where the session stands, with its saved answers, so a dropped session resumes."""
-    state = _load(ports.root, session)
+    try:
+        state = _load(ports.root, session)
+    except ConfigError as error:
+        return {"session": session, "outcome": REFUSED, "reason": error.message}
     actor = actor or _operator_subject(ports)
     if not _permitted(ports, state, actor):
         return {"session": session, "outcome": REFUSED,
