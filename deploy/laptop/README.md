@@ -16,7 +16,7 @@ The launch file reads `$HOME/.slipway-worker.env` in the worker user's home: mod
 | `SLIPWAY_SESSIONS` | always | The folder session directories live in, one folder per project under it. The worker user writes it; the session user reads it through the worker's group. |
 | `SLIPWAY_SESSION_PATH` | always | The `PATH` a session gets: where `claude`, `git`, and `playwright-mcp` are for the session user. |
 | `SLIPWAY_BROWSERS` | a project granting `headless_browser`, the default level | The folder Playwright's browsers are installed in (`docs/explainers/u27-builder-tools.md`). |
-| `SLIPWAY_DESKTOP_SERVER` | a project granting `desktop` | This machine's computer use MCP server entry, a JSON object with `command`, and optionally `args` and `env`. |
+| `SLIPWAY_DESKTOP_SERVER` | a project granting `desktop` | This machine's computer use MCP server entry (an MCP, or Model Context Protocol, server is the program a session's tool calls reach), a JSON object with `command`, and optionally `args` and `env`. |
 | `SLIPWAY_CHECKOUTS` | a project with `checkout = "worktree"` | A JSON object from project slug to the path of that project's shared checkout. |
 | `HATCHET_CLIENT_TOKEN` | always | This worker's own Hatchet token, minted in the Hatchet dashboard for this worker alone. The token names the engine's public gRPC address, `SLIPWAY_DOMAIN:7077` (`HATCHET_GRPC_BROADCAST_ADDRESS` in `deploy/README.md`), so the laptop sets no address of its own. |
 | the account variable | always | The subscription token, under the variable name the operator file's `accounts` entry gives (its `env`). |

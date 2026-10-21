@@ -15,7 +15,7 @@ import pytest
 from slipway.builders.base import BUILDER_FAILED, RETURNED_EMPTY, BuilderResult
 from slipway.builders.cli import LaptopBuilder, LaptopReturn
 from slipway.builders.handoff import Handoff
-from slipway.config.bindings import ResolvedBinding
+from slipway.config.bindings import BindingInvalid, ResolvedBinding
 from slipway.config.operator import Account, AccountKind, Host, HostCredential
 from slipway.config.project import Checkout
 from slipway.workflow import card, laptop, worker
@@ -159,6 +159,11 @@ def test_the_vps_sends_the_laptop_what_it_needs_of_the_project_and_no_value():
                                                           "EXAMPLE_GIT_TOKEN")}
 
     assert card.laptop_project(Project(), Operator()) == project()
+
+    # A credential the operator file lost is refused on the VPS, by name.
+    Operator.host_credentials = {}
+    with pytest.raises(BindingInvalid, match="example-app"):
+        card.laptop_project(Project(), Operator())
 
 
 # With a required variable unset.
