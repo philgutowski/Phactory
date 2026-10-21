@@ -4,12 +4,13 @@ This card is the other half of Phase 2's loop. U14 built the card workflow, the 
 
 ## Words used below
 
+- **MCP.** The Model Context Protocol, the tool protocol an agent calls Slipway through; U18 serves it.
 - **Verb.** One action a person or an agent asks Slipway to take, as a function in `service/`. Every surface calls the same function, so a rule is written once (KTD23).
 - **Claim.** The row in `builds` that says one build owns one card. `records.store.claim` writes it.
 - **Ownership terminal set.** `scored`, `abandoned`, and `returned_empty`. A build in one of these no longer owns its card, so a new build may be claimed.
 - **Run.** One execution of the card workflow on the engine (Hatchet), started through `service/engine.py`.
 - **Cron.** A task the engine starts on a clock; watch runs every five minutes.
-- **Audit row.** One row in the `audit` table: who asked (their OAuth subject, the stable user id in their token), which tool, the arguments with secrets scrubbed (KTD24), and the result.
+- **Audit row.** One row in the `audit` table: who asked (their OAuth subject, the stable user id in their token), which tool, the arguments, and the result, both with secrets scrubbed (KTD24).
 - **Host link.** The pull request's page on the host, such as `https://github.com/<repository>/pull/<number>`.
 - **Bucket.** The page group a state belongs to, from the `states` table: `being_built`, `waiting_to_land`, `needs_you`, or `done`.
 
@@ -41,7 +42,7 @@ AE9 is the rule seen from outside: three dispatch calls in a minute for one card
 `dispatch(ports, project, key, actor, reason)` reads the card from the tracker and then, in this order:
 
 1. Returns the owning build when the card's latest build is outside the ownership terminal set. This comes first because the board moves a card out of the ready status once its branch exists, and a caller asking again still learns which build owns it.
-2. Refuses a card that is not ready by the ready rule (`cards/contract.py`), naming the allowed labels. The rule is passed the lane labels of every other configured project, so a card labelled for two lanes is caught (the note carried from #45 on this card).
+2. Refuses a card that is not ready by the ready rule (`cards/contract.py`), naming the allowed labels. The rule is passed the lane labels of every other configured project, so a card labelled for two lanes is caught (the note card #47 carried onto this card from the review of #45).
 3. Refuses a card whose last build ended `returned_empty` or `abandoned` when no reason is given.
 4. Refuses when the project has claimed `daily_dispatch_cap` builds since midnight UTC, naming the cap.
 5. Claims the card, carrying its declared paths and title onto the `cards` row, and starts the run.
