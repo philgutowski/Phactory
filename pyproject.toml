@@ -11,6 +11,9 @@ requires-python = ">=3.12"
 dependencies = [
     # The Postgres driver for the records store (U7). The binary extra ships libpq.
     "psycopg[binary]>=3.2",
+    # The engine's client (KTD2), at the version the U4 spike ran. The card
+    # workflow's worker declares its tasks with it (U14).
+    "hatchet-sdk>=1.42.1,<2",
 ]
 
 [project.optional-dependencies]
@@ -37,6 +40,7 @@ pythonpath = ["src", "tests", "."]
 addopts = "-p _nonet -p _gate -p pytester"
 markers = [
     "integration: needs the local Postgres named by SLIPWAY_TEST_DSN",
+    "operator_smoke: needs an engine only the operator runs; a skip is not a gate failure",
 ]
 
 [tool.ruff]

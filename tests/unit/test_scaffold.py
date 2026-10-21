@@ -88,9 +88,21 @@ def test_needs_database():
 """
 
 
-def _run_inner(pytester, env_ci: str | None):
+_SMOKE_AND_DATABASE = """
+import pytest
+
+@pytest.mark.operator_smoke
+def test_needs_an_engine():
+    pytest.skip("SLIPWAY_TEST_HATCHET is not set")
+
+def test_needs_database():
+    pytest.skip("SLIPWAY_TEST_DSN is not set")
+"""
+
+
+def _run_inner(pytester, env_ci: str | None, suite: str = _SKIPPING_SUITE):
     pytester.mkdir("integration")
-    pytester.path.joinpath("integration", "test_db.py").write_text(_SKIPPING_SUITE)
+    pytester.path.joinpath("integration", "test_db.py").write_text(suite)
     env = {**os.environ, "PYTHONPATH": str(ROOT / "tests")}
     env.pop("CI", None)
     if env_ci is not None:
@@ -112,6 +124,12 @@ def test_skipped_integration_test_only_skips_locally(pytester):
     result = _run_inner(pytester, None)
     assert result.returncode == 0, result.stdout
     assert "1 skipped" in result.stdout
+
+
+def test_an_operator_smoke_skip_stays_a_skip_under_ci_and_nothing_else_does(pytester):
+    result = _run_inner(pytester, "true", _SMOKE_AND_DATABASE)
+    assert result.returncode == 1, result.stdout
+    assert "1 failed, 1 skipped" in result.stdout
 
 
 # The fakes.
