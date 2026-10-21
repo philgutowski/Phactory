@@ -1,0 +1,27 @@
+# Caddy, the one process on the VPS that holds a certificate (U29, KTD28).
+# Caddy is a web server that obtains and renews its own certificate from
+# Let's Encrypt. It terminates TLS on the two public listeners and forwards
+# plain traffic over the compose network:
+#
+#   https://SLIPWAY_DOMAIN        port 443   the app (page and webhooks)
+#   SLIPWAY_DOMAIN:7077           port 7077  the Hatchet engine's gRPC
+#
+# Port 80 is not published, so Caddy proves it owns the name with the
+# TLS-ALPN challenge on port 443; the DNS name must point at the VPS before
+# the first start. SLIPWAY_DOMAIN and SLIPWAY_ACME_EMAIL come from compose.
+
+{
+	email {$SLIPWAY_ACME_EMAIL}
+	# Nothing listens on 80 from outside, so no redirect is served there.
+	auto_https disable_redirects
+}
+
+{$SLIPWAY_DOMAIN} {
+	reverse_proxy app:8000
+}
+
+# gRPC is HTTP/2. h2c is HTTP/2 without TLS, which is what the engine speaks
+# on the compose network once Caddy has taken TLS off.
+{$SLIPWAY_DOMAIN}:7077 {
+	reverse_proxy h2c://hatchet-lite:7077
+}
